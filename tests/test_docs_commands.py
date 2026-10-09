@@ -25,9 +25,13 @@ def test_docs_examples_match_cli():
 def test_docs_use_canonical_option_names():
     checker = _checker()
     files = sorted((ROOT / "docs" / "docs").rglob("*.md")) + [ROOT / "README.md"]
-    # The page of a deprecated command and the migration guide may show old names;
-    # everything else uses canonical names.
-    allowed = ("commands/ingest.md", "getting-started/migrating-to-2.md")
+    # The page of a deprecated command, the migration guide and the migrate-script page
+    # may show old names; everything else uses canonical names.
+    allowed = (
+        "commands/ingest.md",
+        "commands/migrate-script.md",
+        "getting-started/migrating-to-2.md",
+    )
     deprecated = [
         p for p in checker.check(files) if "deprecated" in p and not any(a in p for a in allowed)
     ]

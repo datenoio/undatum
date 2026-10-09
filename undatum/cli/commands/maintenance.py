@@ -29,6 +29,8 @@ def migrate_script(
 
     Without --write it prints a diff; places that need a person are listed on stderr.
 
+    Text marked with a migrate-script: ignore comment (# or <!-- -->) is left alone.
+
     Examples:
         undatum migrate-script scripts/ pipelines/
         undatum migrate-script etl.sh --write

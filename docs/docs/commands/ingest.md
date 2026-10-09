@@ -10,6 +10,8 @@ description: "undatum ingest command reference"
 
 Ingests data from files into databases. Supports MongoDB, PostgreSQL, DuckDB, MySQL, SQLite, and Elasticsearch with retry logic, progress tracking, and optional table auto-creation.
 
+<!-- migrate-script: ignore -->
+
 ```bash norun
 # Ingest to MongoDB
 undatum ingest data.jsonl mongodb://localhost:27017 mydb mycollection

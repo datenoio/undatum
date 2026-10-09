@@ -7,6 +7,10 @@ Makefiles, CI files and documentation, and the ``command:`` / ``engine:`` keys o
 YAML. Changes it cannot make mechanically (``ingest`` to ``db load``, options a replacement
 command does not have) are reported as findings.
 
+Text that shows old spellings on purpose (a migration table, the page of a deprecated
+command) opts out with a ``migrate-script: ignore`` marker in a ``#`` or HTML comment; see
+:func:`ignored_lines`.
+
 The alias tables come from the live command tree (``undatum.cli.conventions``), so the
 rewrite always matches what the CLI itself accepts.
 """
@@ -16,7 +20,7 @@ from __future__ import annotations
 import difflib
 import os
 import re
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -42,7 +46,19 @@ GROUPS = {
 RENAMED_COMMANDS = {"profile": "stats", "document": "doc"}
 # ``scheme`` options with no ``schema`` counterpart.
 SCHEME_UNSUPPORTED = {"--delimiter", "-d", "--encoding", "--format-in", "-F", "--zipfile"}
+# What ``scheme`` did without --stype; appended after the last argument of the call.
+SCHEME_DEFAULT_FORMAT = " --format cerberus"
 _BREAKS = {"|", "||", "&&", ";", "&", "(", ")", "`"}
+# A redirection such as ``>``, ``2>`` or ``>out.yaml``; group 1 is an attached target.
+_REDIRECT = re.compile(r"^[0-9]*[<>]+(.*)$")
+
+# Opt-out markers: a line holding only the comment, or (``ignore``) a comment ending a line.
+_DIRECTIVE = r"migrate-script:\s*(ignore|ignore-start|ignore-end)"
+_MARKER_LINE = re.compile(rf"^\s*(?:<!--\s*{_DIRECTIVE}\s*-->|#\s*{_DIRECTIVE})\s*$")
+_MARKER_END_OF_LINE = re.compile(
+    r"\s(?:<!--\s*migrate-script:\s*ignore\s*-->|#\s*migrate-script:\s*ignore)\s*$"
+)
+_FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
 
 
 @dataclass
@@ -151,6 +167,9 @@ class _Invocation:
     aliases: dict[str, str] = field(default_factory=dict)
     scheme: bool = False
     scheme_format: bool = False
+    # (line number, offset) after the last argument of a ``scheme`` call.
+    scheme_end: tuple[int, int] | None = None
+    redirect_target_next: bool = False
     engine_value_next: bool = False
 
 
@@ -189,19 +208,28 @@ def migrate_text(text: str, path: str = "<text>") -> Migration:
     aliases = command_aliases()
     yaml_file = path.lower().endswith((".yml", ".yaml"))
     lines = text.splitlines(keepends=True)
+    skip = ignored_lines(lines)
     findings: list[Finding] = []
-    out: list[str] = []
+    bodies: list[str] = []
+    # Edits per line, applied at the end: a ``scheme`` call can end lines after it started.
+    edits: dict[int, list[tuple[int, int, str]]] = {}
     state: _Invocation | None = None
     for number, line in enumerate(lines, start=1):
+        if number in skip:
+            _end_invocation(state, edits)
+            state = None
+            bodies.append(line)
+            continue
         command_position = state is None
         body = line.rstrip("\r\n")
         newline = line[len(body) :]
-        edits: list[tuple[int, int, str]] = []
         if yaml_file:
             body = _migrate_yaml_line(body, path, number, findings)
+        bodies.append(body + newline)
         continues = body.rstrip().endswith("\\")
         for start, end, token, quoted in _tokens(body):
             if not quoted and token in _BREAKS:
+                _end_invocation(state, edits)
                 state, command_position = None, True
                 continue
             if state is None:
@@ -212,18 +240,91 @@ def migrate_text(text: str, path: str = "<text>") -> Migration:
                 continue
             edit = _migrate_token(state, start, end, token, quoted, aliases, path, number, findings)
             if edit:
-                edits.append(edit)
-        if state is not None and state.scheme_format:
-            # --stype on this line chose the format: drop the inserted default.
-            edits = [
-                (a, b, "schema" if r == "schema --format cerberus" else r) for a, b, r in edits
-            ]
-        for start, end, replacement in sorted(edits, reverse=True):
-            body = body[:start] + replacement + body[end:]
-        out.append(body + newline)
+                edits.setdefault(number, []).append(edit)
         if not continues:
+            _end_invocation(state, edits)
             state = None
+    _end_invocation(state, edits)
+    out = []
+    for number, line in enumerate(bodies, start=1):
+        for start, end, replacement in sorted(edits.get(number, ()), reverse=True):
+            line = line[:start] + replacement + line[end:]
+        out.append(line)
     return Migration(path, text, "".join(out), findings)
+
+
+def _end_invocation(
+    state: _Invocation | None, edits: dict[int, list[tuple[int, int, str]]]
+) -> None:
+    """Finish a call: ``scheme`` without --stype gets the old default after its arguments."""
+    if state is not None and state.scheme and not state.scheme_format and state.scheme_end:
+        number, offset = state.scheme_end
+        edits.setdefault(number, []).append((offset, offset, SCHEME_DEFAULT_FORMAT))
+
+
+def ignored_lines(lines: list[str]) -> set[int]:
+    """Line numbers (from 1) that opt-out markers leave alone, the markers included.
+
+    A marker is ``migrate-script: ignore`` (or ``ignore-start`` / ``ignore-end``) in an HTML
+    comment (``<!-- ... -->``) or a ``#`` comment:
+
+    - ``ignore`` on a line of its own skips the next block: a fenced code block up to its
+      closing fence, otherwise the lines up to the next blank line (a table, a paragraph,
+      a group of commands);
+    - ``ignore`` at the end of a line skips that line;
+    - ``ignore-start`` and ``ignore-end`` on lines of their own skip everything between
+      them (to the end of the file without an ``ignore-end``).
+
+    Args:
+        lines: The lines of a file.
+
+    Returns:
+        The numbers of the lines to keep as they are.
+    """
+    skip: set[int] = set()
+    index, total = 0, len(lines)
+
+    def skip_through(last: Callable[[str], object]) -> None:
+        """Skip lines up to and including the first one ``last`` accepts."""
+        nonlocal index
+        while index < total:
+            skip.add(index + 1)
+            index += 1
+            if last(lines[index - 1]):
+                return
+
+    while index < total:
+        line = lines[index]
+        index += 1
+        directive = _marker(line)
+        if directive is None:
+            if _MARKER_END_OF_LINE.search(line):
+                skip.add(index)
+            continue
+        skip.add(index)
+        if directive == "ignore-start":
+            skip_through(lambda text: _marker(text) == "ignore-end")
+        elif directive == "ignore":
+            while index < total and not lines[index].strip():
+                index += 1
+            fence = _FENCE.match(lines[index]) if index < total else None
+            if fence:
+                char, width = re.escape(fence.group(1)[0]), len(fence.group(1))
+                closing = re.compile(rf"^ {{0,3}}{char}{{{width},}}\s*$")
+                skip.add(index + 1)
+                index += 1
+                skip_through(closing.match)
+            else:
+                while index < total and lines[index].strip():
+                    skip.add(index + 1)
+                    index += 1
+    return skip
+
+
+def _marker(line: str) -> str | None:
+    """The directive of a line that holds only an opt-out marker comment."""
+    match = _MARKER_LINE.match(line)
+    return (match.group(1) or match.group(2)) if match else None
 
 
 def _migrate_token(
@@ -255,7 +356,8 @@ def _migrate_token(
         if token == "scheme":
             state.path, state.scheme = "schema", True
             state.aliases = aliases.get("schema", {})
-            return start, end, "schema --format cerberus"
+            state.scheme_end = (line, end)
+            return start, end, "schema"
         if token == "ingest":
             findings.append(
                 Finding(
@@ -275,6 +377,15 @@ def _migrate_token(
             state.aliases = aliases.get(state.path, {})
         return None
     # Arguments.
+    if state.scheme and token != "\\":
+        # The default format goes after the arguments (FILE first), before redirections.
+        redirect = _REDIRECT.match(token)
+        if state.redirect_target_next:
+            state.redirect_target_next = False
+        elif redirect:
+            state.redirect_target_next = not redirect.group(1)
+        else:
+            state.scheme_end = (line, end)
     if quoted:
         state.engine_value_next = False
         return None
@@ -295,7 +406,7 @@ def _migrate_token(
                 Finding(path, line, f"'schema' has no {name} option (was accepted by 'scheme')")
             )
         if name == "--stype":
-            # The format chosen by --stype replaces the inserted "--format cerberus".
+            # --stype chose the format, so the default is not appended.
             state.scheme_format = True
             return start, end, "--format" + (sep + value if sep else "")
     if name in state.aliases:

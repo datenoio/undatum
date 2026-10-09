@@ -27,8 +27,13 @@ def migrated(text: str, path: str = "run.sh") -> str:
         ("undatum stats x.csv --engine=iterable", "undatum stats x.csv --engine=python"),
         ("undatum profile x.csv", "undatum stats x.csv"),
         ("undatum document x.csv", "undatum doc x.csv"),
-        ("undatum scheme x.csv", "undatum schema --format cerberus x.csv"),
+        ("undatum scheme x.csv", "undatum schema x.csv --format cerberus"),
         ("undatum scheme x.csv --stype jsonschema", "undatum schema x.csv --format jsonschema"),
+        ("undatum scheme x.csv > out.yaml", "undatum schema x.csv --format cerberus > out.yaml"),
+        ("undatum scheme x.csv 2>/dev/null", "undatum schema x.csv --format cerberus 2>/dev/null"),
+        ("undatum scheme x.csv | head", "undatum schema x.csv --format cerberus | head"),
+        ('undatum scheme "a b.csv"  # note', 'undatum schema "a b.csv" --format cerberus  # note'),
+        ("Use `undatum scheme FILE`.", "Use `undatum schema FILE --format cerberus`."),
         ("python -m undatum head x.csv --n 2", "python -m undatum head x.csv --limit 2"),
         ("/usr/local/bin/undatum head x.csv --n 2", "/usr/local/bin/undatum head x.csv --limit 2"),
         (
@@ -66,6 +71,18 @@ def test_line_continuations_keep_the_command():
     assert migrated(text) == "undatum head x.csv \\\n  --limit 5 \\\n  -e python\nother --n 5\n"
 
 
+def test_scheme_default_format_follows_the_last_argument_line():
+    assert migrated("undatum scheme x.csv \\\n  --stype jsonschema\n") == (
+        "undatum schema x.csv \\\n  --format jsonschema\n"
+    )
+    assert migrated("undatum scheme x.csv \\\n  --delimiter ';'\n") == (
+        "undatum schema x.csv \\\n  --delimiter ';' --format cerberus\n"
+    )
+    assert migrated("undatum scheme x.csv \\\n  | head\n") == (
+        "undatum schema x.csv --format cerberus \\\n  | head\n"
+    )
+
+
 def test_crlf_and_other_lines_are_kept():
     text = "set -e\r\nundatum head x.csv --n 5\r\n"
     assert migrated(text) == "set -e\r\nundatum head x.csv --limit 5\r\n"
@@ -99,6 +116,106 @@ def test_pipeline_yaml():
     assert any("db load" in f.message for f in result.findings)
 
 
+def test_ignore_marker_keeps_the_next_table():
+    text = (
+        "<!-- migrate-script: ignore -->\n"
+        "| Deprecated | Use instead |\n"
+        "|------------|-------------|\n"
+        "| `undatum profile FILE` | `undatum stats FILE` |\n"
+        "| `undatum scheme FILE` | `undatum schema FILE --format cerberus` |\n"
+        "| `undatum ingest FILE URI DB TABLE` | `undatum db load FILE --db URI` |\n"
+        "\n"
+        "Then run `undatum profile x.csv`.\n"
+    )
+    result = migrate_text(text, "guide.md")
+    assert result.migrated == text.replace("Then run `undatum profile", "Then run `undatum stats")
+    assert result.findings == []
+
+
+def test_ignore_marker_keeps_a_fenced_block_with_blank_lines():
+    text = (
+        "# migrate-script: ignore\n"
+        "\n"
+        "```bash\n"
+        "undatum ingest a.jsonl mongodb://h db c\n"
+        "\n"
+        "undatum profile x.csv\n"
+        "```\n"
+        "undatum profile y.csv\n"
+    )
+    result = migrate_text(text, "ingest.md")
+    assert result.migrated == text.replace("profile y.csv", "stats y.csv")
+    assert result.findings == []
+
+
+def test_ignore_marker_at_the_end_of_a_line():
+    text = (
+        "undatum profile a.csv  # migrate-script: ignore\n"
+        "Run `undatum profile b.csv` <!-- migrate-script: ignore -->\n"
+        "undatum profile c.csv\n"
+    )
+    assert migrated(text) == text.replace("profile c.csv", "stats c.csv")
+
+
+def test_ignore_start_and_end():
+    text = (
+        "<!-- migrate-script: ignore-start -->\n"
+        "undatum profile a.csv\n"
+        "\n"
+        "undatum ingest a.jsonl mongodb://h db c\n"
+        "<!-- migrate-script: ignore-end -->\n"
+        "undatum profile b.csv\n"
+        "  # migrate-script: ignore-start\n"
+        "undatum profile c.csv\n"
+    )
+    result = migrate_text(text, "page.md")
+    assert result.migrated == text.replace("profile b.csv", "stats b.csv")
+    assert result.findings == []  # an unclosed range runs to the end of the file
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "Write `<!-- migrate-script: ignore -->` before a table: `undatum profile x.csv`.",
+        "Mark a range with `# migrate-script: ignore-start` and `undatum profile x.csv`.",
+        "undatum profile x.csv  # migrate-script: ignore-me",
+    ],
+)
+def test_marker_mentioned_in_text_is_not_a_marker(line):
+    assert migrated(line + "\nundatum profile y.csv\n", "page.md") == (
+        line.replace("undatum profile", "undatum stats") + "\nundatum stats y.csv\n"
+    )
+
+
+def test_ignore_marker_in_pipeline_yaml():
+    text = (
+        "steps:\n"
+        "  # migrate-script: ignore\n"
+        "  - name: legacy\n"
+        "    command: ingest\n"
+        "\n"
+        "  - name: s\n"
+        "    command: profile  # migrate-script: ignore\n"
+        "  - name: t\n"
+        "    command: profile\n"
+    )
+    result = migrate_text(text, "p.yml")
+    assert result.migrated.splitlines()[6] == "    command: profile  # migrate-script: ignore"
+    assert result.migrated.splitlines()[8] == "    command: stats"
+    assert result.findings == []
+
+
+def test_documentation_needs_no_migration():
+    from pathlib import Path
+
+    from undatum.cmds.migrate import migrate_files
+
+    docs = Path(__file__).resolve().parent.parent / "docs" / "docs"
+    migrations = migrate_files([str(docs)])
+    assert [m.path for m in migrations if m.changed] == []
+    assert [f"{f.path}:{f.line}" for m in migrations for f in m.findings] == []
+
+
 def test_alias_tables_cover_the_renames():
     tables = command_aliases()
     seen = {old for aliases in tables.values() for old in aliases}
@@ -119,6 +236,16 @@ def test_cli_diff_write_and_check(tmp_path):
     assert written.exit_code == 0
     assert script.read_text() == "#!/bin/sh\nundatum head data.csv --limit 5\n"
     assert runner.invoke(app, ["migrate-script", str(script), "--check"]).exit_code == 0
+
+
+def test_cli_check_passes_on_marked_documentation(tmp_path):
+    page = tmp_path / "ingest.md"
+    page.write_text(
+        "<!-- migrate-script: ignore -->\n```bash\nundatum ingest a.jsonl mongodb://h db c\n```\n"
+    )
+    result = CliRunner().invoke(app, ["migrate-script", str(tmp_path), "--check"])
+    assert result.exit_code == 0
+    assert "0 places need review" in result.stderr
 
 
 def test_db_load_pipeline_step(tmp_path, monkeypatch):

@@ -21,6 +21,8 @@ undatum migrate-script . --check                      # CI: fail while anything 
 
 ## Commands
 
+<!-- migrate-script: ignore -->
+
 | Deprecated | Use instead | Rewritten automatically |
 |------------|-------------|-------------------------|
 | `undatum profile FILE` | `undatum stats FILE` | yes |
