@@ -4,7 +4,7 @@
 # neither is on conda-forge). Submit those first, then copy this file to
 # recipes/undatum/meta.yaml in staged-recipes with the version and sha256 of the PyPI sdist.
 {% set name = "undatum" %}
-{% set version = "1.7.0" %}
+{% set version = "1.8.0" %}
 
 package:
   name: {{ name|lower }}

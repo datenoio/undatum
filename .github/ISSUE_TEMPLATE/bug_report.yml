@@ -7,7 +7,7 @@ body:
     attributes:
       label: undatum version
       description: Output of `undatum --version`.
-      placeholder: undatum 1.7.0
+      placeholder: undatum 1.8.0
     validations:
       required: true
   - type: input

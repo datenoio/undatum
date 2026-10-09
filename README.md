@@ -78,7 +78,7 @@ brew install pipx && pipx install undatum
 uv tool install undatum
 ```
 
-Starting with the next release, tags also publish **PyInstaller single-file binaries** (Linux, macOS, Windows) on [GitHub Releases](https://github.com/datenoio/undatum/releases); 1.7.0 and earlier are on PyPI only. `pipx`/`uv` remain the supported install paths for most users.
+Since 1.8.0, release tags also publish **PyInstaller single-file binaries** (Linux, macOS, Windows) on [GitHub Releases](https://github.com/datenoio/undatum/releases); 1.7.0 and earlier are on PyPI only. `pipx`/`uv` remain the supported install paths for most users.
 
 A man page ships with the package (`man undatum` after install, or `make man` to regenerate `man/undatum.1`).
 
