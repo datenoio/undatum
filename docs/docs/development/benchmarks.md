@@ -35,8 +35,9 @@ python scripts/benchmarks.py compare pr.json --base base --head head
 ## Budgets
 
 `tests/benchmarks/budgets.toml` sets a time and a memory budget for each command and tier.
-Time budgets are about three times the measured time, which leaves room for slower CI
-runners. Memory budgets are 1.3 × the measured peak + 20 MB, so a command that starts
+Time budgets are about three times the time measured on a Mac (arm64) and, for 100k rows, at
+least 1.4 × the time on the GitHub `ubuntu-latest` runner, which is 3–5 times slower for
+commands that import iterabledata. Memory budgets are 1.3 × the measured peak + 20 MB, so a command that starts
 holding a 100k-row input in memory goes over. `faster` lists pairs whose order must hold;
 for example, `count` must stay faster than `sort`.
 

@@ -1,8 +1,9 @@
-# Only pyproject.toml, README.md, LICENSE and undatum/ are copied into the image.
+# Only pyproject.toml, README.md, LICENSE, undatum/ and the man page are copied into the image.
 *
 !pyproject.toml
 !README.md
 !LICENSE
 !undatum/
+!man/undatum.1
 **/__pycache__
 **/*.pyc

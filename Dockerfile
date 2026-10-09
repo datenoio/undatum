@@ -16,6 +16,8 @@ ENV PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1
 WORKDIR /src
 COPY pyproject.toml README.md LICENSE ./
 COPY undatum ./undatum
+# The wheel installs the man page as a data file.
+COPY man/undatum.1 ./man/undatum.1
 RUN python -m venv /opt/undatum \
     && if [ "$EXTRAS" = "full" ]; then \
          spec=".[api,web,mcp,cloud,postgres,mysql,clickhouse,elastic,phone,plot,frictionless,tui]"; \

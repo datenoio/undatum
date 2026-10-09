@@ -112,7 +112,9 @@ undatum db load customers.csv --table dbo.customers --mode upsert --upsert-key i
 - Elasticsearch and OpenSearch (`append`; needs `pip install "undatum[elastic]"`). TLS
   certificates are verified; use `--ca-cert` for a private CA or `--insecure` to skip the
   check. `--api-key` (or `ELASTIC_API_KEY`), `--doc-id` (default `id`) and `--es-pipeline`
-  apply to these targets only.
+  apply to these targets only. The `elasticsearch` client must match the server's major
+  version: for an Elasticsearch 8 server, install `pip install "elasticsearch>=8,<9"`
+  (client 9 is rejected with `media_type_header_exception`).
 
 **Load Modes:**
 - `append` (default) - Add records to existing table

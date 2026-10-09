@@ -1,6 +1,14 @@
 """Pytest configuration and fixtures."""
 
+import os
+
 import pytest
+
+# Typer and Rich colour help and error output when one of these is set (GitHub Actions sets
+# GITHUB_ACTIONS), which splits option names such as `--limit` with escape codes. Tests
+# compare plain text, so drop them before Typer is imported.
+for _name in ("GITHUB_ACTIONS", "FORCE_COLOR", "PY_COLORS"):
+    os.environ.pop(_name, None)
 
 
 def pytest_configure(config):

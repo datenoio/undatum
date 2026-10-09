@@ -235,7 +235,6 @@ jobs:
       UNDATUM_TEST_MONGO_URI: mongodb://localhost:27017
       UNDATUM_TEST_ELASTIC_URI: http://localhost:9200
       UNDATUM_TEST_CLICKHOUSE_URI: clickhouse://undatum:undatum@localhost:8123/undatum
-      # The ubuntu-latest runner image ships the Microsoft ODBC Driver 18 for SQL Server.
       UNDATUM_TEST_MSSQL_URI: mssql://sa:Undatum_Pass1@localhost:1433/master?TrustServerCertificate=yes
     steps:
     - uses: actions/checkout@v4
@@ -243,10 +242,21 @@ jobs:
       uses: actions/setup-python@v5
       with:
         python-version: "3.12"
+    - name: Install the Microsoft ODBC Driver 18 for SQL Server
+      # Not part of the ubuntu-latest runner image.
+      run: |
+        if ! odbcinst -q -d -n "ODBC Driver 18 for SQL Server" >/dev/null 2>&1; then
+          curl -fsSL -o /tmp/packages-microsoft-prod.deb \
+            "https://packages.microsoft.com/config/ubuntu/$(. /etc/os-release && echo "$VERSION_ID")/packages-microsoft-prod.deb"
+          sudo dpkg -i /tmp/packages-microsoft-prod.deb
+          sudo apt-get update
+          sudo ACCEPT_EULA=Y apt-get install -y msodbcsql18
+        fi
     - name: Install dependencies
+      # The elasticsearch client must match the server's major version (8.x service above).
       run: |
         python -m pip install --upgrade pip
-        pip install -e ".[dev,postgres,mysql,elastic,clickhouse,mssql]"
+        pip install -e ".[dev,postgres,mysql,elastic,clickhouse,mssql]" "elasticsearch>=8,<9"
     - name: Run integration tests
       run: pytest -q -m integration tests/integration
 
@@ -307,7 +317,7 @@ jobs:
         printf 'name,age\nAlice,30\nBob,25\n' > /tmp/sample.csv
         /tmp/undatum-smoke/bin/undatum convert /tmp/sample.csv /tmp/sample.parquet --no-progress
         /tmp/undatum-smoke/bin/undatum convert /tmp/sample.csv /tmp/sample.jsonl --no-progress
-        /tmp/undatum-smoke/bin/undatum stats /tmp/sample.csv --limit 10
+        /tmp/undatum-smoke/bin/undatum stats /tmp/sample.csv
         /tmp/undatum-smoke/bin/undatum rename /tmp/sample.csv --map name:who --output /tmp/renamed.parquet
         test -s /tmp/renamed.parquet
         /tmp/undatum-smoke/bin/undatum validate /tmp/sample.csv --fields name --rule common.email --mode stats
