@@ -49,14 +49,14 @@ commit message.
 | Job | When | What fails it |
 |-----|------|---------------|
 | `Benchmarks / 100k rows against the base branch` | pull requests that touch `undatum/`, dependencies or the harness | a command over 20% slower or larger than on the base branch (ignoring changes under 0.1 s and 15 MB), a command over its budget, or a command that fails |
-| `Benchmarks / 1M rows (nightly history)` | every night on `master`, and on demand | a command over its 1M-row budget |
+| `Benchmarks / 1M rows (history)` | on demand only (Actions → Benchmarks → Run workflow); the nightly schedule is off | a command over its 1M-row budget |
 | `CI / memory-budget` | every push and pull request | a row command over 300 MB on 1M rows, or growing by more than 20% (and 40 MB) from 250k to 1M rows |
 
-The pull-request job writes a comparison table to the run summary. The nightly job uploads
+The pull-request job writes a comparison table to the run summary. The 1M-row job uploads
 its results (`benchmarks-nightly-*`, kept for 90 days) and appends them to the
-`benchmark-history` branch. The documentation site redraws this chart after each nightly run:
+`benchmark-history` branch. The documentation site redraws this chart after each run:
 
-![Nightly benchmark history](/img/benchmark-history.svg)
+![Benchmark history](/img/benchmark-history.svg)
 
 ## Findings from the first measurements (2026-10)
 

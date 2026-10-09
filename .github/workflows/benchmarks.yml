@@ -3,8 +3,9 @@ name: Benchmarks
 # Wall time and peak memory of core commands (scripts/benchmarks.py).
 # Pull requests: 100k rows, head against the base branch on the same runner; fails on a
 # regression above 20% or a budget overrun (tests/benchmarks/budgets.toml).
-# Nightly: 1M rows on master; results are kept as an artifact and appended to the
-# `benchmark-history` branch, whose chart the documentation site shows.
+# On demand (workflow_dispatch; the nightly schedule is off): 1M rows; results are kept as an
+# artifact and appended to the `benchmark-history` branch, whose chart the documentation site
+# shows.
 
 on:
   pull_request:
@@ -16,8 +17,6 @@ on:
       - "scripts/benchmarks.py"
       - "tests/benchmarks/**"
       - ".github/workflows/benchmarks.yml"
-  schedule:
-    - cron: "23 2 * * *"
   workflow_dispatch:
 
 permissions:
@@ -75,7 +74,7 @@ jobs:
         path: benchmarks.json
 
   nightly:
-    name: 1M rows (nightly history)
+    name: 1M rows (history)
     if: github.event_name != 'pull_request' && github.repository == 'datenoio/undatum'
     runs-on: ubuntu-latest
     timeout-minutes: 60
