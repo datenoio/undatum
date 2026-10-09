@@ -19,6 +19,24 @@ For multi-GB inputs:
 undatum convert huge.jsonl.zst huge.parquet --low-memory
 ```
 
+## Filter and compute while converting
+
+```bash
+undatum convert data.csv berlin.parquet --where "city = 'Berlin'" --add "total = price * quantity"
+```
+
+## Partitioned output
+
+```bash
+undatum convert data.csv by_country --partition-by country -O parquet
+```
+
+## Convert a stream
+
+```bash
+cat data.csv | undatum convert - data.jsonl
+```
+
 ## XML to JSON Lines
 
 ```bash

@@ -43,7 +43,7 @@ undatum sniff [OPTIONS] INPUT_FILE
 | Option | Description | Default |
 |--------|-------------|---------|
 | `-o`, `--output` TEXT | Optional output file path. If not specified, prints to stdout. |  |
-| `-O`, `--format-out` TEXT | Alias for --format. Also inferred when --output ends in .json/.yaml/.yml. |  |
+| `-O`, `--format-out` TEXT | Output format: 'text' (default), 'json', or 'yaml'. Also inferred when --output ends in .json/.yaml/.yml. |  |
 | `-d`, `--delimiter` TEXT | CSV delimiter character (auto-detected when omitted). |  |
 | `--quotechar` TEXT | CSV quote character (iterabledata default '"' when omitted). |  |
 | `--encoding` TEXT | File encoding (e.g., 'utf8', 'latin1'). |  |

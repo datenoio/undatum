@@ -94,7 +94,8 @@ curl "http://127.0.0.1:8000/sales/42"
 
 - The API is read-only; there are no mutation endpoints
 - It binds to `127.0.0.1` by default
-- Optional shared-secret auth: `--api-key` or `UNDATUM_API_KEY` (`X-API-Key` or `?api_key=`). This is not SSO or per-user authorization
+- Optional shared-secret auth: `--api-key` or `UNDATUM_API_KEY`; clients send the `X-API-Key` header (`?api_key=` is ignored). This is not SSO or per-user authorization
+- Queries are cancelled after `--query-timeout` seconds (default 30) with HTTP 504
 - Put the server behind a reverse proxy with TLS and real auth before exposing it beyond localhost
 
 See [Data API security](/integrations/data-api) for CORS, reverse-proxy guidance, and cloud resource paths.

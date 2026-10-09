@@ -600,7 +600,8 @@ def sniff(
     format_out: Annotated[
         str,
         typer.Option(
-            help="Alias for --format. Also inferred when --output ends in .json/.yaml/.yml."
+            help="Output format: 'text' (default), 'json', or 'yaml'. "
+            "Also inferred when --output ends in .json/.yaml/.yml."
         ),
     ] = None,
     delimiter: Annotated[

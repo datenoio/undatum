@@ -249,11 +249,20 @@ raise DatabaseError(
 Use appropriate exit codes:
 
 - **1**: User errors (invalid input, file not found)
-- **2**: Configuration errors (missing dependencies, invalid config)
+- **2**: Usage and configuration errors (unknown option, missing dependencies, invalid config)
 - **3**: System errors (permission denied, database errors)
 - **4**: Internal errors (unexpected exceptions)
+- **130**: Interrupted (Ctrl-C)
 
 Exit codes are automatically set by exception classes. Don't manually set `sys.exit()`.
+A command must never exit with 0 after an error, and a failing check (a `--fail-on` drift, a
+`quality` threshold) exits with 1.
+
+Each class also has a stable `code` (`file_not_found`, `validation_error`,
+`dependency_missing`, ...). With `--json` or `--format-out json` the handler prints the error as
+a JSON object on stderr (`{"error": {"code": ..., "message": ...}}`) instead of text; the codes
+are listed on the [JSON output](/commands/json-output#errors) page. When you add an error
+class, give it a `code` and document it there.
 
 ## Global Error Handling
 

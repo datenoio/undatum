@@ -10,9 +10,9 @@ undatum supports **140+ formats** via [iterabledata](https://github.com/datenoio
 Capabilities differ by format: many are **read-only**, some require extras, and streaming
 support varies.
 
-Recommended engine: **iterabledata ≥ 1.0.18** on Python 3.10+ for the full open-data pack,
-lakehouse writes, codec profiles, and Avro write support. Run `undatum formats list` to see
-what your install actually exposes.
+undatum requires **Python 3.10+** and **iterabledata ≥ 1.0.21** (installed with undatum), which
+provides the open-data pack, lakehouse writes, codec profiles and Avro writes. Run
+`undatum formats list` to see what your install actually exposes.
 
 ## How to inspect live capabilities
 
@@ -38,7 +38,7 @@ undatum formats list --capabilities --json
 
 | Format | Read | Write | Streaming | Notes |
 |--------|------|-------|-----------|-------|
-| CSV / TSV | yes | yes | yes | Delimiter auto-detected (`,`;`\\t`\|`) |
+| CSV / TSV | yes | yes | yes | Delimiter auto-detected (comma, semicolon, tab, pipe), also inside `.gz`/`.zst`/`.bz2`/`.xz`/`.zip` |
 | JSON Lines / NDJSON | yes | yes | yes | Preferred for nested records |
 | JSON (array/object) | yes | yes | limited | Prefer JSONL for large files |
 | Parquet | yes | yes | batched | Requires `pyarrow` (default dependency); codec profiles `fast`/`balanced`/`max` |
@@ -62,16 +62,22 @@ Parquet/ORC/AVRO with format-native compression. See [`repack`](/commands/repack
 
 | Family | Examples | Notes |
 |--------|----------|-------|
-| Tabular text | `csv`, `tsv`, `jsonl`/`ndjson`, `annotatedcsv`, `csvw`, `fwf`, `ssv` | Core CLI path |
-| Columnar / analytics | `parquet`, `orc`, `avro`, `arrow`, `geoparquet`, `zarr`, `vortex`, `ddb` | Many need optional deps |
+| Tabular text | `csv`, `tsv`, `psv` (RO), `ltsv`, `jsonl`/`ndjson`, `annotatedcsv`, `csvw`, `fwf`, `ssv`, `txt` | Core CLI path |
+| Columnar / analytics | `parquet`, `orc`, `avro`, `arrow`, `geoparquet`, `zarr`, `vtx` (Vortex), `ddb` | Many need optional deps |
 | Lakehouse / warehouse | `delta`, `iceberg`, `lance`, `hudi` (RO), `ducklake`, `paimon`, `paimon_row`, `paimon_mosaic` | Delta/Iceberg writable in iterabledata 1.0.18+; install via `pip install "undatum[lakehouse]"` (or `iterabledata[lakehouse]`) |
-| Geospatial | `geojson`, `geojsonseq`, `gml`, `gpx`, `shp`, `gpkg`, `kml`, `fgdb`/`gdb`, `mif`, `asc`, `e00`, `las`, `bag`, `czml` | Open-data GIS pack largely experimental (1.0.18) |
-| Scientific / geophysical | `h5`, `nc`, `mat`, `segy`, `grib2`, `mseed`, `cif`, `pdb`, `xyz`, `edi` | Often read-only; extras such as `mat`, `geophysical`, `lidar` |
-| Business / legacy | `mdb`/`accdb`, `lotus123` (`123`/`wk1`), `xlsb` | Access needs `iterabledata[access]` |
-| Containers | `zip`, `tar` (RO multi-member), WebDataset | TAR tags records with `_member` (1.0.16+) |
-| Genomic / bio | `genomic_vcf`, `bam`, `sam`, `bed*`, `gff3`/`gtf`, `cram`, `fasta`/`fastq` | VCF vs vCard `.vcf` disambiguated by content |
-| Graph / RDF | `graphml`, `gexf`, `jsonld`, `nt`, `ttl`, `trig`, `hdt` | HDT via open-data pack |
-| Logs / feeds / OTLP | `log`, `gelf`, `cef`, `rss`, `kafka`, OTLP JSON/Protobuf | |
+| Geospatial | `geojson`, `geojsonseq`, `topojson`, `flatgeobuf` (RO), `gml`, `gpx`, `shp`, `gpkg`, `kml`, `kmz` (RO), `fgdb`/`gdb`, `mif`, `asc`, `e00`, `las`, `bag`, `czml`, `mvt` (RO), `dxf` (RO) | Open-data GIS pack partly experimental; `flatgeobuf` needs `undatum[gis]` |
+| Scientific / geophysical | `h5`, `nc`, `cdf`, `mat`, `npy`, `segy`, `grib2`, `mseed`, `cif`, `pdb`, `xyz`, `edi` | Often read-only; extras such as `mat`, `geophysical`, `lidar` |
+| Statistical | `sas`, `sav`, `dta`, `rds`/`rda`, `px` (PC-Axis), `dbf`, `arff` | Read-only |
+| Business / legacy | `mdb`/`accdb`, `lotus123` (`123`/`wk1`), `xlsb` | Access needs `undatum[access]` |
+| Binary serialization | `mp` (MessagePack), `cbor`, `ion`, `smile`, `ubj`, `bencode`, `der` (ASN.1), `pb`, `capnp`, `thrift`, `fbs` (RO)/`flexbuf` | Protobuf, Cap'n Proto, Thrift and FlatBuffers need a schema |
+| Configuration / notation | `yml` (YAML), `toml`, `ini`, `hocon`, `edn` | |
+| Database dumps | `copy` (PostgreSQL `COPY`), `sql` (`mysqldump`) | |
+| ML / big data | `tfrecord`, `libsvm`, `seq` (Hadoop SequenceFile), `rio` (RecordIO), `beam`, `ckpt` (Flink) | |
+| Web, mail, directory | `htm` (RO), `mht`, `arc` (WARC), `cdx`, `eml`, `mbox`, `ics`, `ldif` | |
+| Containers | `zip`, `zipxml` (RO, XML inside ZIP), `tar` (RO multi-member), WebDataset | TAR tags records with `_member` |
+| Genomic / bio | `genomic_vcf`, `bam`, `sam`, `bed*`, `gff3`/`gtf`, `cram`, `fa` (FASTA), `fq` (FASTQ) | VCF vs vCard `.vcf` disambiguated by content |
+| Graph / RDF | `graphml`, `gexf`, `gv` (Graphviz, RO), `jsonld`, `nt`, `nq`, `n3` (RO), `ttl`, `trig`, `trix` (RO), `hdt` | HDT via open-data pack |
+| Logs / feeds / streams | `log`, `gelf`, `cef`, `ilp` (InfluxDB line protocol), `pcap` (RO), `rss` (RO), `kafka`, `pulsar`, `otlp-json`, `otlp-protobuf` | OTLP is experimental (`otlp` extra of iterabledata) |
 | Niche open data | `iati`, `fst`, `webdataset` | Experimental; optional extras |
 
 ## Important caveats
@@ -86,9 +92,8 @@ Parquet/ORC/AVRO with format-native compression. See [`repack`](/commands/repack
 3. **Large files.** Prefer `--low-memory` on `convert` / `sort` / `dedup`, and Parquet or
    JSONL over in-memory JSON arrays. Parquet/Arrow writers buffer bounded batches
    (iterabledata 1.0.17+).
-4. **Python version.** Recent iterabledata releases (1.0.11+) require **Python ≥ 3.10**.
-   undatum still declares `requires-python >= 3.9`; use Python 3.10+ to pull the latest
-   iterabledata catalog from PyPI.
+4. **Python version.** undatum and iterabledata require **Python ≥ 3.10**; on Python 3.9 pip
+   resolves to undatum 1.6.0.
 5. **Security / error policy** (iterabledata 1.0.16+): XML parsers disable external entities;
    pickle reads warn unless `trust=True` (`undatum convert --trust`, and the same flag on
    other read commands); malformed rows raise `FormatParseError` unless you pass
@@ -102,7 +107,7 @@ installed version. Upstream release notes:
 
 ## Catalog notes
 
-undatum supports **140+ formats** through iterabledata (exact catalog depends on the iterabledata version and optional extras). Format detection is automatic from file extensions and content; override with `--format-in` / `--format-out` when needed. Run `undatum formats list` for the authoritative catalog on your installation. Prefer **iterabledata ≥ 1.0.18** on Python 3.10+ for lakehouse writes and the open-data format pack — see the [format support matrix](/formats/).
+undatum supports **140+ formats** through iterabledata (exact catalog depends on the iterabledata version and optional extras). Format detection is automatic from file extensions and content; override with `--format-in` / `--format-out` when needed. Run `undatum formats list` for the authoritative catalog on your installation.
 
 ### Core tabular formats
 

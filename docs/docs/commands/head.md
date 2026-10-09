@@ -26,6 +26,9 @@ undatum head workbook.xlsx --table Sheet2 --limit 5
 
 # Nested JSONL: unfold dict fields onto dotted paths
 undatum head nested.jsonl --flatten-nested --limit 5
+
+# First 3 rows matching a SQL condition
+undatum head data.csv -n 3 --where "status = 'active'"
 ```
 
 <!-- BEGIN GENERATED: reference -->

@@ -67,8 +67,10 @@ The four informational tools return the same documents as the CLI's `--json` out
 Every data operation of the CLI's operation registry is also a tool, named like the command:
 `cat`, `dedup`, `enum`, `exclude`, `explode`, `fill`, `fixlengths`, `head`, `join`, `mask`,
 `rename`, `replace`, `reverse`, `sample`, `search`, `select`, `slice`, `sort`, `tail`,
-`transpose`. Their parameters are generated from the operation's configuration, so a new
-operation becomes a tool automatically.
+`transpose`, and `where` — the SQL filter and computed columns of the CLI's `--where` and
+`--add` (`where(where="amount > 100 AND city = 'Berlin'", add=["total = price * qty"])`).
+Their parameters are generated from the operation's configuration, so a new operation becomes
+a tool automatically.
 
 - `input_path` (required) plus the operation's options, e.g. `dedup(keys=["id"], keep="last")`.
 - Without `output_path` the tool is read-only and returns up to `limit` records (default 100) with

@@ -18,6 +18,16 @@ undatum frequency sales.csv --fields region,status
 
 `tui` and `web` need extras: `pip install "undatum[tui]"` / `"undatum[web]"`.
 
+## Filter without writing a query
+
+`--where` takes a SQL condition on `select`, `search`, `head`, `sample`, `count` and `convert`
+and keeps the original values in the output:
+
+```bash
+undatum count sales.csv --where "amount > 100"
+undatum select sales.csv --where "amount > 100" --add "net = amount * 0.8" --fields name,amount,net
+```
+
 ## Ad-hoc SQL across files
 
 A single input is the view `data`; multiple inputs are named after their file stems.

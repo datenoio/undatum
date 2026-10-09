@@ -84,6 +84,7 @@ Some features require optional dependencies, installed as extras. This is the ca
 | `cloud` | Multi-cloud storage via fsspec (S3 + GCS + Azure) |
 | `postgres`, `mysql`, `mssql`, `clickhouse` | Database connectors (MongoDB support is included in the base install) |
 | `elastic` | Elasticsearch / OpenSearch (`db load`, `elasticsearch://` URIs) |
+| `phone` | National phone numbers in validation rules (`format: phone` with `region`, phonenumbers) |
 | `frictionless` | Full Frictionless Data Package validation |
 | `lakehouse` | Delta / Iceberg / Lance / DuckLake / Hudi via iterabledata |
 | `gis` | Geospatial and LiDAR formats |
@@ -111,6 +112,7 @@ pip install "undatum[mysql]"
 pip install "undatum[mssql]"
 pip install "undatum[clickhouse]"
 pip install "undatum[elastic]"
+pip install "undatum[phone]"
 pip install "undatum[frictionless]"
 pip install "undatum[lakehouse]"
 pip install "undatum[gis]"

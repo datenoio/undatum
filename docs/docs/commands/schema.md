@@ -40,7 +40,18 @@ undatum schema data.jsonl --validate --sample-size 500
 
 # Generate schema with AI-powered field documentation
 undatum schema data.jsonl --autodoc --output schema.yaml
+
+# Machine-readable schema (undatum.schema/1), usable as a drift or quality baseline
+undatum schema data.jsonl --json
+
+# Compare schemas: same as `diff --schema` and `schema-drift`
+undatum schema diff data.csv data.jsonl
+undatum schema drift data.csv data.jsonl --fail-on removed,type
 ```
+
+`undatum schema diff OLD NEW` and `undatum schema drift FILES...` are spellings of
+[`diff --schema`](/commands/diff#schema-changes) and [`schema-drift`](/commands/schema-drift);
+they take those commands' options.
 
 **Supported schema formats:**
 - `yaml` (default) - YAML format with full schema details

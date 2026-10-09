@@ -15,6 +15,9 @@ undatum search data.jsonl --pattern "^[0-9]+$" --fields id,code
 
 # Case-insensitive search
 undatum search data.csv --pattern "ERROR" --ignore-case --output matches.jsonl
+
+# Combine with a SQL condition
+undatum search data.csv --pattern "^A" --fields name --where "amount > 100"
 ```
 
 <!-- BEGIN GENERATED: reference -->

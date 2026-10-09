@@ -10,8 +10,12 @@ All commands are available as `undatum <command>` or the shorter `data` alias
 (`data convert …` is identical to `undatum convert …`).
 
 Use `undatum <command> --help` for the live flag list. Flags that appear on many
-commands (`--flatten-nested`, `--on-error`, `--filter`, `--table`, `--quotechar`)
-are documented under [Shared CLI options](/commands/shared-options).
+commands (`--format-in`/`--format-out`, `--limit`, `--where`, `--flatten-nested`, `--on-error`,
+`--filter`, `--table`, `--quotechar`) are documented under
+[Shared CLI options](/commands/shared-options). `-` as the input path reads standard input, and
+informational commands print a versioned JSON document with `--json` — see
+[JSON output](/commands/json-output). Exit codes are listed under
+[troubleshooting](/getting-started/troubleshooting).
 
 ## Convert and I/O
 
@@ -22,6 +26,7 @@ are documented under [Shared CLI options](/commands/shared-options).
 | `flatten` | [`/commands/flatten`](/commands/flatten) |
 | `formats` | [`/commands/formats`](/commands/formats) |
 | Shared flags | [`/commands/shared-options`](/commands/shared-options) |
+| JSON output | [`/commands/json-output`](/commands/json-output) |
 
 ## Inspect
 
@@ -35,7 +40,6 @@ are documented under [Shared CLI options](/commands/shared-options).
 | `tail` | [`/commands/tail`](/commands/tail) |
 | `table` | [`/commands/table`](/commands/table) |
 | `stats` | [`/commands/stats`](/commands/stats) |
-| `profile` | alias of `stats` — [`/commands/stats`](/commands/stats) |
 | `frequency` | [`/commands/frequency`](/commands/frequency) |
 | `uniq` | [`/commands/uniq`](/commands/uniq) |
 
@@ -70,12 +74,13 @@ are documented under [Shared CLI options](/commands/shared-options).
 
 | Command | Page |
 |---------|------|
+| `quality` | [`/commands/quality`](/commands/quality) |
 | `validate` | [`/commands/validate`](/commands/validate) |
+| Validation rules | [`/commands/validate-rules`](/commands/validate-rules) |
 | `schema` | [`/commands/schema`](/commands/schema) |
 | `schema-bulk` | [`/commands/schema-bulk`](/commands/schema-bulk) |
+| `schema-drift` | [`/commands/schema-drift`](/commands/schema-drift) |
 | `doc` | [`/commands/doc`](/commands/doc) |
-| `document` | alias of `doc` — [`/commands/doc`](/commands/doc) |
-| `scheme` | deprecated; use `schema --format cerberus` — [`/commands/schema`](/commands/schema) |
 
 ## SQL and visualization
 
@@ -102,7 +107,6 @@ are documented under [Shared CLI options](/commands/shared-options).
 
 | Command | Page |
 |---------|------|
-| `ingest` | [`/commands/ingest`](/commands/ingest) |
 | `db` | [`/commands/db`](/commands/db) |
 
 ## Interactive and API
@@ -126,3 +130,17 @@ are documented under [Shared CLI options](/commands/shared-options).
 |---------|------|
 | `plugins` | [`/commands/plugins`](/commands/plugins) |
 | `config` | [`/commands/config`](/commands/config) |
+| `migrate-script` | [`/commands/migrate-script`](/commands/migrate-script) |
+
+## Deprecated commands
+
+These keep working with a warning on stderr and are removed in 2.0; they are hidden from
+`--help`. [`migrate-script`](/commands/migrate-script) rewrites them in scripts, and the
+[migration guide](/getting-started/migrating-to-2) lists every change.
+
+| Command | Use instead |
+|---------|-------------|
+| `profile` | [`stats`](/commands/stats) |
+| `document` | [`doc`](/commands/doc) |
+| `scheme` | [`schema --format cerberus`](/commands/schema) |
+| `ingest` | [`db load`](/commands/db) — see [`ingest`](/commands/ingest) |

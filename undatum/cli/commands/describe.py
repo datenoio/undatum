@@ -91,7 +91,8 @@ def analyze(
     format_out: Annotated[
         str,
         typer.Option(
-            help="Alias for --outtype. Also inferred from --output (.json/.yaml/.yml/.md)."
+            help="Output format: 'text' (default), 'json', 'yaml', or 'markdown'. "
+            "Also inferred from --output (.json/.yaml/.yml/.md)."
         ),
     ] = None,
     output: Annotated[

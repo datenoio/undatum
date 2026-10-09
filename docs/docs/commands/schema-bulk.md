@@ -8,7 +8,7 @@ Extracts schemas from multiple files at once using a glob pattern or directory p
 
 The CLI command is **`schema-bulk`** (hyphen), not `schema_bulk`.
 
-`--autodoc` uses the same five providers as [`analyze`](/commands/analyze): openai, openrouter, ollama, lmstudio, perplexity.
+`--autodoc` uses the same iterabledata providers as [`analyze`](/commands/analyze) and [`ai`](/commands/ai): `openai`, `anthropic`, `gemini`, `azure`, `openrouter`, `ollama`, `lmstudio`, `perplexity` and `openai-compatible`. Field descriptions send field names only.
 
 ```bash
 # Distinct schemas across all CSV files in a directory

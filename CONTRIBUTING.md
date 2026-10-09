@@ -157,10 +157,7 @@ pytest --cov=undatum --cov-report=html
 
 3. **Run checks**: Ensure all checks pass:
    ```bash
-   black undatum/
-   ruff check undatum/
-   mypy undatum/
-   pytest
+   make check-all   # ruff format check, ruff lint, mypy ratchet, pytest
    ```
 
 4. **Commit**: Write clear commit messages following conventional commits:

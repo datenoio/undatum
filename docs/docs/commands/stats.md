@@ -35,7 +35,7 @@ undatum stats nested.jsonl --flatten-nested --no-keep-nested-parents
 undatum stats workbook.xlsx --table Sheet2
 ```
 
-**What is filled depends on the engine.** DuckDB populates missing rates, type categories, and distribution stats. `--engine iterable` still reports field names, uniqueness, and lengths; `mean` / `median` / `stddev` / `type_category` / `missing_rate` are often empty.
+**What is filled depends on the engine.** DuckDB populates missing rates, type categories, and distribution stats. `--engine python` still reports field names, uniqueness, and lengths; `mean` / `median` / `stddev` / `type_category` / `missing_rate` are often empty.
 
 **DuckDB statistics include:**
 - Field types and array flags

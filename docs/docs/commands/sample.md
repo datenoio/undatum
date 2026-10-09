@@ -4,7 +4,7 @@ description: "undatum sample command reference"
 ---
 # `sample`
 
-Randomly selects rows from a data file using reservoir sampling. Either `--n` or `--percent` is required.
+Randomly selects rows from a data file using reservoir sampling. Either `--limit` (`-n`) or `--percent` is required; without them the command exits with 1.
 
 Write with `--output`. A trailing path is not a positional argument.
 
@@ -14,6 +14,9 @@ undatum sample data.csv --limit 1000 --output output.csv
 
 # Sample by percentage
 undatum sample data.jsonl --percent 10 --output output.jsonl
+
+# Sample among the rows matching a SQL condition
+undatum sample data.csv --limit 2 --where "amount > 50"
 ```
 
 <!-- BEGIN GENERATED: reference -->

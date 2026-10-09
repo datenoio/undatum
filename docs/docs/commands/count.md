@@ -18,6 +18,12 @@ undatum count data.parquet --engine duckdb
 
 # Named Excel sheet
 undatum count workbook.xlsx --table Sheet2
+
+# Rows matching a SQL condition
+undatum count data.csv --where "amount > 100"
+
+# Machine-readable result (undatum.count/1)
+undatum count data.csv --json
 ```
 
 <!-- BEGIN GENERATED: reference -->

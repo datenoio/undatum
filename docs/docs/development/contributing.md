@@ -10,7 +10,7 @@ Thank you for your interest in contributing to undatum! This document provides g
 
 ### Prerequisites
 
-- Python 3.9 or higher
+- Python 3.10 or higher (we support CPython versions that have not reached end of life)
 - Git
 - pip
 
@@ -36,42 +36,50 @@ make install-dev
 pip install -e ".[dev]"
 ```
 
-Or install manually:
-```bash
-pip install -e .
-pip install black ruff mypy pylint pytest pytest-cov pre-commit
-```
+The `dev` extra pins the tool versions used by CI (ruff, mypy) and installs pytest and
+pre-commit. Python 3.10 is the minimum supported version; use it for type checking.
 
 ## Code Style
 
+All checks run with `make check-all` (format check, lint, type check, tests).
+
 ### Formatting
 
-We use `black` for code formatting with a line length of 100 characters:
+`ruff format` formats the code (line length 100):
 
 ```bash
-black undatum/
+make format          # ruff format undatum/ tests/ scripts/
+make format-check    # what CI runs
 ```
 
 ### Linting
 
-We use `ruff` for fast linting and `pylint` for deeper analysis:
+`ruff check` is the only linter. Besides pycodestyle, pyflakes, isort, bugbear,
+comprehensions and pyupgrade, it applies a selection of pylint rules (`PL`) and Google-style
+docstring rules (`D`) for `undatum/cmds/` and `undatum/sdk/`:
 
 ```bash
-ruff check undatum/
-pylint undatum/
+make lint            # ruff check + dependency bound check
 ```
+
+Every runtime dependency and extra in `pyproject.toml` needs a lower and an upper version
+bound (`scripts/check_dependency_bounds.py`); the "lowest direct dependencies" CI job tests
+the lower bounds.
 
 ### Type Checking
 
-We use `mypy` for type checking:
+mypy runs as a ratchet: `mypy-baseline.json` records the number of errors per file, and CI
+fails when a file gets more errors than recorded. `undatum/common/` is fully annotated and
+checked with `disallow_untyped_defs`.
 
 ```bash
-mypy undatum/
+make type-check      # python scripts/mypy_ratchet.py
+make type-baseline   # after fixing errors: lock in the lower counts
 ```
 
 ### Pre-commit Hooks
 
-Install pre-commit hooks to automatically check code before commits:
+Install pre-commit hooks to run ruff before every commit:
 
 ```bash
 pre-commit install
@@ -119,6 +127,20 @@ npm start          # local preview
 npm run build      # production build (also `make docs`)
 ```
 
+Parts of the site are generated, and CI fails when they are stale. Regenerate them after
+changing the corresponding code:
+
+```bash
+python scripts/generate_cli_reference.py    # CLI options or help text
+python scripts/generate_sdk_reference.py    # SDK docstrings or signatures
+python scripts/generate_result_schemas.py   # JSON result layouts
+python scripts/generate_rule_reference.py   # validation rule catalogue
+python scripts/run_doc_examples.py docs/docs/commands/head.md  # run a page's examples
+```
+
+Shell examples run in CI against fixture files; mark blocks that need a server, cloud storage
+or an AI provider as `bash norun`.
+
 See the [docs README](https://github.com/datenoio/undatum/blob/master/docs/README.md) and [GitHub Pages setup](https://github.com/datenoio/undatum/blob/master/docs/GITHUB_PAGES_SETUP.md). The published site is https://datenoio.github.io/undatum/.
 
 ## Testing
@@ -152,10 +174,7 @@ pytest --cov=undatum --cov-report=html
 
 3. **Run checks**: Ensure all checks pass:
    ```bash
-   black undatum/
-   ruff check undatum/
-   mypy undatum/
-   pytest
+   make check-all   # ruff format check, ruff lint, mypy ratchet, pytest
    ```
 
 4. **Commit**: Write clear commit messages following conventional commits:
