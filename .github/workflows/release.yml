@@ -256,8 +256,15 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      # Only the distributions and binaries: the container jobs also leave docker build
+      # records (*.dockerbuild), which are not zip archives and fail the download.
       - uses: actions/download-artifact@v4
         with:
+          name: dist
+          path: artifacts/dist/
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: undatum-*
           path: artifacts/
       - name: Release notes from commits
         id: notes
