@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://datenoio.github.io/undatum/schemas/undatum.schema-diff.v1.json",
+  "title": "Schema changes between two files or declared schemas",
+  "description": "Printed by `undatum diff --schema --json`.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "const": "undatum.schema-diff/1",
+      "description": "Result layout"
+    },
+    "old": {
+      "type": "string",
+      "description": "Baseline file or schema"
+    },
+    "new": {
+      "type": "string",
+      "description": "Compared file or schema"
+    },
+    "summary": {
+      "type": "object",
+      "description": "Changes per kind: added, removed, type, nullability"
+    },
+    "changes": {
+      "type": "array",
+      "description": "Changes: kind, field, old and new type or nullability"
+    },
+    "renames": {
+      "type": "array",
+      "description": "Likely renames: old, new, name_similarity, value_overlap"
+    }
+  },
+  "required": [
+    "schema",
+    "old",
+    "new",
+    "summary",
+    "changes",
+    "renames"
+  ]
+}

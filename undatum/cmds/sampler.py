@@ -2,7 +2,6 @@
 
 import logging
 import random
-import sys
 
 from ..common.command_utils import (
     ITERABLE_OPTIONS_KEYS,  # noqa: F401
@@ -12,11 +11,19 @@ from ..common.command_utils import (
 )
 from ..common.duckdb_config import create_duckdb_connection, get_duckdb_config_from_options
 from ..common.engine_selector import detect_engine
-from ..common.errors import FileNotFoundError, FormatError, PermissionError, find_similar_files
-from ..common.iterable import DataWriter
+from ..common.errors import (
+    FileNotFoundError,
+    PermissionError,
+    ValidationError,
+    find_similar_files,
+)
 from ..common.path_utils import validate_file_path
 from ..common.s3_iterable import open_path as open_iterable
+from ..common.writer import emit_records
+from ..ops import write_query
 from ..utils import get_file_type, get_option, normalize_for_json  # noqa: F401
+
+logger = logging.getLogger(__name__)
 
 
 class Sampler:
@@ -39,7 +46,7 @@ class Sampler:
         except PermissionError as e:
             raise PermissionError(fromfile, operation="read") from e
 
-        logging.debug("Processing %s", fromfile)
+        logger.debug("Processing %s", fromfile)
         iterableargs = get_iterable_options(options)
         filetype = get_option(options, "filetype") or get_option(options, "format_in")
         engine = get_option(options, "engine") or "auto"
@@ -56,7 +63,23 @@ class Sampler:
             # For iterable, need to count first
             sample_size = None  # Will be calculated based on engine
         else:
-            logging.error("Sample size (--n or --percent) is required")
+            raise ValidationError("Sample size (--n or --percent) is required", field="n")
+
+        from ..ops.expr import where_steps
+
+        steps = where_steps(options)
+        if steps:
+            from ..io import open_source
+            from ..ops import SampleConfig, run_steps
+
+            cfg = SampleConfig(size=sample_size, percent=float(percent) if percent else None)
+            run_steps(
+                [*steps, ("sample", cfg)],
+                open_source(fromfile, options),
+                to_file,
+                engine=engine,
+                format_out=get_option(options, "format_out"),
+            )
             return
 
         detected_engine = detect_engine(fromfile, engine, filetype, operation="sample")
@@ -85,7 +108,7 @@ class Sampler:
                     # Fixed number of samples
                     limit_value = int(n)
                     query = f"SELECT * FROM {read_expr} ORDER BY RANDOM() LIMIT {limit_value}"
-                elif percent:
+                else:
                     # Percentage-based sampling
                     # First count total rows
                     count_query = f"SELECT COUNT(*) FROM {read_expr}"
@@ -93,15 +116,14 @@ class Sampler:
                     limit_value = max(1, int(total_count * float(percent) / 100))
                     query = f"SELECT * FROM {read_expr} ORDER BY RANDOM() LIMIT {limit_value}"
 
-                # Execute query and get results
-                relation = conn.execute(query)
-                column_names = relation.columns
-                rows = relation.fetchall()
-                items = [dict(zip(column_names, row)) for row in rows]
-                conn.close()
-                logging.info(f"sample: completed using DuckDB, sampled {len(items)} records")
+                try:
+                    write_query(conn, query, to_file)
+                finally:
+                    conn.close()
+                logger.info("sample: completed using DuckDB")
+                return
             except Exception as e:
-                logging.warning(f"DuckDB sample failed, falling back to iterable: {e}")
+                logger.warning(f"DuckDB sample failed, falling back to iterable: {e}")
                 detected_engine = "iterable"
 
         if detected_engine == "iterable":
@@ -118,8 +140,9 @@ class Sampler:
                 sample_size = max(1, int(count * float(percent) / 100))
 
             if sample_size is None or sample_size <= 0:
-                logging.error("Sample size (--n or --percent) is required")
-                return
+                raise ValidationError(
+                    "Sample size must be positive (--n or --percent)", field="percent"
+                )
 
             # Reservoir sampling
             iterable = open_iterable(fromfile, mode="r", iterableargs=iterableargs)
@@ -139,35 +162,11 @@ class Sampler:
                             reservoir[j] = item
 
                     if count % 100000 == 0:
-                        logging.debug("sample: processed %d records", count)
+                        logger.debug("sample: processed %d records", count)
             finally:
                 iterable.close()
 
             items = reservoir
-            logging.debug("sample: processed %d records, sampled %d", count, len(items))
+            logger.debug("sample: processed %d records, sampled %d", count, len(items))
 
-        if to_file:
-            to_type = get_file_type(to_file)
-            if not to_type:
-                raise FormatError(to_file, to_file.rsplit(".", 1)[-1])
-            out = open(to_file, "w", encoding="utf8")
-        else:
-            to_type = "jsonl"
-            out = sys.stdout
-
-        # Normalize items to convert non-JSON-serializable types (e.g., UUID) to strings
-        normalized_items = [normalize_for_json(item) for item in items]
-
-        # Extract fieldnames from items for CSV output
-        fieldnames = None
-        if to_type == "csv" and normalized_items:
-            if isinstance(normalized_items[0], dict):
-                fieldnames = list(normalized_items[0].keys())
-
-        writer = DataWriter(out, filetype=to_type, fieldnames=fieldnames)
-        writer.write_items(normalized_items)
-
-        if to_file:
-            out.close()
-
-        logging.debug("sample: processed %d records, sampled %d", count, len(items))
+        emit_records(items, to_file)

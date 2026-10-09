@@ -4,10 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "undatum"
-version = "1.7.0"
+dynamic = ["version"]
 description = "A powerful command-line tool for data processing and analysis"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [
@@ -18,7 +18,10 @@ classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Programming Language :: Python",
     "Programming Language :: Python :: 3 :: Only",
-    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Environment :: Console",
     "Intended Audience :: Developers",
     "Intended Audience :: System Administrators",
@@ -29,38 +32,36 @@ classifiers = [
     "Topic :: Utilities"
 ]
 dependencies = [
-    "avro>=1.10.2",
-    "chardet>=5.2.0",
-    "dnspython>=2.6.1",
-    "duckdb",
-    "elasticsearch",
-    "iterabledata>=1.0.18",
-    "jsonlines>=4.0.0",
-    "lz4>=4.3.2",
-    "numpy>=1.22.2",
-    "openpyxl>=3.1.2",
-    "orjson>=3.9.8",
-    "pandas>=2.0.3",
-    "pyarrow>=14.0.0",
-    "py7zr>=0.20.6",
-    "pydantic",
-    "pymongo>=4.5.0",
-    "pyorc>=0.8.0",
-    "python-docx>=0.8.11",
-    "pyyaml",
-    "pyzstd",
-    "qddate>=1.0.4",
-    "requests",
-    "rich>=13.6.0",
-    "tabulate>=0.8.7",
-    "tqdm",
-    "typer",
-    "validators>=0.22.0",
-    "xlrd>=2.0.1",
-    "xlwt",
-    "xmltodict>=0.13.0",
-    "xxhash",
-    "zipp>=3.19.1",
+    # Every direct dependency has a lower bound tested by the "lowest direct dependencies"
+    # CI job and an upper bound below the next major version, except where noted;
+    # scripts/check_dependency_bounds.py enforces this.
+    "avro>=1.11.3,<2",
+    "duckdb>=1.3,<2",
+    "iterabledata>=1.0.21,<1.1",
+    "lz4>=4.3.2,<5",
+    "openpyxl>=3.1.2,<4",
+    "orjson>=3.9.15,<4",
+    "pandas>=2.2.2,<4",
+    # No upper bound: pyarrow ships a major version every few months without breaking the
+    # Parquet/ORC reader and writer API used here (exempt in check_dependency_bounds.py).
+    "pyarrow>=16.0.0",
+    "py7zr>=0.20.6,<2",
+    "pydantic>=2.5,<3",
+    # Provides the ``bson`` module for BSON files as well as the MongoDB driver.
+    "pymongo>=4.6.3,<5",
+    "pyorc>=0.9.0,<1",
+    "python-docx>=1.1.0,<2",
+    "pyyaml>=6.0.1,<7",
+    "pyzstd>=0.16,<1",
+    "qddate>=1.0.4,<2",
+    "requests>=2.33.0,<3",
+    "rich>=13.6.0,<16",
+    "typer>=0.17,<1",
+    "validators>=0.22.0,<1",
+    "xlrd>=2.0.1,<3",
+    "xmltodict>=0.13.0,<2",
+    "xxhash>=3.0,<5",
+    "zstandard>=0.22,<1",
 ]
 
 [project.urls]
@@ -72,72 +73,81 @@ Issues = "https://github.com/datenoio/undatum/issues"
 
 [project.optional-dependencies]
 extract = [
-    "pdfplumber",
-    "pdf2image",
-    "pytesseract",
-    "textract",
+    "pdfplumber>=0.10,<1",
+    "pdf2image>=1.16,<2",
+    "pytesseract>=0.3.10,<1",
+    "textract>=2.0,<3",
 ]
 api = [
-    "fastapi",
-    "uvicorn",
-    "httpx",
+    "fastapi>=0.110,<1",
+    "uvicorn>=0.27,<1",
+    "httpx>=0.27,<1",
 ]
 plot = [
-    "matplotlib",
+    "matplotlib>=3.7,<4",
+]
+# National phone numbers in validation rules (format: phone with region).
+phone = [
+    "phonenumbers>=8.13,<10",
 ]
 tui = [
-    "textual>=0.80",
+    "textual>=0.80,<9",
 ]
 web = [
-    "fastapi",
-    "uvicorn",
-    "jinja2",
-    "python-multipart",
-    "httpx",
+    "fastapi>=0.110,<1",
+    "uvicorn>=0.27,<1",
+    "jinja2>=3.1,<4",
+    "python-multipart>=0.0.9,<1",
+    "httpx>=0.27,<1",
 ]
 mcp = [
-    "mcp",
+    # Both the 1.x FastMCP and the 2.x MCPServer APIs are supported.
+    "mcp>=1.2,<3",
 ]
 langchain = [
-    "langchain-core",
+    "langchain-core>=0.3,<2",
 ]
 polars = [
-    "polars",
+    "polars>=1.0,<3",
 ]
 dask = [
-    "dask[dataframe]",
+    "dask[dataframe]>=2024.1",
 ]
 s3 = [
-    "boto3",
+    "boto3>=1.28,<2",
 ]
 gcs = [
-    "fsspec",
-    "gcsfs",
+    "fsspec>=2024.2",
+    "gcsfs>=2024.2",
 ]
 azure = [
-    "fsspec",
-    "adlfs",
+    "fsspec>=2024.2",
+    "adlfs>=2024.2",
 ]
 cloud = [
-    "fsspec",
-    "s3fs",
-    "gcsfs",
-    "adlfs",
+    "fsspec>=2024.2",
+    "s3fs>=2024.2",
+    "gcsfs>=2024.2",
+    "adlfs>=2024.2",
 ]
 frictionless = [
-    "frictionless>=5.0",
+    "frictionless>=5.0,<6",
+]
+elastic = [
+    "elasticsearch>=8,<10",
 ]
 postgres = [
-    "psycopg2-binary",
+    "psycopg2-binary>=2.9,<3",
 ]
 mysql = [
-    "pymysql",
+    "pymysql>=1.1,<2",
 ]
 mssql = [
-    "pyodbc",
+    "pyodbc>=5.0,<6",
 ]
 clickhouse = [
-    "clickhouse-driver",
+    # The driver iterabledata uses for clickhouse:// URIs.
+    "clickhouse-connect>=0.7,<2",
 ]
 lakehouse = [
     "iterabledata[lakehouse]",
@@ -157,14 +167,22 @@ access = [
 compression = [
     "iterabledata[compression]",
 ]
+# Every optional feature (the previous behaviour of a plain install plus all extras).
+all = [
+    "undatum[extract,api,plot,phone,tui,web,mcp,langchain,polars,dask,cloud,frictionless,elastic,postgres,mysql,mssql,clickhouse,lakehouse,gis,scientific,access,compression]",
+]
+# Tool versions are pinned here and mirrored in .pre-commit-config.yaml and CI;
+# scripts/check_tool_versions.py fails CI when they drift.
 dev = [
-    "black",
-    "ruff",
-    "mypy",
-    "pylint",
-    "pytest",
-    "pytest-cov",
-    "pre-commit",
+    "ruff==0.14.9",
+    "mypy==1.19.1",
+    "types-PyYAML",
+    "types-requests",
+    "types-PyMySQL",
+    "pytest>=8",
+    "pytest-cov>=5",
+    "pytest-benchmark>=4",
+    "pre-commit>=3.7",
 ]
 
 [project.scripts]
@@ -172,38 +190,29 @@ undatum = "undatum.__main__:main"
 data = "undatum.__main__:main"
 undatum-mcp = "undatum.mcp.server:main"
 
+[tool.setuptools.dynamic]
+# Single source of truth: undatum/__init__.py (__version__).
+version = {attr = "undatum.__version__"}
+
 [tool.setuptools.packages.find]
 include = ["undatum*"]
 
 [tool.setuptools.package-data]
 "undatum.templates" = ["*.yml"]
+"undatum.validate" = ["data/*.json"]
 "undatum.recipes" = ["*.yml"]
 "undatum.web" = ["templates/*.html", "static/*"]
 
 [tool.setuptools.data-files]
 "share/man/man1" = ["man/undatum.1"]
 
-[tool.black]
-line-length = 100
-target-version = ['py39']
-include = '\.pyi?$'
-extend-exclude = '''
-/(
-  # directories
-  \.eggs
-  | \.git
-  | \.hg
-  | \.mypy_cache
-  | \.tox
-  | \.venv
-  | build
-  | dist
-)/
-'''
-
 [tool.ruff]
 line-length = 100
-target-version = "py39"
+target-version = "py310"
+
+[tool.ruff.format]
+# Keep each file's existing line endings (the repository mixes LF and CRLF).
+line-ending = "auto"
 
 [tool.ruff.lint]
 select = [
@@ -214,14 +223,30 @@ select = [
     "B",   # flake8-bugbear
     "C4",  # flake8-comprehensions
     "UP",  # pyupgrade
+    "PL",  # pylint rules (replaces the separate pylint run)
+    "D",   # docstrings (Google convention), scoped below
 ]
 ignore = [
-    "E501",  # line too long (handled by black)
+    "E501",  # line too long (handled by ruff format)
     "B008",  # do not perform function calls in argument defaults
     "C901",  # too complex
+    # Size/complexity limits (pylint's too-many-* checks were disabled as well).
+    "PLR0911", "PLR0912", "PLR0913", "PLR0915",
+    "PLR2004",  # magic values in comparisons
+    "PLC0415",  # imports inside functions keep CLI start-up fast (optional extras, heavy libs)
+    "PLW0603",  # module-level caches updated with `global`
+    "PLW2901",  # normalising a loop variable (`line = line.strip()`)
+    "D105",     # magic methods
+    "D107",     # __init__ arguments are documented in the class docstring (Google style)
 ]
 
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
 [tool.ruff.lint.per-file-ignores]
+# Docstring rules are enforced for commands and the SDK; extend the scope as other
+# packages get documented.
+"!undatum/{cmds,sdk}/**" = ["D"]
 # Plugin base classes intentionally provide optional no-op hooks
 "undatum/plugins/base.py" = ["B024", "B027"]
 
@@ -229,7 +254,7 @@ ignore = [
 known-first-party = ["undatum"]
 
 [tool.mypy]
-python_version = "3.9"
+python_version = "3.10"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = false
@@ -242,16 +267,20 @@ warn_no_return = true
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
+# Fully annotated packages: new code there must be typed (ratchet, see
+# scripts/mypy_ratchet.py). Add packages as they are cleaned up.
+module = ["undatum.common.*", "undatum.io.*", "undatum.ops.*", "undatum.sdk.*"]
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+
+[[tool.mypy.overrides]]
 module = [
-    "chardet.*",
     "click.*",
-    "jsonlines.*",
     "openpyxl.*",
     "orjson.*",
     "pandas.*",
     "pymongo.*",
     "qddate.*",
-    "tabulate.*",
     "validators.*",
     "xlrd.*",
     "xmltodict.*",
@@ -263,17 +292,8 @@ module = [
 ]
 ignore_missing_imports = true
 
-[tool.pylint.messages_control]
-max-line-length = 100
-disable = [
-    "too-few-public-methods",
-    "too-many-arguments",
-    "too-many-locals",
-    "too-many-branches",
-    "too-many-statements",
-    "too-many-instance-attributes",
-    "too-many-positional-arguments",
-]
+[tool.coverage.run]
+source = ["undatum"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -281,3 +301,8 @@ python_files = ["test_*.py", "*_test.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 addopts = "-v --tb=short"
+markers = [
+    "integration: needs a live database server (see tests/integration/test_databases.py)",
+    "benchmark: performance benchmarks",
+    "memory: peak-memory budgets (set UNDATUM_MEMORY_TESTS=1)",
+]

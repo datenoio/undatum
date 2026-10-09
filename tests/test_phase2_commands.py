@@ -14,27 +14,14 @@ from undatum.cmds.sampler import Sampler, normalize_for_json
 from undatum.cmds.searcher import Searcher
 from undatum.cmds.sorter import Sorter
 
-
-@pytest.fixture
-def sample_csv_file(tmp_path):
-    """Create a sample CSV file for testing."""
-    csv_file = tmp_path / "sample.csv"
-    csv_file.write_text("id,name,age\n1,Alice,30\n2,Bob,25\n3,Charlie,35\n4,Alice,30\n5,Bob,25\n")
-    return str(csv_file)
-
-
-@pytest.fixture
-def sample_jsonl_file(tmp_path):
-    """Create a sample JSONL file for testing."""
-    jsonl_file = tmp_path / "sample.jsonl"
-    content = (
-        '{"id": 1, "name": "Alice", "age": 30}\n'
-        '{"id": 2, "name": "Bob", "age": 25}\n'
-        '{"id": 3, "name": "Charlie", "age": 35}\n'
-        '{"id": 4, "name": "Alice", "age": 30}\n'
-    )
-    jsonl_file.write_text(content)
-    return str(jsonl_file)
+# Contents of the sample_csv_file / sample_jsonl_file fixtures (tests/conftest.py).
+SAMPLE_CSV = "id,name,age\n1,Alice,30\n2,Bob,25\n3,Charlie,35\n4,Alice,30\n5,Bob,25\n"
+SAMPLE_JSONL = (
+    '{"id": 1, "name": "Alice", "age": 30}\n'
+    '{"id": 2, "name": "Bob", "age": 25}\n'
+    '{"id": 3, "name": "Charlie", "age": 35}\n'
+    '{"id": 4, "name": "Alice", "age": 30}\n'
+)
 
 
 @pytest.fixture
@@ -129,7 +116,7 @@ class TestExploder:
         """Test explode with comma separator."""
         # Create JSONL instead of CSV for easier parsing
         jsonl_file = tmp_path / "tags.jsonl"
-        jsonl_file.write_text('{"id": 1, "tags": "tag1,tag2,tag3"}\n' '{"id": 2, "tags": "tag4"}\n')
+        jsonl_file.write_text('{"id": 1, "tags": "tag1,tag2,tag3"}\n{"id": 2, "tags": "tag4"}\n')
 
         output_file = tmp_path / "output.jsonl"
         exploder = Exploder()
@@ -193,6 +180,22 @@ class TestDeduplicator:
 class TestSorter:
     """Tests for sort command."""
 
+    def test_sort_duckdb_quotes(self, tmp_path, caplog):
+        """A quote in the path, a space in the field name and doubled quotes stay in DuckDB."""
+        input_file = tmp_path / "it's.csv"
+        input_file.write_text('id,first name,note\n1,a,plain\n2,b,"say ""hi"""\n')
+        output_file = tmp_path / "out.csv"
+        Sorter().sort(
+            str(input_file),
+            {"by": "first name", "desc": True, "output": str(output_file), "engine": "duckdb"},
+        )
+        assert output_file.read_text().splitlines() == [
+            "id,first name,note",
+            '2,b,"say ""hi"""',
+            "1,a,plain",
+        ]
+        assert "falling back" not in caplog.text
+
     def test_sort_single_column(self, sample_csv_file, tmp_path):
         """Test sort by single column."""
         output_file = tmp_path / "output.csv"
@@ -230,7 +233,7 @@ class TestSampler:
 
     def test_sample_with_uuid_objects(self, tmp_path):
         """Test sampling with UUID objects (simulating Parquet file data)."""
-        import jsonlines
+        import json
 
         # Create a JSONL file with UUID strings
         jsonl_file = tmp_path / "with_uuids.jsonl"
@@ -238,19 +241,21 @@ class TestSampler:
         uuid2 = str(uuid.uuid4())
         uuid3 = str(uuid.uuid4())
 
-        with jsonlines.open(str(jsonl_file), mode="w") as writer:
-            writer.write({"id": uuid1, "name": "Alice"})
-            writer.write({"id": uuid2, "name": "Bob"})
-            writer.write({"id": uuid3, "name": "Charlie"})
-            writer.write({"id": str(uuid.uuid4()), "name": "Diana"})
+        rows = [
+            {"id": uuid1, "name": "Alice"},
+            {"id": uuid2, "name": "Bob"},
+            {"id": uuid3, "name": "Charlie"},
+            {"id": str(uuid.uuid4()), "name": "Diana"},
+        ]
+        jsonl_file.write_text("".join(json.dumps(row) + "\n" for row in rows))
 
         # Read and convert UUID strings to UUID objects (simulating Parquet behavior)
         items_with_uuids = []
-        with jsonlines.open(str(jsonl_file), mode="r") as reader:
-            for item in reader:
-                # Convert UUID string back to UUID object to simulate Parquet
-                item["id"] = uuid.UUID(item["id"])
-                items_with_uuids.append(item)
+        for line in jsonl_file.read_text().splitlines():
+            item = json.loads(line)
+            # Convert UUID string back to UUID object to simulate Parquet
+            item["id"] = uuid.UUID(item["id"])
+            items_with_uuids.append(item)
 
         # Write items with UUID objects back to a temporary file for sampling
         # We'll need to mock the iterable behavior, so let's test normalization directly

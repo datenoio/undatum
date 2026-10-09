@@ -3,7 +3,7 @@
 import logging
 import time
 from collections import defaultdict
-from typing import Any, Optional
+from typing import Any
 
 from ..common.chunked_io import chunked_reader
 from ..common.command_utils import (
@@ -27,9 +27,11 @@ from ..common.errors import (
 from ..common.parallel import parallel_process_chunks
 from ..common.parallel_workers import transform_convert_chunk
 from ..common.path_utils import validate_file_path
-from ..common.progress import wrap_iterable
+from ..common.progress import is_tty, wrap_iterable
 from ..constants import COMPRESSED_FILE_TYPES, DUCKABLE_FILE_TYPES, SUPPORTED_FILE_TYPES
 from ..utils import get_file_type, get_option
+
+logger = logging.getLogger(__name__)
 
 # Preferred order for suggesting writable conversion targets. The list is
 # filtered against iterabledata's actual write capabilities at runtime so the
@@ -141,7 +143,7 @@ _DEPRECATED_CONVERT_OPTIONS: dict[str, Any] = {
 
 
 def df_to_pyorc_schema(df):
-    """Extracts column information from pandas dataframe and generate pyorc schema"""
+    """Build a pyorc schema from the column types of a pandas dataframe."""
     struct_schema = []
     for k, v in df.dtypes.to_dict().items():
         v = str(v)
@@ -236,7 +238,7 @@ def _warn_deprecated_convert_options(options: dict) -> None:
     for key, default in _DEPRECATED_CONVERT_OPTIONS.items():
         value = options.get(key)
         if value not in (None, default):
-            logging.warning(
+            logger.warning(
                 "Option '%s' is deprecated for convert and has no effect with the "
                 "iterabledata engine",
                 key,
@@ -319,6 +321,60 @@ class Converter:
                 ],
             )
 
+    def _convert_partitioned(self, fromfile: str, tofile: str, options: dict) -> None:
+        """Write ``fromfile`` as a Hive-partitioned directory ``tofile``."""
+        from ..common.writer import resolve_output_format
+        from ..io import RowSource
+        from ..io.partition import (
+            DEFAULT_MAX_OPEN_FILES,
+            PartitionedWriter,
+            check_output_directory,
+            duckdb_partitioned_copy,
+        )
+        from ..ops import compose_sql, get_operation
+        from ..ops.expr import where_steps
+
+        fields = [f.strip() for f in str(options["partition_by"]).split(",") if f.strip()]
+        max_open = int(get_option(options, "max_open_files") or DEFAULT_MAX_OPEN_FILES)
+        if "://" not in fromfile:
+            validate_file_path(fromfile, check_read=True)
+        check_output_directory(tofile)
+        source = RowSource(fromfile, options)
+        format_out = (get_option(options, "format_out") or source.format_id or "").lower()
+        if not format_out:
+            raise ValidationError(
+                "--partition-by needs --format-out when the input format is unknown",
+                field="format_out",
+            )
+        resolve_output_format(f"part.{format_out}", format_out)
+        steps = [(get_operation(name), cfg) for name, cfg in where_steps(options)]
+
+        relation = None
+        if (get_option(options, "engine") or "auto") != "python":
+            relation = source.duckdb_from()
+        if relation is not None:
+            import duckdb
+
+            conn = duckdb.connect()
+            try:
+                query = compose_sql(conn, relation, steps) if steps else f"SELECT * FROM {relation}"
+                if query and duckdb_partitioned_copy(
+                    conn, query, tofile, fields, format_out, max_open
+                ):
+                    logger.debug("convert: partitioned with DuckDB into %s", tofile)
+                    return
+            except duckdb.Error as exc:
+                logger.warning("DuckDB partitioning failed, using the Python engine: %s", exc)
+            finally:
+                conn.close()
+
+        rows: Any = source
+        for op, cfg in steps:
+            rows = op.apply(rows, cfg)
+        writer = PartitionedWriter(tofile, fields, format_out, max_open_files=max_open)
+        count = writer.write_all(rows)
+        logger.debug("convert: %d records into %d partition files", count, len(writer.files))
+
     def _check_output_writable(self, tofile, options: dict) -> None:
         """Raise a clear error when the output format is read-only.
 
@@ -400,8 +456,8 @@ class Converter:
         filetype = iterableargs.get("format") or (get_file_type(fromfile) if fromfile else None)
         delimiter = resolve_csv_delimiter(iterableargs, filename=fromfile, filetype=filetype)
         if delimiter:
+            # Input dialect only: the output delimiter follows the output format.
             iterableargs["delimiter"] = delimiter
-            toiterableargs["delimiter"] = delimiter
         quotechar = iterableargs.get("quotechar")
         if quotechar:
             toiterableargs["quotechar"] = quotechar
@@ -410,6 +466,8 @@ class Converter:
         show_progress = get_option(options, "progress")
         if show_progress is None:
             show_progress = True
+        # Progress goes to stderr and only makes sense in a terminal.
+        show_progress = bool(show_progress) and is_tty()
 
         scan_limit = options.get("scan_limit")
         if scan_limit is None:
@@ -566,7 +624,7 @@ class Converter:
         if out_fmt not in ("parquet", "csv", "json", "jsonl"):
             return False
 
-        engine = options.get("engine") or "auto"
+        engine = get_option(options, "engine") or "auto"
         low_memory = bool(options.get("low_memory"))
         # Prefer DuckDB for low-memory parquet/csv/jsonl or when engine requests it.
         if engine == "python":
@@ -626,10 +684,10 @@ class Converter:
                     conn.execute(f"COPY ({query}) TO '{tofile}' (FORMAT JSON)")
             finally:
                 conn.close()
-            logging.info("convert: completed via DuckDB spill path (%s → %s)", filetype, out_fmt)
+            logger.info("convert: completed via DuckDB spill path (%s → %s)", filetype, out_fmt)
             return True
         except Exception as exc:  # noqa: BLE001 - fall back to iterable path
-            logging.warning("DuckDB convert path failed, falling back to iterable: %s", exc)
+            logger.warning("DuckDB convert path failed, falling back to iterable: %s", exc)
             return False
 
     def convert(self, fromfile, tofile, options=None, limit=DEFAULT_HEADERS_DETECT_LIMIT):
@@ -663,6 +721,9 @@ class Converter:
 
         _warn_deprecated_convert_options(options)
 
+        if get_option(options, "partition_by"):
+            return self._convert_partitioned(fromfile, tofile, options)
+
         # Fail fast with an actionable message if the output format is read-only
         # or requires an external schema (protobuf/capnp/thrift).
         self._check_output_writable(tofile, options)
@@ -677,6 +738,23 @@ class Converter:
                 raise FileNotFoundError(fromfile, suggestions) from e
             except PermissionError as e:
                 raise PermissionError(fromfile, operation="read") from e
+
+        from ..ops.expr import where_steps
+
+        steps = where_steps(options)
+        if steps:
+            # --where / --add: one DuckDB query (or batched expressions) into any format.
+            from ..io import RowSource
+            from ..ops import run_steps
+
+            run_steps(
+                steps,
+                RowSource(fromfile, options),
+                tofile,
+                engine=get_option(options, "engine") or "auto",
+                format_out=get_option(options, "format_out"),
+            )
+            return None
 
         if "://" not in fromfile and not _skip_duckdb_convert(options):
             if self._try_duckdb_convert(fromfile, tofile, options):
@@ -702,10 +780,10 @@ class Converter:
                     fromfile, tofile, convert_kwargs, int(threads), options, codecargs=codecargs
                 )
                 if options.get("summary", True):
-                    logging.info(format_conversion_summary(result))
+                    logger.info(format_conversion_summary(result))
                 return result
             except Exception as e:
-                logging.warning(
+                logger.warning(
                     "Parallel convert failed (%s); falling back to sequential iterable path",
                     e,
                 )
@@ -741,7 +819,7 @@ class Converter:
             raise
 
         if options.get("summary", True):
-            logging.info(format_conversion_summary(result))
+            logger.info(format_conversion_summary(result))
         return result
 
     def _convert_python_parallel(
@@ -788,7 +866,7 @@ class Converter:
             )
 
         actual_tofile = tofile
-        temp_file: Optional[str] = None
+        temp_file: str | None = None
         if atomic:
             temp_file = os.path.join(
                 os.path.dirname(tofile) or ".", os.path.basename(tofile) + ".tmp"
@@ -880,7 +958,7 @@ class Converter:
                 except OSError:
                     pass
 
-        logging.info(
+        logger.info(
             "convert: completed via parallel Python path (%d workers, %d rows)",
             threads,
             rows_out,
@@ -938,7 +1016,7 @@ class Converter:
         threads = get_option(options, "threads")
         use_parallel = parallel if parallel is not None else bool(threads)
 
-        logging.info("Bulk mode: converting %s -> %s (target: .%s)", source, dest, target_ext)
+        logger.info("Bulk mode: converting %s -> %s (target: .%s)", source, dest, target_ext)
         pattern = options.get("filename_pattern") or None
         with self._with_codecargs(codecargs):
             with self._with_csv_options(
@@ -955,5 +1033,5 @@ class Converter:
                     **convert_kwargs,
                 )
         if options.get("summary", True):
-            logging.info(format_bulk_conversion_summary(result))
+            logger.info(format_bulk_conversion_summary(result))
         return result

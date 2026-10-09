@@ -181,19 +181,157 @@ def _register_tools(mcp: Any) -> None:
             },
         )
 
+    # --- informational tools: the documents of `undatum <command> --json` ---
 
-def create_mcp_server(name: str = "undatum") -> Any:
-    """Create a FastMCP server with undatum tools registered."""
+    @mcp.tool()
+    def count_records(path: str, format_in: str | None = None, table: str | None = None) -> str:
+        """Count the records of a file (undatum.count/1 document)."""
+        return _call("count_records", {"path": path, "format_in": format_in, "table": table})
+
+    @mcp.tool()
+    def list_fields(
+        path: str,
+        limit: int | None = None,
+        format_in: str | None = None,
+        table: str | None = None,
+        flatten_nested: bool = False,
+    ) -> str:
+        """List field names in file order (undatum.headers/1 document)."""
+        return _call(
+            "list_fields",
+            {
+                "path": path,
+                "limit": limit,
+                "format_in": format_in,
+                "table": table,
+                "flatten_nested": flatten_nested,
+            },
+        )
+
+    @mcp.tool()
+    def sniff_file(path: str, format_in: str | None = None, table: str | None = None) -> str:
+        """Detect format, compression, encoding, delimiter, fields, count (undatum.sniff/1)."""
+        return _call("sniff_file", {"path": path, "format_in": format_in, "table": table})
+
+    @mcp.tool()
+    def diff_files(
+        left_path: str,
+        right_path: str,
+        key: list[str] | None = None,
+        ignore_order: bool = False,
+        summary_only: bool = False,
+        limit: int = 100,
+    ) -> str:
+        """Compare two files: added, removed and changed records (undatum.diff/1)."""
+        return _call(
+            "diff_files",
+            {
+                "left_path": left_path,
+                "right_path": right_path,
+                "key": key,
+                "ignore_order": ignore_order,
+                "summary_only": summary_only,
+                "limit": limit,
+            },
+        )
+
+
+def create_mcp_server(
+    name: str = "undatum", root: str | None = None, allow_anywhere: bool = False
+) -> Any:
+    """Create a FastMCP server with undatum tools registered.
+
+    Args:
+        name: Server name advertised to MCP clients.
+        root: Directory that tool paths must stay within (default: current directory).
+        allow_anywhere: Disable the filesystem sandbox (trusted local use only).
+    """
+    from ..tools.sandbox import configure_sandbox
+
+    configure_sandbox(root, allow_anywhere=allow_anywhere)
     try:
-        from mcp.server.fastmcp import FastMCP
-    except ImportError as err:
-        raise ImportError(
-            "mcp package is required. Install with: pip install undatum[mcp]"
-        ) from err
+        # mcp 2.x renamed FastMCP to MCPServer; the tool API is the same.
+        from mcp.server.mcpserver import MCPServer as Server
+    except ImportError:
+        try:
+            from mcp.server.fastmcp import FastMCP as Server
+        except ImportError as err:
+            raise ImportError(
+                'mcp package is required. Install with: pip install "undatum[mcp]"'
+            ) from err
 
-    mcp = FastMCP(name)
+    mcp = Server(name)
     _register_tools(mcp)
+    _register_generated_tools(mcp)
+    from .resources import register as register_resources
+
+    register_resources(mcp)
     return mcp
+
+
+_JSON_TYPES: dict[str, Any] = {"string": str, "integer": int, "number": float, "boolean": bool}
+
+
+def _python_type(schema: dict[str, Any]) -> Any:
+    """Python annotation for a JSON Schema fragment (FastMCP derives the schema back)."""
+    kind = schema.get("type")
+    if kind == "array":
+        return list[_python_type(schema.get("items") or {})]  # type: ignore[misc]
+    if kind == "object":
+        return dict[str, Any]
+    return _JSON_TYPES.get(kind or "", Any)
+
+
+def _generated_tool_function(tool: dict[str, Any]) -> Any:
+    """A function with a real signature for one generated tool definition."""
+    import inspect
+
+    parameters = tool["parameters"]
+    required = set(parameters.get("required", []))
+    signature_params = []
+    from typing import Annotated, Literal
+
+    from pydantic import Field  # installed with mcp
+
+    for param, schema in parameters["properties"].items():
+        annotation = _python_type(schema)
+        if schema.get("enum"):
+            annotation = Literal[tuple(schema["enum"])]
+        if schema.get("description"):
+            annotation = Annotated[annotation, Field(description=schema["description"])]
+        if param in required:
+            signature_params.append(
+                inspect.Parameter(param, inspect.Parameter.KEYWORD_ONLY, annotation=annotation)
+            )
+        else:
+            signature_params.append(
+                inspect.Parameter(
+                    param,
+                    inspect.Parameter.KEYWORD_ONLY,
+                    annotation=annotation | None,
+                    default=schema.get("default"),
+                )
+            )
+
+    def tool_function(**arguments: Any) -> str:
+        return _call(tool["name"], {k: v for k, v in arguments.items() if v is not None})
+
+    tool_function.__name__ = tool["name"]
+    tool_function.__doc__ = tool["description"]
+    tool_function.__signature__ = inspect.Signature(  # type: ignore[attr-defined]
+        signature_params, return_annotation=str
+    )
+    tool_function.__annotations__ = {p.name: p.annotation for p in signature_params}
+    tool_function.__annotations__["return"] = str
+    return tool_function
+
+
+def _register_generated_tools(mcp: Any) -> None:
+    """Register one tool per operation of the registry (see undatum.tools.generated)."""
+    for tool in schemas.GENERATED_TOOL_DEFINITIONS:
+        mcp.add_tool(
+            _generated_tool_function(tool), name=tool["name"], description=tool["description"]
+        )
 
 
 def main() -> None:

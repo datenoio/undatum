@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://datenoio.github.io/undatum/schemas/undatum.count.v1.json",
+  "title": "Number of records in a file",
+  "description": "Printed by `undatum count --json`.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "const": "undatum.count/1",
+      "description": "Result layout"
+    },
+    "file": {
+      "type": "string",
+      "description": "Input path"
+    },
+    "rows": {
+      "type": "integer",
+      "description": "Number of records"
+    }
+  },
+  "required": [
+    "schema",
+    "file",
+    "rows"
+  ]
+}

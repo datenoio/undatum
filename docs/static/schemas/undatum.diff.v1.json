@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://datenoio.github.io/undatum/schemas/undatum.diff.v1.json",
+  "title": "Records added, removed and changed between two files",
+  "description": "Printed by `undatum diff --json`.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "const": "undatum.diff/1",
+      "description": "Result layout"
+    },
+    "file1": {
+      "type": "string",
+      "description": "Old file"
+    },
+    "file2": {
+      "type": "string",
+      "description": "New file"
+    },
+    "key": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "description": "Key fields (null: records compared whole)"
+    },
+    "summary": {
+      "type": "object",
+      "description": "file1_count, file2_count, added_count, removed_count, changed_count"
+    },
+    "added": {
+      "type": "array",
+      "description": "Records only in file2 (not with --summary-only)"
+    },
+    "removed": {
+      "type": "array",
+      "description": "Records only in file1 (not with --summary-only)"
+    },
+    "changed": {
+      "type": "array",
+      "description": "Changed records with key, old and new (not with --summary-only)"
+    }
+  },
+  "required": [
+    "schema",
+    "file1",
+    "file2",
+    "summary"
+  ]
+}

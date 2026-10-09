@@ -107,8 +107,12 @@ class TestSingleConvert:
     @pytest.mark.parametrize("ext", ["xlsx", "xls", "ods", "xml"])
     def test_readonly_output_raises_clear_error(self, tmp_path, ext):
         """Converting to a read-only format gives an actionable ValidationError."""
+        from iterable.helpers.capabilities import supports_write
+
         from undatum.common.errors import ValidationError
 
+        if supports_write(ext) is not False:
+            pytest.skip(f"{ext} is writable in this iterabledata version")
         src = tmp_path / "in.csv"
         _write_csv(src)
         with pytest.raises(ValidationError, match="read-only"):

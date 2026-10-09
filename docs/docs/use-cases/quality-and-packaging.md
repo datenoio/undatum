@@ -9,7 +9,7 @@ Assess quality, encode reusable rules, and produce evidence before data is relea
 ## Gate a dataset release
 
 ```bash
-undatum validate data.csv --rules rules.yml --output-format json \
+undatum validate data.csv --rules rules.yml --format-out json \
   --violation-report violations.json --fail-on-warnings
 ```
 

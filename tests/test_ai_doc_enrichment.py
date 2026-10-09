@@ -5,7 +5,6 @@ import json
 from undatum.ai.doc_enrichment import (
     build_field_hints,
     enrich_schema_fields,
-    field_aliases,
     hint_from_field_name,
     match_llm_field_name,
     prepare_doc_source,

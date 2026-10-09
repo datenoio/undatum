@@ -8,11 +8,11 @@ Inspect unfamiliar files and answer questions without writing a program.
 
 ## Understand a newly received dataset
 
-```bash
+```bash norun
 undatum table sales.csv --limit 20
 undatum tui sales.csv
 undatum web sales.csv
-undatum profile sales.csv
+undatum stats sales.csv
 undatum frequency sales.csv --fields region,status
 ```
 
@@ -24,7 +24,7 @@ A single input is the view `data`; multiple inputs are named after their file st
 
 ```bash
 undatum sql "SELECT region, SUM(amount) AS total FROM data GROUP BY 1" sales.parquet \
-  --output totals.csv --format csv
+  --output totals.csv --format-out csv
 
 undatum sql "SELECT * FROM orders JOIN users USING (user_id)" orders.csv users.parquet
 ```

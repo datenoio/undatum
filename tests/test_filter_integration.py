@@ -7,33 +7,20 @@ import pytest
 from undatum.cmds.selector import Selector
 from undatum.cmds.validator import Validator
 
-
-@pytest.fixture
-def sample_csv_file(tmp_path):
-    """Create a sample CSV file for testing."""
-    csv_file = tmp_path / "sample.csv"
-    csv_file.write_text(
-        "name,age,city,active\n"
-        "Alice,30,New York,true\n"
-        "Bob,25,London,false\n"
-        "Charlie,35,Paris,true\n"
-        "Diana,28,Berlin,false\n"
-    )
-    return str(csv_file)
-
-
-@pytest.fixture
-def sample_jsonl_file(tmp_path):
-    """Create a sample JSONL file for testing."""
-    jsonl_file = tmp_path / "sample.jsonl"
-    content = (
-        '{"name": "Alice", "age": 30, "city": "New York", "active": true}\n'
-        '{"name": "Bob", "age": 25, "city": "London", "active": false}\n'
-        '{"name": "Charlie", "age": 35, "city": "Paris", "active": true}\n'
-        '{"name": "Diana", "age": 28, "city": "Berlin", "active": false}\n'
-    )
-    jsonl_file.write_text(content)
-    return str(jsonl_file)
+# Contents of the sample_csv_file / sample_jsonl_file fixtures (tests/conftest.py).
+SAMPLE_CSV = (
+    "name,age,city,active\n"
+    "Alice,30,New York,true\n"
+    "Bob,25,London,false\n"
+    "Charlie,35,Paris,true\n"
+    "Diana,28,Berlin,false\n"
+)
+SAMPLE_JSONL = (
+    '{"name": "Alice", "age": 30, "city": "New York", "active": true}\n'
+    '{"name": "Bob", "age": 25, "city": "London", "active": false}\n'
+    '{"name": "Charlie", "age": 35, "city": "Paris", "active": true}\n'
+    '{"name": "Diana", "age": 28, "city": "Berlin", "active": false}\n'
+)
 
 
 class TestValidatorFilter:

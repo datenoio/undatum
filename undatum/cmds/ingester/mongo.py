@@ -7,6 +7,8 @@ from pymongo import MongoClient
 
 from .base import INITIAL_RETRY_DELAY, MAX_RETRIES
 
+logger = logging.getLogger(__name__)
+
 
 class MongoIngester:
     """MongoDB data ingester.
@@ -47,13 +49,13 @@ class MongoIngester:
                 last_exception = e
                 if attempt < MAX_RETRIES - 1:
                     delay = INITIAL_RETRY_DELAY * (2**attempt)
-                    logging.warning(
+                    logger.warning(
                         f"MongoDB insert_many failed (attempt {attempt + 1}/{MAX_RETRIES}), retrying in {delay}s: {e}"
                     )
                     time.sleep(delay)
                 else:
                     # On final failure, try to identify which documents failed
-                    logging.error(f"MongoDB insert_many failed after {MAX_RETRIES} attempts: {e}")
+                    logger.error(f"MongoDB insert_many failed after {MAX_RETRIES} attempts: {e}")
                     # Try inserting one by one to identify problematic documents
                     failed_docs = []
                     for doc in batch:
@@ -61,9 +63,9 @@ class MongoIngester:
                             self.coll.insert_one(doc)
                         except Exception as doc_error:
                             failed_docs.append({"doc": doc, "error": str(doc_error)})
-                            logging.error(f"Failed to insert document: {doc_error}")
+                            logger.error(f"Failed to insert document: {doc_error}")
                     if failed_docs:
-                        logging.warning(
+                        logger.warning(
                             f"Failed to insert {len(failed_docs)} out of {len(batch)} documents"
                         )
                     raise last_exception from None

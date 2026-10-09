@@ -7,6 +7,8 @@ import duckdb
 
 from .base import INITIAL_RETRY_DELAY, MAX_RETRIES, BasicIngester
 
+logger = logging.getLogger(__name__)
+
 
 class DuckDBIngester(BasicIngester):
     """DuckDB data ingester.
@@ -146,7 +148,7 @@ class DuckDBIngester(BasicIngester):
                 self.conn.execute(f"DROP TABLE IF EXISTS {self.table}")
             else:
                 # Table exists and not replacing, just validate schema matches
-                logging.info(f"Table {self.table} already exists, skipping creation")
+                logger.info(f"Table {self.table} already exists, skipping creation")
                 self._schema_created = True
                 self._table_columns = [col for col, _ in schema]
                 return
@@ -167,7 +169,7 @@ class DuckDBIngester(BasicIngester):
 
         self._schema_created = True
         self._table_columns = [col for col, _ in schema]
-        logging.info(
+        logger.info(
             f"Created table {self.table} with schema: {', '.join([f'{col} {duckdb_type}' for col, duckdb_type in schema])}"
         )
 
@@ -185,7 +187,7 @@ class DuckDBIngester(BasicIngester):
             result = self.conn.execute(f"DESCRIBE {self.table}").fetchall()
             table_schema = {row[0]: row[1] for row in result}
         except Exception:
-            logging.warning(f"Table {self.table} does not exist or cannot be described")
+            logger.warning(f"Table {self.table} does not exist or cannot be described")
             return False
 
         if not table_schema:
@@ -199,9 +201,9 @@ class DuckDBIngester(BasicIngester):
             missing = batch_columns - table_columns
             extra = table_columns - batch_columns
             if missing:
-                logging.warning(f"Batch columns not in table {self.table}: {missing}")
+                logger.warning(f"Batch columns not in table {self.table}: {missing}")
             if extra:
-                logging.warning(f"Table columns not in batch: {extra}")
+                logger.warning(f"Table columns not in batch: {extra}")
             # Allow continuation but warn
             return len(missing) == 0  # Only fail if batch has extra columns
 
@@ -353,12 +355,12 @@ class DuckDBIngester(BasicIngester):
                 last_exception = e
                 if attempt < MAX_RETRIES - 1:
                     delay = INITIAL_RETRY_DELAY * (2**attempt)
-                    logging.warning(
+                    logger.warning(
                         f"DuckDB ingestion failed (attempt {attempt + 1}/{MAX_RETRIES}), retrying in {delay}s: {e}"
                     )
                     time.sleep(delay)
                 else:
-                    logging.error(f"DuckDB ingestion failed after {MAX_RETRIES} attempts: {e}")
+                    logger.error(f"DuckDB ingestion failed after {MAX_RETRIES} attempts: {e}")
                     raise
 
         if last_exception:
@@ -371,10 +373,16 @@ class DuckDBIngester(BasicIngester):
                 self._appender.close()
                 self._appender = None
             except Exception:
-                pass
+                # Best effort: never fail the command because of this step.
+                logging.getLogger(__name__).debug(
+                    "ignoring error while closing DuckDB resources", exc_info=True
+                )
 
         if hasattr(self, "conn") and self.conn:
             try:
                 self.conn.close()
             except Exception:
-                pass
+                # Best effort: never fail the command because of this step.
+                logging.getLogger(__name__).debug(
+                    "ignoring error while closing DuckDB resources", exc_info=True
+                )

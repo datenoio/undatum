@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://datenoio.github.io/undatum/schemas/undatum.headers.v1.json",
+  "title": "Field names of a file",
+  "description": "Printed by `undatum headers --json`.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "const": "undatum.headers/1",
+      "description": "Result layout"
+    },
+    "file": {
+      "type": "string",
+      "description": "Input path"
+    },
+    "fields": {
+      "type": "array",
+      "description": "Field names in file order (nested fields as dotted paths)"
+    }
+  },
+  "required": [
+    "schema",
+    "file",
+    "fields"
+  ]
+}

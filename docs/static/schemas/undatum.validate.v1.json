@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://datenoio.github.io/undatum/schemas/undatum.validate.v1.json",
+  "title": "Rule-file validation report",
+  "description": "Printed by `undatum validate --rules --json`.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "const": "undatum.validate/1",
+      "description": "Result layout"
+    },
+    "statistics": {
+      "type": "object",
+      "description": "total_records, total_violations, errors, warnings, info, passed"
+    },
+    "violations_by_field": {
+      "type": "object",
+      "description": "Field -> number of violations"
+    },
+    "violations_by_rule": {
+      "type": "object",
+      "description": "Rule -> number of violations"
+    },
+    "violations": {
+      "type": "array",
+      "description": "Violations (at most --max-violations)"
+    }
+  },
+  "required": [
+    "schema",
+    "statistics",
+    "violations"
+  ]
+}

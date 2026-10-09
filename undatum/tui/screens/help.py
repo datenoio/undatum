@@ -15,7 +15,7 @@ undatum tui — explore a sample, not the whole file.
  ?                 This help
  o                 Open another file
  u                 Path or cloud URI (s3://, gs://, az://)
- s                 Profile (full file, via undatum profile)
+ s                 Profile (full file, via undatum stats)
  f                 Frequency on the selected grid column
  /                 Filter the loaded sample
  e                 Export the current view (sample)
@@ -33,7 +33,7 @@ preview apply to that sample. Profile, SQL, convert, and mask-write
 scan or write the source file.
 
   undatum table FILE --limit 200
-  undatum profile FILE
+  undatum stats FILE
   undatum convert FILE OUT --low-memory
   undatum validate FILE --rules rules.yaml
   undatum mask FILE --fields email --method redact --output OUT

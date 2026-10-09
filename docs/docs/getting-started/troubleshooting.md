@@ -37,6 +37,23 @@ Unexpected errors that may indicate a bug:
 - Unhandled exceptions
 - Internal processing errors
 
+### Exit Code 130: Interrupted
+The command was stopped with Ctrl-C (SIGINT). Output files are written to a temporary
+name and renamed only on success, so an interrupted command leaves no partial output.
+
+### Summary
+
+| Code | Meaning |
+| --- | --- |
+| 0 | Success |
+| 1 | User error: missing file, invalid parameter, unsupported or non-writable format |
+| 2 | Invalid command-line usage (unknown option, bad choice), configuration error, or missing optional dependency (install the named extra) |
+| 3 | System error: permission denied, database or network failure |
+| 4 | Internal error (please report it with the `--verbose` output) |
+| 130 | Interrupted with Ctrl-C |
+
+A command never exits with 0 after reporting an error, so scripts can rely on `$?`.
+
 ## Common Error Messages
 
 ### File Not Found
@@ -55,7 +72,7 @@ Check that the file path is correct and the file exists.
 4. Ensure the file exists in the specified location
 
 **Example:**
-```bash
+```bash norun
 # Wrong
 undatum convert data.cvs output.jsonl
 
@@ -103,7 +120,7 @@ Use 'undatum convert' to convert to a supported format.
 3. Use `--format-in` to explicitly specify the format
 
 **Example:**
-```bash
+```bash norun
 # Convert unsupported format to CSV first
 undatum convert input.xyz output.csv --format-in csv
 ```
@@ -122,7 +139,7 @@ The 'fields' option is required for this operation.
 3. Verify parameter names are correct
 
 **Example:**
-```bash
+```bash norun
 # Wrong - missing --fields
 undatum select data.csv
 
@@ -193,9 +210,9 @@ Check connection URI and database server status.
 5. Ensure database exists
 
 **Example:**
-```bash
-# Verify connection string format
-undatum db load data.csv "postgresql://user:password@host:5432/dbname"
+```bash norun
+# Connection string format: scheme://user:password@host:port/database
+undatum db load data.csv --db "postgresql://user:password@host:5432/dbname" --table users
 ```
 
 ## Verbose Mode
@@ -217,7 +234,7 @@ This is useful for:
 
 undatum automatically detects typos in file paths and field names:
 
-```bash
+```bash norun
 # Typo in filename - undatum suggests corrections
 undatum convert data.cvs output.jsonl
 # Error: File not found: 'data.cvs'
@@ -288,7 +305,7 @@ When reporting errors, include:
 
 When using undatum in scripts, check exit codes:
 
-```bash
+```bash norun
 #!/bin/bash
 if undatum convert data.csv output.jsonl; then
     echo "Conversion successful"
@@ -346,7 +363,7 @@ export AZURE_OPENAI_API_KEY=...
 ```
 
 **Ollama connection failed:**
-```bash
+```bash norun
 # Error: Connection refused
 # Solution: Ensure Ollama is running and model is pulled
 ollama serve
@@ -356,7 +373,7 @@ export OLLAMA_BASE_URL=http://localhost:11434
 ```
 
 **LM Studio connection failed:**
-```bash
+```bash norun
 # Error: Connection refused
 # Solution: Start LM Studio server and load a model
 # In LM Studio: Start Server, then:
@@ -364,13 +381,13 @@ export LMSTUDIO_BASE_URL=http://localhost:1234/v1
 ```
 
 **Structured output errors:**
-- All providers now use JSON Schema for reliable parsing
-- If a provider doesn't support structured output, it will fall back gracefully
-- Check provider documentation for model compatibility
+- `--autodoc` asks the model for JSON and reads the first JSON object in the answer (code fences are fine)
+- If a model answers with prose only, the dataset description uses the raw text, and field descriptions or metadata are skipped with a warning
+- Small local models follow JSON instructions less reliably; try a larger model if this happens often
 
 ### Provider-Specific Notes
 
-**Legacy `--autodoc`** (`analyze`, `schema`, `schema-bulk`, `doc`): openai, openrouter, ollama, lmstudio, perplexity only.
+**`--autodoc`** (`analyze`, `schema`, `schema-bulk`, `doc`, `package create`) and `ai *` use the same providers.
 
 **`ai *` subcommands** (iterabledata):
 

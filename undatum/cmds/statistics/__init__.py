@@ -5,7 +5,6 @@ engine detection, DuckDB engine, and iterable engine modules.
 """
 
 import logging
-from typing import Optional
 
 import duckdb
 from qddate import DateParser
@@ -15,10 +14,12 @@ from ...common.command_utils import (  # noqa: F401
     force_iterable_if_table,
     get_iterable_options,
 )
-from ...utils import get_option
+from ...utils import TypeGuesser, get_option
 from .duckdb_engine import DuckDBStatsMixin
 from .engine import _detect_engine
 from .iterable_engine import IterableStatsMixin
+
+logger = logging.getLogger(__name__)
 
 __all__ = ["StatProcessor", "_detect_engine"]
 
@@ -31,7 +32,7 @@ class StatProcessor(DuckDBStatsMixin, IterableStatsMixin):
             self.qd = None
         else:
             self.qd = DateParser(generate=True)
-        pass
+        self.types = TypeGuesser(self.qd)
 
     def stats(self, fromfile, options):
         """Produces statistics and structure analysis of JSONlines, BSON or CSV file and produces stats.
@@ -46,7 +47,7 @@ class StatProcessor(DuckDBStatsMixin, IterableStatsMixin):
                 - no_progress: Disable progress bar
                 - Other iterable options (delimiter, encoding, etc.)
         """
-
+        self.types = TypeGuesser(self.qd)  # per file: date probes are per field name
         # Get engine preference and detect appropriate engine
         engine = get_option(options, "engine") or "auto"
         filetype = get_option(options, "format_in")
@@ -68,7 +69,7 @@ class StatProcessor(DuckDBStatsMixin, IterableStatsMixin):
             options["progress"] = False
             options["no_progress"] = True
 
-        logging.info(f"Using {detected_engine} engine for statistics computation")
+        logger.info(f"Using {detected_engine} engine for statistics computation")
 
         # Validate input file before processing
         from ...common.errors import FileNotFoundError, PermissionError, find_similar_files
@@ -94,12 +95,12 @@ class StatProcessor(DuckDBStatsMixin, IterableStatsMixin):
                     "not found" in error_msg or "Referenced column" in error_msg
                 ):
                     # None column reference - this is expected and handled, suppress warning
-                    logging.debug(
+                    logger.debug(
                         f"DuckDB stats: None column reference detected, falling back to iterable: {e}"
                     )
                 else:
                     # DuckDB-specific errors (query failures, parsing errors, etc.)
-                    logging.warning(
+                    logger.warning(
                         f"DuckDB stats failed (DuckDB error), falling back to iterable: {e}"
                     )
                 detected_engine = "iterable"
@@ -110,12 +111,12 @@ class StatProcessor(DuckDBStatsMixin, IterableStatsMixin):
                     "not found" in error_msg or "Referenced column" in error_msg
                 ):
                     # None column reference - suppress warning
-                    logging.debug(
+                    logger.debug(
                         f"DuckDB stats: None column reference detected, falling back to iterable: {e}"
                     )
                 else:
                     # Other errors (file not found, permission errors, etc.)
-                    logging.warning(f"DuckDB stats failed, falling back to iterable: {e}")
+                    logger.warning(f"DuckDB stats failed, falling back to iterable: {e}")
                 detected_engine = "iterable"
 
         # Use iterable engine (existing implementation)
@@ -124,11 +125,10 @@ class StatProcessor(DuckDBStatsMixin, IterableStatsMixin):
         elif profile is None:
             from ...common.errors import ValidationError
 
-            logging.error(f"Unsupported engine: {detected_engine}")
             raise ValidationError(
                 f"Unsupported engine: '{detected_engine}'",
                 field="engine",
-                suggestions=["auto", "duckdb", "iterable"],
+                suggestions=["auto", "duckdb", "python"],
             )
 
         if format_out == "json":
@@ -147,7 +147,7 @@ _STATS_EXT_FORMATS = {
 }
 
 
-def _resolve_stats_format(format_out: Optional[str], output: Optional[str]) -> str:
+def _resolve_stats_format(format_out: str | None, output: str | None) -> str:
     """Resolve stats output format from ``--format-out`` or the output path."""
     if format_out:
         value = str(format_out).lower().strip()
@@ -199,15 +199,14 @@ def _profile_table_rows(profile: dict) -> list[tuple[str, ...]]:
     return rows
 
 
-def _emit_stats_json(profile: dict, output: Optional[str]) -> None:
+def _emit_stats_json(profile: dict, output: str | None) -> None:
     """Write a stats profile as JSON to a file or stdout."""
-    import json
+    from ...common.results import STATS, dumps, envelope
 
-    payload = json.dumps(profile, default=str, indent=2, ensure_ascii=False)
-    _write_stats_text(payload, output)
+    _write_stats_text(dumps(envelope(STATS, profile)), output)
 
 
-def _emit_stats_report(profile: dict, format_out: str, output: Optional[str]) -> None:
+def _emit_stats_report(profile: dict, format_out: str, output: str | None) -> None:
     """Write an HTML or Markdown profiling report."""
     headers = (
         "Field",
@@ -230,7 +229,7 @@ def _emit_stats_report(profile: dict, format_out: str, output: Optional[str]) ->
     _write_stats_text(payload, output)
 
 
-def _write_stats_text(payload: str, output: Optional[str]) -> None:
+def _write_stats_text(payload: str, output: str | None) -> None:
     if output:
         with open(output, "w", encoding="utf8") as handle:
             handle.write(payload)

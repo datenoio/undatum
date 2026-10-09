@@ -1,13 +1,13 @@
 """Data validation module."""
 
 import csv
+import difflib
 import json
 import logging
 import sys
-import zipfile
 from collections import defaultdict
+from typing import Any
 
-import bson
 import orjson
 
 from ..common.chunked_io import chunked_reader
@@ -16,6 +16,7 @@ from ..common.errors import (
     FileNotFoundError,
     FormatError,
     PermissionError,
+    ValidationError,
     find_similar_files,
 )
 from ..common.filter import match_filter
@@ -23,9 +24,14 @@ from ..common.parallel import parallel_process_chunks
 from ..common.parallel_workers import validate_rules_chunk
 from ..common.path_utils import validate_file_path
 from ..common.progress import wrap_iterable
-from ..common.validation_rules import ValidationRuleError, parse_validation_rules
-from ..utils import field_values, get_file_type, get_option
+from ..common.validation_rules import parse_validation_rules
+from ..utils import field_values, get_file_type, get_option, normalize_for_json
 from ..validate import VALIDATION_RULEMAP
+
+logger = logging.getLogger(__name__)
+
+# Output modes of the legacy --fields/--rule validation.
+LEGACY_MODES = {"stats", "invalid", "valid", "all"}
 
 
 class Validator:
@@ -53,7 +59,7 @@ class Validator:
         except PermissionError as e:
             raise PermissionError(fromfile, operation="read") from e
 
-        logging.debug("Processing %s", fromfile)
+        logger.debug("Processing %s", fromfile)
 
         # Check if using rule file mode
         rules_file = get_option(options, "rules")
@@ -64,18 +70,11 @@ class Validator:
 
     def _validate_with_rules(self, fromfile, options, rules_file):
         """Validate using rule file."""
-        try:
-            rule_set = parse_validation_rules(rules_file)
-        except ValidationRuleError as e:
-            logging.error(f"Failed to parse rule file: {e}")
-            raise
+        rule_set = parse_validation_rules(rules_file)
 
         # Process records and collect violations
         all_violations = []
         total_records = 0
-
-        format_in = get_option(options, "format_in")
-        get_file_type(fromfile) if format_in is None else format_in
 
         from ..common.s3_iterable import open_path as open_iterable
 
@@ -86,6 +85,10 @@ class Validator:
         filter_expr = options.get("filter")
         threads = get_option(options, "threads")
         use_parallel = bool(threads) and int(threads) > 1
+        if use_parallel and rule_set.stateful:
+            # 'unique' remembers values across records: one process sees them all.
+            logger.info("validate: unique rules run in one process; ignoring --threads")
+            use_parallel = False
 
         try:
             records = wrap_iterable(
@@ -114,7 +117,7 @@ class Validator:
                 ):
                     total_records += seen
                     all_violations.extend(violations)
-                all_violations.sort(key=lambda v: v.get("record_index", 0))
+                all_violations.sort(key=lambda v: v.get("row", 0))
             else:
                 for record_index, record in enumerate(records):
                     total_records += 1
@@ -123,6 +126,7 @@ class Validator:
                     violations = rule_set.validate_record(record, record_index)
                     all_violations.extend(violations)
         finally:
+            rule_set.close()
             if hasattr(it_in, "close"):
                 it_in.close()
 
@@ -130,139 +134,101 @@ class Validator:
         self._generate_validation_report(all_violations, total_records, options)
 
     def _validate_legacy(self, fromfile, options):
-        """Legacy validation mode (backward compatible)."""
-        format_in = get_option(options, "format_in")
-        f_type = get_file_type(fromfile) if format_in is None else format_in
-        zipfile_enabled = options.get("zipfile", False)
-        if zipfile_enabled:
-            z = zipfile.ZipFile(fromfile, mode="r")
-            fnames = z.namelist()
-            if f_type == "bson":
-                infile = z.open(fnames[0], "rb")
-            else:
-                infile = z.open(fnames[0], "r")
-        else:
-            if f_type == "bson":
-                infile = open(fromfile, "rb")
-            else:
-                infile = open(fromfile, encoding=get_option(options, "encoding"))
-        to_file = get_option(options, "output")
-        if to_file:
-            if not get_file_type(to_file):
-                raise FormatError(to_file, to_file.rsplit(".", 1)[-1])
-            out = open(to_file, "w", encoding="utf8")
-        else:
-            out = sys.stdout
+        """Legacy validation mode: apply one built-in rule to one field."""
         fields_value = get_option(options, "fields")
         if not fields_value:
-            raise ValueError("validate requires 'fields' option (comma-separated list of fields)")
-        fields = fields_value.split(",")
+            raise ValidationError(
+                "validate requires --rules, or --fields with --rule", field="fields"
+            )
+        field = fields_value.split(",")[0]
         rule = get_option(options, "rule")
         if not rule:
-            raise ValueError("validate requires 'rule' option")
+            raise ValidationError("validate requires --rule with --fields", field="rule")
+        if rule not in VALIDATION_RULEMAP:
+            close = difflib.get_close_matches(rule, list(VALIDATION_RULEMAP), n=3)
+            raise ValidationError(
+                f"Unknown rule '{rule}'",
+                field="rule",
+                suggestions=close or sorted(VALIDATION_RULEMAP),
+            )
         val_func = VALIDATION_RULEMAP[rule]
-        logging.info("uniq: looking for fields: %s", fields_value)
+        mode = options.get("mode") or "stats"
+        if mode not in LEGACY_MODES:
+            raise ValidationError(
+                f"Invalid mode '{mode}'", field="mode", suggestions=sorted(LEGACY_MODES)
+            )
+        to_file = get_option(options, "output")
+        if to_file and not get_file_type(to_file):
+            raise FormatError(to_file, to_file.rsplit(".", 1)[-1])
+
+        from ..common.s3_iterable import open_path as open_iterable
+
+        iterableargs = get_iterable_options(options)
+        filter_expr = options.get("filter")
         validated = []
         stats = {"total": 0, "invalid": 0, "novalue": 0}
-        if f_type == "csv":
-            delimiter = get_option(options, "delimiter")
-            reader = csv.DictReader(infile, delimiter=delimiter)
-            n = 0
-            for r in reader:
-                n += 1
-                if n % 1000 == 0:
-                    logging.info("uniq: processing %d records of %s", n, fromfile)
-                filter_expr = options.get("filter")
-                if filter_expr is not None:
-                    if not match_filter(r, filter_expr):
-                        continue
-                res = val_func(r[fields[0]])
+        iterable = open_iterable(fromfile, mode="r", iterableargs=iterableargs)
+        try:
+            for record in iter_command_rows(iterable, options):
+                if filter_expr is not None and not match_filter(record, filter_expr):
+                    continue
                 stats["total"] += 1
-                if not res:
+                values = field_values(record, field)
+                if not values:
+                    stats["novalue"] += 1
+                    continue
+                valid = bool(val_func(values[0]))
+                if not valid:
                     stats["invalid"] += 1
-                validated.append({fields[0]: r[fields[0]], fields[0] + "_valid": res})
+                validated.append({field: values[0], field + "_valid": valid})
+        finally:
+            iterable.close()
 
-        elif f_type == "jsonl":
-            n = 0
-
-            def _jsonl_records():
-                for line in infile:
-                    yield orjson.loads(line)
-
-            for r in iter_command_rows(_jsonl_records(), options):
-                n += 1
-                if n % 10000 == 0:
-                    logging.info("uniq: processing %d records of %s", n, fromfile)
-                filter_expr = options.get("filter")
-                if filter_expr is not None:
-                    if not match_filter(r, filter_expr):
-                        continue
-                stats["total"] += 1
-                values = field_values(r, fields[0])
-                if len(values) > 0:
-                    res = val_func(values[0])
-                    if not res:
-                        stats["invalid"] += 1
-                    validated.append({fields[0]: values[0], fields[0] + "_valid": res})
-                else:
-                    stats["novalue"] += 1
-
-        elif f_type == "bson":
-            n = 0
-            for r in iter_command_rows(bson.decode_file_iter(infile), options):
-                n += 1
-                if n % 1000 == 0:
-                    logging.info("uniq: processing %d records of %s", n, fromfile)
-                filter_expr = options.get("filter")
-                if filter_expr is not None:
-                    if not match_filter(r, filter_expr):
-                        continue
-                stats["total"] += 1
-                values = field_values(r, fields[0])
-                if len(values) > 0:
-                    res = val_func(values[0])
-                    if not res:
-                        stats["invalid"] += 1
-                    validated.append({fields[0]: values[0], fields[0] + "_valid": res})
-                else:
-                    stats["novalue"] += 1
-        else:
-            logging.error("Invalid filed format provided")
-            if not zipfile_enabled:
-                infile.close()
-            return
-        if not zipfile_enabled:
-            infile.close()
         stats["share"] = 100.0 * stats["invalid"] / stats["total"] if stats["total"] > 0 else 0
-        novalue_share = 100.0 * stats["novalue"] / stats["total"] if stats["total"] > 0 else 0
-        logging.debug(
-            "validate: complete, %d records (%.2f%%) not valid and %d "
-            "(%.2f%%) not found of %d against %s",
+        logger.debug(
+            "validate: %d of %d records not valid and %d without a value against %s",
             stats["invalid"],
-            stats["share"],
-            stats["novalue"],
-            novalue_share,
             stats["total"],
+            stats["novalue"],
             rule,
         )
-        mode = options.get("mode", "stats")
-        if mode != "stats":
-            fieldnames = [fields[0], fields[0] + "_valid"]
+
+        if (get_option(options, "output_format") or "").lower() == "json":
+            from ..common.results import VALIDATE_RULE, emit
+
+            document: dict[str, Any] = {
+                "rule": rule,
+                "field": field,
+                "mode": mode,
+                "statistics": stats,
+            }
+            if mode != "stats":
+                document["records"] = [
+                    row
+                    for row in validated
+                    if mode == "all" or (mode == "invalid") != row[field + "_valid"]
+                ]
+            emit(VALIDATE_RULE, document, output=to_file)
+            return
+
+        out = open(to_file, "w", encoding="utf8", newline="") if to_file else sys.stdout
+        try:
+            if mode == "stats":
+                out.write(orjson.dumps(stats, option=orjson.OPT_INDENT_2).decode("utf8"))
+                out.write("\n")
+                return
             writer = csv.DictWriter(
-                out, fieldnames=fieldnames, delimiter=get_option(options, "delimiter")
+                out,
+                fieldnames=[field, field + "_valid"],
+                delimiter=get_option(options, "delimiter") or ",",
             )
             for row in validated:
-                if mode == "invalid":
-                    if not row[fields[0] + "_valid"]:
-                        writer.writerow(row)
-                elif mode == "all":
+                is_valid = row[field + "_valid"]
+                if mode == "all" or (mode == "invalid") != is_valid:
                     writer.writerow(row)
-        else:
-            out.write(str(orjson.dumps(stats, option=orjson.OPT_INDENT_2)))
-        if to_file:
-            out.close()
-        if options.get("zipfile"):
-            z.close()
+        finally:
+            if to_file:
+                out.close()
 
     def _generate_validation_report(self, violations, total_records, options):
         """Generate validation report from violations.
@@ -287,7 +253,7 @@ class Validator:
             "errors": len([v for v in violations if v["severity"] == "error"]),
             "warnings": len([v for v in violations if v["severity"] == "warning"]),
             "info": len([v for v in violations if v["severity"] == "info"]),
-            "passed": total_records - len({v["record_index"] for v in violations}),
+            "passed": total_records - len({v["row"] for v in violations}),
         }
 
         # Group violations by field and rule
@@ -296,10 +262,12 @@ class Validator:
         for v in violations:
             if v["field"]:
                 violations_by_field[v["field"]].append(v)
-            violations_by_rule[v["rule_name"]].append(v)
+            violations_by_rule[v["rule"]].append(v)
 
         # Generate report
-        if output_format == "json":
+        if output_format == "jsonl":
+            self._generate_jsonl_report(violations, stats, options)
+        elif output_format == "json":
             self._generate_json_report(
                 violations, stats, violations_by_field, violations_by_rule, options
             )
@@ -345,7 +313,7 @@ class Validator:
             "Errors",
             str(stats["errors"]),
             (
-                f"{stats['errors']/stats['total_records']*100:.2f}%"
+                f"{stats['errors'] / stats['total_records'] * 100:.2f}%"
                 if stats["total_records"] > 0
                 else "0.0%"
             ),
@@ -354,7 +322,7 @@ class Validator:
             "Warnings",
             str(stats["warnings"]),
             (
-                f"{stats['warnings']/stats['total_records']*100:.2f}%"
+                f"{stats['warnings'] / stats['total_records'] * 100:.2f}%"
                 if stats["total_records"] > 0
                 else "0.0%"
             ),
@@ -363,7 +331,7 @@ class Validator:
             "Info",
             str(stats["info"]),
             (
-                f"{stats['info']/stats['total_records']*100:.2f}%"
+                f"{stats['info'] / stats['total_records'] * 100:.2f}%"
                 if stats["total_records"] > 0
                 else "0.0%"
             ),
@@ -372,7 +340,7 @@ class Validator:
             "Passed",
             str(stats["passed"]),
             (
-                f"{stats['passed']/stats['total_records']*100:.2f}%"
+                f"{stats['passed'] / stats['total_records'] * 100:.2f}%"
                 if stats["total_records"] > 0
                 else "0.0%"
             ),
@@ -421,7 +389,7 @@ class Validator:
                     v["severity"], "white"
                 )
                 violations_table.add_row(
-                    str(v["record_index"]),
+                    str(v["row"]),
                     v["field"] or "cross-field",
                     f"[{severity_style}]{v['severity']}[/{severity_style}]",
                     v["message"],
@@ -439,6 +407,31 @@ class Validator:
         if stats["errors"] > 0 or (fail_on_warnings and stats["warnings"] > 0):
             sys.exit(1)
 
+    def _generate_jsonl_report(self, violations, stats, options):
+        """One JSON object per violation on stdout (or --output); the summary on stderr."""
+        import json as _json
+
+        to_file = get_option(options, "output")
+        lines = (
+            _json.dumps(normalize_for_json(item), ensure_ascii=False, default=str)
+            for item in violations
+        )
+        if to_file:
+            with open(to_file, "w", encoding="utf8") as out:
+                for line in lines:
+                    out.write(line + "\n")
+        else:
+            for line in lines:
+                print(line)
+        print(
+            f"{stats['total_violations']} violations in {stats['total_records']} records "
+            f"({stats['errors']} errors, {stats['warnings']} warnings)",
+            file=sys.stderr,
+        )
+        fail_on_warnings = options.get("fail_on_warnings", False)
+        if stats["errors"] > 0 or (fail_on_warnings and stats["warnings"] > 0):
+            sys.exit(1)
+
     def _generate_json_report(
         self, violations, stats, violations_by_field, violations_by_rule, options
     ):
@@ -450,7 +443,9 @@ class Validator:
             "violations": violations[: options.get("max_violations", 100)],  # Limit for JSON output
         }
 
-        print(orjson.dumps(report, option=orjson.OPT_INDENT_2).decode("utf-8"))
+        from ..common.results import VALIDATE, dumps, envelope
+
+        print(dumps(envelope(VALIDATE, report)))
 
         # Exit code based on failures
         fail_on_warnings = options.get("fail_on_warnings", False)

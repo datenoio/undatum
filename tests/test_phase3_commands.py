@@ -10,13 +10,13 @@ from undatum.cmds.slicer import Slicer
 from undatum.cmds.sniffer import Sniffer
 from undatum.cmds.transposer import Transposer
 
-
-@pytest.fixture
-def sample_csv_file(tmp_path):
-    """Create a sample CSV file for testing."""
-    csv_file = tmp_path / "sample.csv"
-    csv_file.write_text("id,name,age\n1,Alice,30\n2,Bob,25\n3,Charlie,35\n")
-    return str(csv_file)
+# Contents of the sample_csv_file / sample_jsonl_file fixtures (tests/conftest.py).
+SAMPLE_CSV = "id,name,age\n1,Alice,30\n2,Bob,25\n3,Charlie,35\n"
+SAMPLE_JSONL = (
+    '{"id": 1, "name": "Alice", "age": 30}\n'
+    '{"id": 2, "name": "Bob", "age": 25}\n'
+    '{"id": 3, "name": "Charlie", "age": 35}\n'
+)
 
 
 @pytest.fixture
@@ -25,19 +25,6 @@ def sample_csv_file2(tmp_path):
     csv_file = tmp_path / "sample2.csv"
     csv_file.write_text("id,email\n1,alice@example.com\n2,bob@example.com\n4,diana@example.com\n")
     return str(csv_file)
-
-
-@pytest.fixture
-def sample_jsonl_file(tmp_path):
-    """Create a sample JSONL file for testing."""
-    jsonl_file = tmp_path / "sample.jsonl"
-    content = (
-        '{"id": 1, "name": "Alice", "age": 30}\n'
-        '{"id": 2, "name": "Bob", "age": 25}\n'
-        '{"id": 3, "name": "Charlie", "age": 35}\n'
-    )
-    jsonl_file.write_text(content)
-    return str(jsonl_file)
 
 
 @pytest.fixture

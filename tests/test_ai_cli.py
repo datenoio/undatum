@@ -1,11 +1,17 @@
 """Tests for the `undatum ai` commands backed by iterable.ai."""
 
+import importlib
 import json
 from unittest.mock import patch
 
 from typer.testing import CliRunner
 
 from undatum.core import app
+
+# ``iterable/__init__.py`` binds ``iterable.ai`` to the ``doc`` module, so string patch
+# targets like "iterable.ai.suggest.x" resolve to the wrong module on Python 3.10.
+_AI_DOC = importlib.import_module("iterable.ai.doc")
+_AI_SUGGEST = importlib.import_module("iterable.ai.suggest")
 
 runner = CliRunner()
 
@@ -120,7 +126,7 @@ class TestAiPlan:
 
 class TestAiDoc:
     @patch("undatum.ai.doc_enrichment.enrich_blocks_result")
-    @patch("iterable.ai.doc.generate_blocks")
+    @patch.object(_AI_DOC, "generate_blocks")
     def test_doc_default_includes_agent_skill_and_codebook(self, mock_blocks, mock_enrich):
         mock_blocks.return_value = {
             "full_document_markdown": "# Documentation",
@@ -135,7 +141,7 @@ class TestAiDoc:
         assert "schema" in kwargs["blocks"]
 
     @patch("undatum.ai.doc_enrichment.enrich_blocks_result")
-    @patch("iterable.ai.doc.generate_blocks")
+    @patch.object(_AI_DOC, "generate_blocks")
     def test_doc_schema_blocks_use_generate_blocks(self, mock_blocks, mock_enrich):
         mock_blocks.return_value = {
             "full_document_markdown": "# Doc",
@@ -153,7 +159,7 @@ class TestAiDoc:
 
 
 class TestAiSuggest:
-    @patch("iterable.ai.suggest.suggest_transform")
+    @patch.object(_AI_SUGGEST, "suggest_transform")
     def test_suggest_delegates(self, mock_suggest):
         mock_suggest.return_value = {"operations": []}
         result = runner.invoke(app, ["ai", "suggest", "data.csv", "drop empty columns"])
@@ -163,7 +169,7 @@ class TestAiSuggest:
         assert mock_suggest.call_args[0][1] == "drop empty columns"
         assert "sample_size" not in mock_suggest.call_args[1]
 
-    @patch("iterable.ai.suggest.suggest_transform")
+    @patch.object(_AI_SUGGEST, "suggest_transform")
     def test_suggest_passes_sample_size(self, mock_suggest):
         mock_suggest.return_value = {"operations": []}
         result = runner.invoke(
@@ -173,7 +179,7 @@ class TestAiSuggest:
         assert result.exit_code == 0
         assert mock_suggest.call_args[1]["sample_size"] == 20
 
-    @patch("iterable.ai.suggest.suggest_transform")
+    @patch.object(_AI_SUGGEST, "suggest_transform")
     def test_suggest_apply_rename(self, mock_suggest, tmp_path):
         mock_suggest.return_value = {"operations": [{"op": "rename", "mapping": {"id": "user_id"}}]}
         src = tmp_path / "in.csv"
@@ -198,7 +204,7 @@ class TestAiSuggest:
         assert "user_id" in rows[0]
         assert "id" not in rows[0]
 
-    @patch("iterable.ai.doc.generate")
+    @patch.object(_AI_DOC, "generate")
     def test_doc_passes_tables_cache_pii(self, mock_generate):
         mock_generate.return_value = "# Documentation"
         result = runner.invoke(
@@ -222,7 +228,7 @@ class TestAiSuggest:
         assert kwargs["pii_mask_samples"] is True
 
     @patch("undatum.ai.doc_enrichment.enrich_blocks_result")
-    @patch("iterable.ai.doc.generate_blocks")
+    @patch.object(_AI_DOC, "generate_blocks")
     def test_doc_blocks_pass_tables(self, mock_blocks, mock_enrich):
         mock_blocks.return_value = {
             "full_document_markdown": "# Doc",
@@ -247,7 +253,7 @@ class TestAiSuggest:
         assert kwargs["tables"] == ["Sheet1", "Sheet2"]
 
     @patch("undatum.ai.doc_enrichment.enrich_blocks_result")
-    @patch("iterable.ai.doc.generate_blocks")
+    @patch.object(_AI_DOC, "generate_blocks")
     def test_doc_blocks_pass_context(self, mock_blocks, mock_enrich):
         mock_blocks.return_value = {
             "full_document_markdown": "# Doc",
@@ -269,7 +275,7 @@ class TestAiSuggest:
         assert mock_blocks.call_args[1]["context"] == {"title": "Sales"}
 
     @patch("undatum.ai.doc_enrichment.enrich_blocks_result")
-    @patch("iterable.ai.doc.generate_blocks")
+    @patch.object(_AI_DOC, "generate_blocks")
     def test_doc_blocks_pass_progress(self, mock_blocks, mock_enrich):
         mock_blocks.return_value = {
             "full_document_markdown": "# Doc",
@@ -279,14 +285,14 @@ class TestAiSuggest:
         assert result.exit_code == 0
         assert callable(mock_blocks.call_args[1]["progress"])
 
-    @patch("iterable.ai.doc.generate")
+    @patch.object(_AI_DOC, "generate")
     def test_doc_generate_passes_progress(self, mock_generate):
         mock_generate.return_value = "# Documentation"
         result = runner.invoke(app, ["ai", "doc", "data.csv", "--blocks", "general", "--progress"])
         assert result.exit_code == 0
         assert callable(mock_generate.call_args[1]["progress"])
 
-    @patch("iterable.ai.doc.generate")
+    @patch.object(_AI_DOC, "generate")
     def test_doc_generate_field_descriptions_and_validate(self, mock_generate):
         mock_generate.return_value = "# Documentation"
         result = runner.invoke(
@@ -310,7 +316,7 @@ class TestAiSuggest:
         assert kwargs["context"] == {"title": "Sales"}
 
     @patch("undatum.ai.doc_enrichment.enrich_blocks_result")
-    @patch("iterable.ai.doc.generate_blocks")
+    @patch.object(_AI_DOC, "generate_blocks")
     def test_doc_blocks_pass_sample_size_and_constraints(self, mock_blocks, mock_enrich):
         mock_blocks.return_value = {
             "full_document_markdown": "# Doc",
@@ -334,7 +340,7 @@ class TestAiSuggest:
         assert kwargs["detect_constraints"] is False
         assert kwargs["include_statistics"] is False
 
-    @patch("iterable.ai.doc.generate")
+    @patch.object(_AI_DOC, "generate")
     def test_doc_generate_passes_sample_size_when_set(self, mock_generate):
         mock_generate.return_value = "# Documentation"
         result = runner.invoke(
@@ -356,7 +362,7 @@ class TestAiSuggest:
         assert kwargs["include_statistics"] is False
         assert "detect_constraints" not in kwargs
 
-    @patch("iterable.ai.doc.generate")
+    @patch.object(_AI_DOC, "generate")
     def test_doc_generate_omits_sample_size_when_unset(self, mock_generate):
         mock_generate.return_value = "# Documentation"
         result = runner.invoke(app, ["ai", "doc", "data.csv", "--blocks", "general"])
@@ -369,7 +375,7 @@ class TestAiSuggest:
         assert "job_id" not in kwargs
 
     @patch("undatum.ai.doc_enrichment.enrich_blocks_result")
-    @patch("iterable.ai.doc.generate_blocks")
+    @patch.object(_AI_DOC, "generate_blocks")
     def test_doc_blocks_pass_temperature_and_max_tokens(self, mock_blocks, mock_enrich):
         mock_blocks.return_value = {
             "full_document_markdown": "# Doc",
@@ -392,7 +398,7 @@ class TestAiSuggest:
         assert kwargs["temperature"] == 0.2
         assert kwargs["max_tokens"] == 2048
 
-    @patch("iterable.ai.doc.generate")
+    @patch.object(_AI_DOC, "generate")
     def test_doc_generate_passes_temperature_and_max_tokens(self, mock_generate):
         mock_generate.return_value = "# Documentation"
         result = runner.invoke(
@@ -415,7 +421,7 @@ class TestAiSuggest:
         assert kwargs["max_tokens"] == 2048
 
     @patch("undatum.ai.doc_enrichment.enrich_blocks_result")
-    @patch("iterable.ai.doc.generate_blocks")
+    @patch.object(_AI_DOC, "generate_blocks")
     def test_doc_blocks_pass_job_id(self, mock_blocks, mock_enrich):
         mock_blocks.return_value = {
             "full_document_markdown": "# Doc",
@@ -425,7 +431,7 @@ class TestAiSuggest:
         assert result.exit_code == 0
         assert mock_blocks.call_args[1]["job_id"] == "run-42"
 
-    @patch("iterable.ai.doc.generate")
+    @patch.object(_AI_DOC, "generate")
     def test_doc_generate_passes_job_id(self, mock_generate):
         mock_generate.return_value = "# Documentation"
         result = runner.invoke(

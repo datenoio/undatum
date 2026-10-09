@@ -14,10 +14,10 @@ operations like sort/dedup) need explicit low-memory behavior for multi-GB input
 undatum convert huge.jsonl.zst huge.parquet --low-memory
 
 # Force smaller iterabledata write batches even when DuckDB is unavailable
-undatum convert data.xml data.parquet --low-memory --engine python --batch-size 5000
+undatum convert data.xml data.parquet --tagname item --low-memory --engine python --batch-size 5000
 
 # Parquet row-group size (iterable path; DuckDB COPY ignores this flag)
-undatum convert data.csv data.parquet --row-group-size 100000 --batch-size 50000 --engine iterable
+undatum convert data.csv data.parquet --row-group-size 100000 --batch-size 50000 --engine python
 
 # Multiprocessing for CPU-bound Python-engine convert (GitHub #18 / P1.8)
 # Uses process-pool chunk batches; preserves row order; omit --threads for sequential
@@ -25,7 +25,7 @@ undatum convert big.csv out.jsonl --engine python --threads 8
 
 # Parallel rule-file validation / iterable stats
 undatum validate data.csv --rules rules.yml --threads 4
-undatum stats data.csv --engine iterable --threads 4
+undatum stats data.csv --engine python --threads 4
 
 # External merge sort / disk-backed dedup
 undatum sort data.jsonl --by ts --low-memory --output sorted.jsonl

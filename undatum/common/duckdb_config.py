@@ -3,9 +3,10 @@
 import logging
 import os
 import re
-from typing import Optional
 
 import duckdb
+
+logger = logging.getLogger(__name__)
 
 
 def parse_memory_size(memory_str: str) -> int:
@@ -44,10 +45,10 @@ def parse_memory_size(memory_str: str) -> int:
 
 
 def create_duckdb_connection(
-    threads: Optional[int] = None,
-    memory: Optional[str] = None,
-    temp_dir: Optional[str] = None,
-    database: Optional[str] = None,
+    threads: int | None = None,
+    memory: str | None = None,
+    temp_dir: str | None = None,
+    database: str | None = None,
 ) -> duckdb.DuckDBPyConnection:
     """Create a configured DuckDB connection.
 
@@ -70,7 +71,7 @@ def create_duckdb_connection(
         if threads < 1:
             raise ValueError(f"Thread count must be >= 1, got {threads}")
         conn.execute(f"SET threads={threads}")
-        logging.debug(f"DuckDB threads set to {threads}")
+        logger.debug(f"DuckDB threads set to {threads}")
 
     # Configure memory limit
     if memory:
@@ -80,9 +81,9 @@ def create_duckdb_connection(
                 # DuckDB requires a unit suffix; bare integers raise:
                 # "Unknown unit for memory: ''"
                 conn.execute(f"SET memory_limit='{memory_bytes}B'")
-                logging.debug(f"DuckDB memory limit set to {memory_bytes} bytes ({memory})")
+                logger.debug(f"DuckDB memory limit set to {memory_bytes} bytes ({memory})")
         except ValueError as e:
-            logging.warning(f"Invalid memory size format: {memory}, error: {e}")
+            logger.warning(f"Invalid memory size format: {memory}, error: {e}")
 
     # Configure temp directory
     if temp_dir:
@@ -90,13 +91,13 @@ def create_duckdb_connection(
             try:
                 os.makedirs(temp_dir, exist_ok=True)
             except OSError as e:
-                logging.warning(f"Could not create temp directory {temp_dir}: {e}")
+                logger.warning(f"Could not create temp directory {temp_dir}: {e}")
         if os.path.exists(temp_dir) and os.path.isdir(temp_dir):
             # DuckDB uses temp_directory setting
             conn.execute(f"SET temp_directory='{temp_dir}'")
-            logging.debug(f"DuckDB temp directory set to {temp_dir}")
+            logger.debug(f"DuckDB temp directory set to {temp_dir}")
         else:
-            logging.warning(f"Temp directory does not exist or is not a directory: {temp_dir}")
+            logger.warning(f"Temp directory does not exist or is not a directory: {temp_dir}")
 
     return conn
 

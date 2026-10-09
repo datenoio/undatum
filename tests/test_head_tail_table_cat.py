@@ -1,5 +1,6 @@
 """Tests for head, tail, table, and cat commands."""
 
+import json
 import os
 import tempfile
 from unittest.mock import MagicMock, patch
@@ -20,71 +21,25 @@ class TestHead:
         head = Head()
         assert head is not None
 
-    @patch("undatum.cmds.head.open_iterable")
-    @patch("undatum.cmds.head.DataWriter")
-    def test_head_basic(self, mock_writer_class, mock_open_iterable):
-        """Test basic head operation."""
-        head = Head()
-
-        mock_iterable = MagicMock()
-        mock_iterable.__iter__ = MagicMock(
-            return_value=iter([{"id": 1}, {"id": 2}, {"id": 3}, {"id": 4}, {"id": 5}])
-        )
-        mock_open_iterable.return_value = mock_iterable
-
-        mock_writer = MagicMock()
-        mock_writer_class.return_value = mock_writer
-
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as f:
-            f.write('{"id": 1}\n{"id": 2}\n{"id": 3}\n{"id": 4}\n{"id": 5}\n')
-            temp_path = f.name
-
-        try:
-            options = {"n": 3}
-            head.head(temp_path, options)
-            mock_writer.write_items.assert_called_once()
-            items = mock_writer.write_items.call_args[0][0]
-            assert len(items) == 3
-        finally:
-            os.unlink(temp_path)
+    @pytest.mark.parametrize("engine", ["python", "duckdb"])
+    def test_head_basic(self, tmp_path, engine):
+        """The first n records are written, on both engines."""
+        source = tmp_path / "in.jsonl"
+        source.write_text("".join(f'{{"id": {i}}}\n' for i in range(1, 6)), encoding="utf8")
+        out = tmp_path / "out.jsonl"
+        Head().head(str(source), {"n": 3, "output": str(out), "engine": engine})
+        assert out.read_text().splitlines() == ['{"id": 1}', '{"id": 2}', '{"id": 3}']
 
 
 class TestTail:
     """Test Tail class."""
 
-    def test_init(self):
-        """Test Tail initialization."""
-        tail = Tail()
-        assert tail is not None
-
-    @patch("undatum.cmds.tail.open_iterable")
-    @patch("undatum.cmds.tail.DataWriter")
-    def test_tail_basic(self, mock_writer_class, mock_open_iterable):
-        """Test basic tail operation."""
-        tail = Tail()
-
-        mock_iterable = MagicMock()
-        mock_iterable.__iter__ = MagicMock(
-            return_value=iter([{"id": 1}, {"id": 2}, {"id": 3}, {"id": 4}, {"id": 5}])
-        )
-        mock_open_iterable.return_value = mock_iterable
-
-        mock_writer = MagicMock()
-        mock_writer_class.return_value = mock_writer
-
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as f:
-            f.write('{"id": 1}\n{"id": 2}\n{"id": 3}\n{"id": 4}\n{"id": 5}\n')
-            temp_path = f.name
-
-        try:
-            options = {"n": 3}
-            tail.tail(temp_path, options)
-            mock_writer.write_items.assert_called_once()
-            items = mock_writer.write_items.call_args[0][0]
-            assert len(items) == 3
-            assert items[0]["id"] == 3  # Last 3 items: 3, 4, 5
-        finally:
-            os.unlink(temp_path)
+    def test_tail_basic(self, tmp_path):
+        source = tmp_path / "in.jsonl"
+        source.write_text("".join(f'{{"id": {i}}}\n' for i in range(1, 6)), encoding="utf8")
+        out = tmp_path / "out.jsonl"
+        Tail().tail(str(source), {"n": 3, "output": str(out)})
+        assert out.read_text().splitlines() == ['{"id": 3}', '{"id": 4}', '{"id": 5}']
 
 
 class TestTableFormatter:
@@ -144,86 +99,25 @@ class TestTableFormatter:
 class TestCat:
     """Test Cat class."""
 
-    def test_init(self):
-        """Test Cat initialization."""
-        cat = Cat()
-        assert cat is not None
+    def _files(self, tmp_path):
+        first = tmp_path / "a.csv"
+        first.write_text("id,name\n1,Alice\n2,Bob\n", encoding="utf8")
+        second = tmp_path / "b.csv"
+        second.write_text("id,city\n3,Rome\n", encoding="utf8")
+        return str(first), str(second)
 
-    @patch("undatum.cmds.cat.open_iterable")
-    @patch("undatum.cmds.cat.DataWriter")
-    def test_cat_rows_mode(self, mock_writer_class, mock_open_iterable):
-        """Test cat in rows mode."""
-        cat = Cat()
+    def test_cat_rows_mode(self, tmp_path):
+        """Rows are appended; the header is the union of the files' fields."""
+        out = tmp_path / "out.csv"
+        Cat().cat(list(self._files(tmp_path)), {"mode": "rows", "output": str(out)})
+        assert out.read_text().splitlines() == ["id,name,city", "1,Alice,", "2,Bob,", "3,,Rome"]
 
-        # Mock iterable to return different items for each file
-        def mock_iterable_side_effect(*args, **kwargs):
-            mock_iter = MagicMock()
-            # First call returns items for first file, second call for second file
-            if not hasattr(mock_iterable_side_effect, "call_count"):
-                mock_iterable_side_effect.call_count = 0
-            if mock_iterable_side_effect.call_count == 0:
-                mock_iter.__iter__ = MagicMock(return_value=iter([{"id": 1}, {"id": 2}]))
-            else:
-                mock_iter.__iter__ = MagicMock(return_value=iter([{"id": 3}, {"id": 4}]))
-            mock_iterable_side_effect.call_count += 1
-            return mock_iter
-
-        mock_open_iterable.side_effect = mock_iterable_side_effect
-
-        mock_writer = MagicMock()
-        mock_writer_class.return_value = mock_writer
-
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as f1:
-            f1.write('{"id": 1}\n{"id": 2}\n')
-            temp_path1 = f1.name
-
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as f2:
-            f2.write('{"id": 3}\n{"id": 4}\n')
-            temp_path2 = f2.name
-
-        try:
-            options = {"mode": "rows"}
-            cat.cat([temp_path1, temp_path2], options)
-            mock_writer.write_items.assert_called_once()
-            items = mock_writer.write_items.call_args[0][0]
-            assert len(items) == 4  # 2 from each file
-        finally:
-            os.unlink(temp_path1)
-            os.unlink(temp_path2)
-
-    @patch("undatum.cmds.cat.open_iterable")
-    @patch("undatum.cmds.cat.DataWriter")
-    def test_cat_columns_mode(self, mock_writer_class, mock_open_iterable):
-        """Test cat in columns mode."""
-        cat = Cat()
-
-        mock_iterable = MagicMock()
-        mock_iterable.__iter__ = MagicMock(return_value=iter([{"name": "Alice"}, {"name": "Bob"}]))
-        mock_open_iterable.return_value = mock_iterable
-
-        mock_writer = MagicMock()
-        mock_writer_class.return_value = mock_writer
-
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as f1:
-            f1.write('{"name": "Alice"}\n{"name": "Bob"}\n')
-            temp_path1 = f1.name
-
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as f2:
-            f2.write('{"age": 30}\n{"age": 25}\n')
-            temp_path2 = f2.name
-
-        try:
-            options = {"mode": "columns"}
-            cat.cat([temp_path1, temp_path2], options)
-            mock_writer.write_items.assert_called_once()
-        finally:
-            os.unlink(temp_path1)
-            os.unlink(temp_path2)
-
-    def test_cat_no_files(self):
-        """Test cat with no files raises a validation error."""
-        from undatum.common.errors import ValidationError
-
-        cat = Cat()
-        with pytest.raises(ValidationError, match="At least one input file is required"):
-            cat.cat([], {})
+    def test_cat_columns_mode(self, tmp_path):
+        """Record i of every file is merged; the shorter file just ends."""
+        out = tmp_path / "out.jsonl"
+        Cat().cat(list(self._files(tmp_path)), {"mode": "columns", "output": str(out)})
+        rows = [json.loads(line) for line in out.read_text().splitlines()]
+        assert rows == [
+            {"id": "3", "name": "Alice", "city": "Rome"},
+            {"id": "2", "name": "Bob"},
+        ]

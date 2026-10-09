@@ -151,3 +151,39 @@ class TestConvertMany:
         (raw / "one.csv").write_text("a,b\n1,2\n", encoding="utf8")
         with pytest.raises(ValidationError, match="target extension"):
             Dataset.convert_many(str(raw), str(tmp_path / "out"), progress=False)
+
+
+def test_chain_leaves_no_temporary_files(tmp_path, monkeypatch):
+    import tempfile as _tempfile
+
+    from undatum import Dataset
+
+    scratch = tmp_path / "tmp"
+    scratch.mkdir()
+    monkeypatch.setattr(_tempfile, "tempdir", str(scratch))
+    source = tmp_path / "data.csv"
+    source.write_text("a,b\n1,\n1,\n2,x\n", encoding="utf8")
+    out = tmp_path / "out.jsonl"
+
+    Dataset.read(str(source)).fill("b", value="0").dedup().write(str(out))
+
+    assert out.exists()
+    assert list(scratch.iterdir()) == []
+
+
+def test_dataset_context_manager_removes_temp_file(tmp_path, monkeypatch):
+    import tempfile as _tempfile
+
+    from undatum import Dataset
+
+    scratch = tmp_path / "tmp"
+    scratch.mkdir()
+    monkeypatch.setattr(_tempfile, "tempdir", str(scratch))
+    source = tmp_path / "data.csv"
+    source.write_text("a,b\n1,\n2,x\n", encoding="utf8")
+
+    # Plans are lazy and stream between steps: no temporary file exists at any point.
+    with Dataset.read(str(source)).fill("b", value="0") as filled:
+        assert filled.count() == 2
+        assert list(scratch.iterdir()) == []
+    assert list(scratch.iterdir()) == []

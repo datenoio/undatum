@@ -18,7 +18,7 @@ for package in ("undatum", "iterable", "duckdb", "typer", "click", "rich"):
         hiddenimports += collect_submodules(package)
 
 a = Analysis(
-    [os.path.join(repo_root, "undatum", "__main__.py")],
+    [os.path.join(repo_root, "packaging", "entry.py")],
     pathex=[repo_root],
     binaries=binaries,
     datas=datas,

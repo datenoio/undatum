@@ -8,9 +8,7 @@ from undatum.common.external_sort import external_merge_sort
 
 def test_external_merge_sort_orders_records():
     records = [{"n": i} for i in [5, 1, 4, 2, 3, 9, 0, 8, 7, 6]]
-    sorted_rows = list(
-        external_merge_sort(records, key_fn=lambda r: r["n"], run_size=3)
-    )
+    sorted_rows = list(external_merge_sort(records, key_fn=lambda r: r["n"], run_size=3))
     assert [r["n"] for r in sorted_rows] == list(range(10))
 
 
@@ -94,9 +92,7 @@ def test_dedup_duckdb_file_output_has_no_rn_column(tmp_path):
         {"key_fields": "id", "keep": "first", "output": str(out), "engine": "duckdb"},
     )
     rows = [
-        json.loads(line)
-        for line in out.read_text(encoding="utf-8").splitlines()
-        if line.strip()
+        json.loads(line) for line in out.read_text(encoding="utf-8").splitlines() if line.strip()
     ]
     assert len(rows) == 2
     for row in rows:

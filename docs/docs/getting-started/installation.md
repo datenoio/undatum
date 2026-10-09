@@ -6,7 +6,7 @@ description: "Install undatum with uv, pipx, pip, or from source"
 
 ### Using uv or pipx (recommended for CLI use)
 
-```bash
+```bash norun
 uv tool install undatum
 # or
 pipx install undatum
@@ -25,21 +25,48 @@ Dependencies are declared in `pyproject.toml` and will be installed automaticall
 
 Preferred paths:
 
-```bash
+```bash norun
 brew install pipx && pipx install undatum
 # or
 uv tool install undatum
 ```
 
-A Homebrew formula is not published from this repository. Use `pipx` or `uv` on macOS.
+A Homebrew tap is planned (`brew install datenoio/tap/undatum`); until it exists, use `pipx` or `uv` on macOS.
 
 Release tags publish **PyInstaller single-file binaries** (Linux, macOS, Windows) on the [GitHub Releases](https://github.com/datenoio/undatum/releases) page (Actions artifacts on the tag workflow). These are ops-oriented; `pipx`/`uv` remain the supported install paths for most users.
 
 A man page ships with the package (`man undatum` after install, or `make man` to regenerate `man/undatum.1`).
 
+### Container image
+
+Starting with the next release, every version is published as a container image (core
+install and a `-full` variant with the common extras: API, web UI, MCP, cloud storage,
+PostgreSQL, MySQL, ClickHouse, Elasticsearch, plots):
+
+```bash norun
+docker run --rm -v "$PWD:/data" ghcr.io/datenoio/undatum convert data.csv data.parquet
+docker run --rm -v "$PWD:/data" ghcr.io/datenoio/undatum:latest-full mcp serve --root /data
+```
+
+The image runs as a non-root user with `/data` as the working directory; `undatum` is the
+entrypoint. Build it yourself with `docker build -t undatum .` (`--build-arg EXTRAS=full`).
+
+### Every channel at a glance
+
+| Channel | Command | Status |
+|---------|---------|--------|
+| PyPI (uv / pipx / pip) | `uv tool install undatum` | available |
+| Container | `docker run ghcr.io/datenoio/undatum --version` | from the next release |
+| Release binaries | download from GitHub Releases | from the next release |
+| Homebrew tap | `brew install datenoio/tap/undatum` | planned (the tap repository is not set up yet) |
+| conda-forge | `conda install -c conda-forge undatum` | planned (waits for iterabledata on conda-forge) |
+
+The same smoke test works for every channel: `undatum --version` and
+`undatum count data.csv`.
+
 ### Optional extras
 
-Some features require optional dependencies, installed as extras. This is the canonical list; feature sections elsewhere in the docs link back here.
+Some features require optional dependencies, installed as extras. This is the canonical list; feature sections elsewhere in the docs link back here. A command whose extra is missing exits with code 2 and prints the `pip install` command to run.
 
 | Extra | Enables |
 |-------|---------|
@@ -55,13 +82,15 @@ Some features require optional dependencies, installed as extras. This is the ca
 | `gcs` | Google Cloud Storage (`gs://` / `gcs://`, gcsfs) |
 | `azure` | Azure Blob / ADLS (`az://` / `abfs://`, adlfs) |
 | `cloud` | Multi-cloud storage via fsspec (S3 + GCS + Azure) |
-| `postgres`, `mysql`, `mssql`, `clickhouse` | Database connectors |
+| `postgres`, `mysql`, `mssql`, `clickhouse` | Database connectors (MongoDB support is included in the base install) |
+| `elastic` | Elasticsearch / OpenSearch (`db load`, `elasticsearch://` URIs) |
 | `frictionless` | Full Frictionless Data Package validation |
 | `lakehouse` | Delta / Iceberg / Lance / DuckLake / Hudi via iterabledata |
 | `gis` | Geospatial and LiDAR formats |
 | `scientific` | MATLAB, geophysical, and HDF5 formats |
 | `access` | Microsoft Access (`.mdb` / `.accdb`) |
 | `compression` | Extra codecs (snappy, brotli, lzo) |
+| `all` | Every extra above |
 
 ```bash
 pip install "undatum[api]"
@@ -81,12 +110,14 @@ pip install "undatum[postgres]"
 pip install "undatum[mysql]"
 pip install "undatum[mssql]"
 pip install "undatum[clickhouse]"
+pip install "undatum[elastic]"
 pip install "undatum[frictionless]"
 pip install "undatum[lakehouse]"
 pip install "undatum[gis]"
 pip install "undatum[scientific]"
 pip install "undatum[access]"
 pip install "undatum[compression]"
+pip install "undatum[all]"
 
 # Combine extras in one install
 pip install "undatum[extract,api]"
@@ -102,28 +133,22 @@ data headers data.csv   # same thing
 
 ### Shell completion
 
-Typer provides built-in shell completion. Install it for your shell:
+Shell completion is built in. Run this from the shell you want completion for (bash, zsh,
+fish or PowerShell); the shell is detected automatically:
 
-```bash
-# Bash
-undatum --install-completion bash
-
-# Zsh
-undatum --install-completion zsh
-
-# Fish
-undatum --install-completion fish
+```bash norun
+undatum --install-completion
 ```
 
-To preview completion scripts without installing:
+To print the completion script instead of installing it:
 
-```bash
-undatum --show-completion bash
+```bash norun
+undatum --show-completion
 ```
 
 ### Requirements
 
-- Python 3.9 or greater (CI tests 3.9–3.13)
+- Python 3.10 or greater (CI tests 3.10–3.13)
 
 ### Install from source
 

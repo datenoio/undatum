@@ -26,8 +26,9 @@ def test_db_dump_sqlite_to_csv(tmp_path):
 
 
 def test_db_dump_requires_table_or_query(tmp_path):
-    from undatum.common.errors import ValidationError
     import pytest
+
+    from undatum.common.errors import ValidationError
 
     with pytest.raises(ValidationError):
         DatabaseDumper().dump("sqlite:///x.db", str(tmp_path / "o.csv"))

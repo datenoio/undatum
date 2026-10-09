@@ -41,7 +41,7 @@ undatum convert ./raw ./out --recursive --to-ext jsonl --filename-pattern "{stem
 
 ## Cloud to cloud
 
-```bash
+```bash norun
 undatum convert s3://bucket/input.jsonl gs://other/output.parquet
 ```
 

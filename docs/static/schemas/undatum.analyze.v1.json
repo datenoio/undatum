@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://datenoio.github.io/undatum/schemas/undatum.analyze.v1.json",
+  "title": "File analysis report",
+  "description": "Printed by `undatum analyze --json`.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "const": "undatum.analyze/1",
+      "description": "Result layout"
+    },
+    "filename": {
+      "type": "string",
+      "description": "Input path"
+    },
+    "file_size": {
+      "type": "integer",
+      "description": "Size in bytes"
+    },
+    "file_type": {
+      "type": "string",
+      "description": "Detected format id"
+    },
+    "compression": {
+      "type": "string",
+      "description": "Compression codec or raw"
+    },
+    "total_tables": {
+      "type": "integer",
+      "description": "Number of tables"
+    },
+    "total_records": {
+      "type": "integer",
+      "description": "Number of records"
+    },
+    "tables": {
+      "type": "array",
+      "description": "Per-table structure: fields, types, descriptions"
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Encoding, delimiter and other file metadata"
+    },
+    "success": {
+      "type": "boolean",
+      "description": "Analysis succeeded"
+    },
+    "error": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Error message when analysis failed"
+    }
+  },
+  "required": [
+    "schema",
+    "filename",
+    "tables"
+  ]
+}

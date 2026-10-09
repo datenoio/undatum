@@ -83,8 +83,8 @@ class TestParallelValidate:
         seq = _run_validate_capture(people_csv, required_email_rules)
         par = _run_validate_capture(people_csv, required_email_rules, threads=2, batch_size=3)
         assert seq["total_records"] == par["total_records"] == 8
-        seq_idxs = sorted(v["record_index"] for v in seq["violations"])
-        par_idxs = sorted(v["record_index"] for v in par["violations"])
+        seq_idxs = sorted(v["row"] for v in seq["violations"])
+        par_idxs = sorted(v["row"] for v in par["violations"])
         assert seq_idxs == par_idxs
         assert len(seq_idxs) >= 1  # empty email on Dan
 
@@ -122,8 +122,7 @@ class TestParallelStats:
                 seq["debug"]["fielddata"][key]["total"] == par["debug"]["fielddata"][key]["total"]
             )
             assert (
-                seq["debug"]["fielddata"][key]["n_uniq"]
-                == par["debug"]["fielddata"][key]["n_uniq"]
+                seq["debug"]["fielddata"][key]["n_uniq"] == par["debug"]["fielddata"][key]["n_uniq"]
             )
 
     def test_jsonl_parallel_stats(self, tmp_path: Path):

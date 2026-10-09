@@ -12,28 +12,15 @@ from undatum.cmds.reverser import Reverser
 from undatum.cmds.table import TableFormatter
 from undatum.cmds.tail import Tail
 
-
-@pytest.fixture
-def sample_csv_file(tmp_path):
-    """Create a sample CSV file for testing."""
-    csv_file = tmp_path / "sample.csv"
-    csv_file.write_text("id,name,age\n1,Alice,30\n2,Bob,25\n3,Charlie,35\n4,Diana,28\n5,Eve,32\n")
-    return str(csv_file)
-
-
-@pytest.fixture
-def sample_jsonl_file(tmp_path):
-    """Create a sample JSONL file for testing."""
-    jsonl_file = tmp_path / "sample.jsonl"
-    content = (
-        '{"id": 1, "name": "Alice", "age": 30}\n'
-        '{"id": 2, "name": "Bob", "age": 25}\n'
-        '{"id": 3, "name": "Charlie", "age": 35}\n'
-        '{"id": 4, "name": "Diana", "age": 28}\n'
-        '{"id": 5, "name": "Eve", "age": 32}\n'
-    )
-    jsonl_file.write_text(content)
-    return str(jsonl_file)
+# Contents of the sample_csv_file / sample_jsonl_file fixtures (tests/conftest.py).
+SAMPLE_CSV = "id,name,age\n1,Alice,30\n2,Bob,25\n3,Charlie,35\n4,Diana,28\n5,Eve,32\n"
+SAMPLE_JSONL = (
+    '{"id": 1, "name": "Alice", "age": 30}\n'
+    '{"id": 2, "name": "Bob", "age": 25}\n'
+    '{"id": 3, "name": "Charlie", "age": 35}\n'
+    '{"id": 4, "name": "Diana", "age": 28}\n'
+    '{"id": 5, "name": "Eve", "age": 32}\n'
+)
 
 
 @pytest.fixture

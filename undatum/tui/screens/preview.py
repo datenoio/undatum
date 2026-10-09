@@ -117,7 +117,7 @@ class PreviewScreen(Screen):
         self.app.push_screen(BrowseScreen(history_file=history))
 
     def action_profile(self) -> None:
-        self.notify("Running undatum profile…")
+        self.notify("Running undatum stats…")
         self.run_worker(self._profile_in_thread, exclusive=True, thread=True, group="explore")
 
     def _profile_in_thread(self) -> None:

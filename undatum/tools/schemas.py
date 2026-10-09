@@ -12,12 +12,18 @@ from typing import Any
 
 from iterable.tools import schemas as _iter_schemas
 
+from . import generated
 from ._core import (
+    count_records,
     deduplicate,
+    diff_files,
     frequency,
+    list_fields,
     mask_fields,
     query_sql,
     sample_data,
+    sniff_file,
+    tool_error,
 )
 
 # undatum-only tools layered on top of the iterabledata foundation tools.
@@ -141,6 +147,109 @@ UNDATUM_TOOL_DEFINITIONS: list[dict[str, Any]] = [
             "required": ["input_path", "output_path"],
         },
     },
+    {
+        "name": "count_records",
+        "description": (
+            "Count the records of a file. Returns the undatum.count/1 document "
+            "(same as `undatum count --json`)."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string"},
+                "format_in": {
+                    "type": "string",
+                    "description": "Input format when detection is wrong",
+                },
+                "table": {
+                    "type": "string",
+                    "description": "Table or sheet name for multi-table sources",
+                },
+            },
+            "required": ["path"],
+        },
+    },
+    {
+        "name": "list_fields",
+        "description": (
+            "List field names in file order (nested fields as dotted paths). Returns the "
+            "undatum.headers/1 document (same as `undatum headers --json`)."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string"},
+                "limit": {"type": "integer", "description": "Records to read (default: all)"},
+                "format_in": {
+                    "type": "string",
+                    "description": "Input format when detection is wrong",
+                },
+                "table": {
+                    "type": "string",
+                    "description": "Table or sheet name for multi-table sources",
+                },
+                "flatten_nested": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Unfold nested dict / array-of-dict fields onto dotted paths",
+                },
+            },
+            "required": ["path"],
+        },
+    },
+    {
+        "name": "sniff_file",
+        "description": (
+            "Detect format, compression, encoding, delimiter, header, field types and record "
+            "count. Returns the undatum.sniff/1 document (same as `undatum sniff --json`)."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string"},
+                "format_in": {
+                    "type": "string",
+                    "description": "Input format when detection is wrong",
+                },
+                "table": {
+                    "type": "string",
+                    "description": "Table or sheet name for multi-table sources",
+                },
+            },
+            "required": ["path"],
+        },
+    },
+    {
+        "name": "diff_files",
+        "description": (
+            "Compare two files: records added, removed and changed (by key fields, or by "
+            "position). Returns the undatum.diff/1 document (same as `undatum diff --json`)."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "left_path": {"type": "string", "description": "Old file"},
+                "right_path": {"type": "string", "description": "New file"},
+                "key": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Key fields; omit to compare records by position",
+                },
+                "ignore_order": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Without key: compare as multisets instead of by position",
+                },
+                "summary_only": {"type": "boolean", "default": False},
+                "limit": {
+                    "type": "integer",
+                    "default": 100,
+                    "description": "Records returned per list (counts are always complete)",
+                },
+            },
+            "required": ["left_path", "right_path"],
+        },
+    },
 ]
 
 UNDATUM_TOOL_HANDLERS: dict[str, Any] = {
@@ -149,11 +258,25 @@ UNDATUM_TOOL_HANDLERS: dict[str, Any] = {
     "deduplicate": deduplicate,
     "mask_fields": mask_fields,
     "sample_data": sample_data,
+    "count_records": count_records,
+    "list_fields": list_fields,
+    "sniff_file": sniff_file,
+    "diff_files": diff_files,
 }
 
-# Combined registries (foundation tools first, undatum extras last).
-TOOL_DEFINITIONS: list[dict[str, Any]] = _iter_schemas.TOOL_DEFINITIONS + UNDATUM_TOOL_DEFINITIONS
-TOOL_HANDLERS: dict[str, Any] = {**_iter_schemas.TOOL_HANDLERS, **UNDATUM_TOOL_HANDLERS}
+# One tool per registered operation (see undatum.tools.generated).
+GENERATED_TOOL_DEFINITIONS: list[dict[str, Any]] = generated.tool_definitions()
+GENERATED_TOOL_NAMES = {tool["name"] for tool in GENERATED_TOOL_DEFINITIONS}
+
+# Combined registries: foundation tools, undatum extras, then generated operation tools.
+TOOL_DEFINITIONS: list[dict[str, Any]] = (
+    _iter_schemas.TOOL_DEFINITIONS + UNDATUM_TOOL_DEFINITIONS + GENERATED_TOOL_DEFINITIONS
+)
+TOOL_HANDLERS: dict[str, Any] = {
+    **_iter_schemas.TOOL_HANDLERS,
+    **UNDATUM_TOOL_HANDLERS,
+    **{name: generated.handler(name) for name in GENERATED_TOOL_NAMES},
+}
 
 
 def to_openai_functions() -> list[dict[str, Any]]:
@@ -201,11 +324,23 @@ def to_json_schema() -> dict[str, Any]:
 
 
 def call_tool(name: str, arguments: dict[str, Any] | str) -> dict[str, Any]:
-    """Invoke a tool by name with JSON arguments (for agent runtimes)."""
+    """Invoke a tool by name with JSON arguments (for agent runtimes).
+
+    Path arguments are checked against the agent sandbox (see
+    :mod:`undatum.tools.sandbox`) before any tool runs.
+    """
+    from .sandbox import SandboxViolation, check_tool_arguments
+
+    if isinstance(arguments, str):
+        arguments = json.loads(arguments)
+    try:
+        arguments = check_tool_arguments(arguments or {})
+    except SandboxViolation as exc:
+        return tool_error(str(exc), code=exc.code)
     if name in UNDATUM_TOOL_HANDLERS:
-        if isinstance(arguments, str):
-            arguments = json.loads(arguments)
         return UNDATUM_TOOL_HANDLERS[name](**arguments)
+    if name in GENERATED_TOOL_NAMES:
+        return generated.call_generated(name, arguments)
     # Delegate foundation tools to iterabledata (preserves its arg mapping).
     return _iter_schemas.call_tool(name, arguments)
 

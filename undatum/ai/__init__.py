@@ -1,170 +1,106 @@
-"""AI service module for dataset documentation."""
+"""AI helpers for ``--autodoc`` (dataset and field descriptions, structured metadata).
 
-from typing import Any, Optional
+All requests go through iterabledata's ``iterable.ai`` providers, the same stack as
+``undatum ai``. Configuration keeps the historical names: ``UNDATUM_AI_PROVIDER``,
+``--ai-provider`` / ``--ai-model`` / ``--ai-base-url``, the ``ai:`` section of
+``undatum.yaml`` and provider API-key variables.
+"""
 
-from .base import AIAPIError, AIConfigurationError, AIService, AIServiceError
+from __future__ import annotations
+
+from typing import Any
+
+from .base import AIAPIError, AIConfigurationError, AIServiceError
 from .config import get_ai_config, get_provider_config
-from .providers import (
-    LMStudioProvider,
-    OllamaProvider,
-    OpenAIProvider,
-    OpenRouterProvider,
-    PerplexityProvider,
-)
-
-# Provider registry
-PROVIDERS = {
-    "openai": OpenAIProvider,
-    "openrouter": OpenRouterProvider,
-    "ollama": OllamaProvider,
-    "lmstudio": LMStudioProvider,
-    "perplexity": PerplexityProvider,
-}
+from .service import LOCAL_PROVIDERS, PROVIDERS, AIService
 
 
-def get_ai_service(
-    provider: Optional[str] = None, config: Optional[dict[str, Any]] = None
-) -> AIService:
-    """Get AI service instance based on configuration.
+def _as_bool(value: Any) -> bool | None:
+    if value is None or value == "":
+        return None
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in ("1", "true", "yes", "on")
+
+
+def get_ai_service(provider: str | None = None, config: dict[str, Any] | None = None) -> AIService:
+    """Return a configured :class:`AIService`.
 
     Args:
-        provider: Provider name (openai, openrouter, ollama, lmstudio, perplexity)
-                  If None, will be auto-detected from config
-        config: Optional configuration dictionary. If None, will load from
-                environment variables and config files
+        provider: Provider name (``openai``, ``anthropic``, ``gemini``, ``azure``,
+            ``openrouter``, ``ollama``, ``lmstudio``, ``perplexity``,
+            ``openai-compatible``); taken from the configuration when ``None``.
+        config: Overrides (``model``, ``base_url``, ``api_key``, ``timeout``,
+            ``pii_mask_samples``) on top of environment and config-file settings.
 
     Returns:
-        Configured AI service instance
+        The service; the provider client is created and checked immediately.
 
     Raises:
-        AIConfigurationError: If provider is not configured or invalid
+        AIConfigurationError: If no provider is configured or it cannot be set up.
 
     Examples:
-        >>> # Auto-detect from environment
-        >>> service = get_ai_service()
-
-        >>> # Explicit provider
-        >>> service = get_ai_service('openai', {'api_key': '...', 'model': 'gpt-4'})
-
-        >>> # From config file
-        >>> service = get_ai_service('ollama')
+        >>> service = get_ai_service("ollama", {"model": "llama3.2"})
     """
-    # Load configuration
     full_config = get_ai_config(config or {})
-
-    # Determine provider
-    if provider:
-        provider_name = provider.lower()
-    else:
-        provider_name = full_config.get("provider", "").lower()
-
-    # Backward compatibility: if PERPLEXITY_API_KEY is set and no provider specified
-    if not provider_name:
-        import os
-
-        if os.getenv("PERPLEXITY_API_KEY"):
-            provider_name = "perplexity"
-            full_config["provider"] = "perplexity"
-
+    provider_name = (provider or full_config.get("provider") or "").lower()
     if not provider_name:
         raise AIConfigurationError(
-            "No AI provider specified. Set UNDATUM_AI_PROVIDER environment variable, "
-            "configure in undatum.yaml, or pass provider argument."
+            "No AI provider specified. Set UNDATUM_AI_PROVIDER or a provider API key "
+            "(OPENAI_API_KEY, ANTHROPIC_API_KEY, ...), configure it in undatum.yaml, "
+            "or pass --ai-provider."
         )
-
-    if provider_name not in PROVIDERS:
-        raise AIConfigurationError(
-            f"Unknown provider: {provider_name}. "
-            f"Available providers: {', '.join(PROVIDERS.keys())}"
-        )
-
-    # Get provider class
-    provider_class = PROVIDERS[provider_name]
-
-    # Get provider-specific configuration
     provider_config = get_provider_config(full_config, provider_name)
-
-    # Instantiate provider
-    try:
-        return provider_class(**provider_config)
-    except AIConfigurationError as e:
-        raise AIConfigurationError(f"Failed to configure {provider_name} provider: {str(e)}") from e
-
-
-# Backward compatibility: export old function signatures
-def get_fields_info(fields, language="English", ai_service: Optional[AIService] = None):
-    """Get field descriptions (backward compatibility wrapper).
-
-    Args:
-        fields: List of field names or comma-separated string
-        language: Language for descriptions
-        ai_service: Optional AI service instance. If None, will auto-detect.
-
-    Returns:
-        Dictionary mapping field names to descriptions
-    """
-    if ai_service is None:
-        ai_service = get_ai_service()
-
-    # Handle both list and string input
-    if isinstance(fields, str):
-        fields = [f.strip() for f in fields.split(",")]
-
-    return ai_service.get_fields_info(fields, language)
+    service = AIService(
+        provider=provider_name,
+        model=provider_config.get("model"),
+        api_key=provider_config.get("api_key"),
+        base_url=provider_config.get("base_url"),
+        timeout=int(provider_config.get("timeout") or 30),
+        mask_samples=_as_bool(full_config.get("pii_mask_samples")),
+    )
+    service.client()
+    return service
 
 
-def get_description(data, language="English", ai_service: Optional[AIService] = None):
-    """Get dataset description (backward compatibility wrapper).
+def get_fields_info(
+    fields: list[str] | str, language: str = "English", ai_service: AIService | None = None
+) -> dict[str, str]:
+    """Descriptions of field names (``fields`` may be a comma-separated string)."""
+    service = ai_service or get_ai_service()
+    names = [f.strip() for f in fields.split(",")] if isinstance(fields, str) else list(fields)
+    return service.get_fields_info(names, language)
 
-    Args:
-        data: Sample data as CSV string
-        language: Language for description
-        ai_service: Optional AI service instance. If None, will auto-detect.
 
-    Returns:
-        String description of the dataset
-    """
-    if ai_service is None:
-        ai_service = get_ai_service()
-
-    return ai_service.get_description(data, language)
+def get_description(
+    data: str, language: str = "English", ai_service: AIService | None = None
+) -> str:
+    """A short dataset description from a CSV sample."""
+    return (ai_service or get_ai_service()).get_description(data, language)
 
 
 def get_structured_metadata(
-    data, fields, language="English", ai_service: Optional[AIService] = None
-):
-    """Get structured metadata (backward compatibility wrapper).
-
-    Args:
-        data: Sample data as CSV string
-        fields: List of field names
-        language: Language for descriptions
-        ai_service: Optional AI service instance. If None, will auto-detect.
-
-    Returns:
-        Dictionary with structured metadata fields
-    """
-    if ai_service is None:
-        ai_service = get_ai_service()
-
-    if isinstance(fields, str):
-        fields = [f.strip() for f in fields.split(",")]
-
-    return ai_service.get_structured_metadata(data, fields, language)
+    data: str,
+    fields: list[str] | str,
+    language: str = "English",
+    ai_service: AIService | None = None,
+) -> dict[str, Any]:
+    """Structured metadata (title, keywords, coverage, theme, ...) from a CSV sample."""
+    names = [f.strip() for f in fields.split(",")] if isinstance(fields, str) else list(fields)
+    return (ai_service or get_ai_service()).get_structured_metadata(data, names, language)
 
 
 __all__ = [
+    "LOCAL_PROVIDERS",
+    "PROVIDERS",
+    "AIAPIError",
+    "AIConfigurationError",
     "AIService",
     "AIServiceError",
-    "AIConfigurationError",
-    "AIAPIError",
+    "get_ai_config",
     "get_ai_service",
-    "get_fields_info",
     "get_description",
+    "get_fields_info",
+    "get_provider_config",
     "get_structured_metadata",
-    "OpenAIProvider",
-    "OpenRouterProvider",
-    "OllamaProvider",
-    "LMStudioProvider",
-    "PerplexityProvider",
 ]

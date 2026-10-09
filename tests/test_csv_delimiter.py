@@ -1,7 +1,5 @@
 """Tests for CSV delimiter handling in iterable and DuckDB paths."""
 
-import pytest
-
 from undatum.cmds.statistics import StatProcessor
 from undatum.common.command_utils import (
     apply_iterable_csv_delimiter,
@@ -9,19 +7,6 @@ from undatum.common.command_utils import (
     resolve_csv_delimiter,
 )
 from undatum.common.s3_iterable import open_iterable_with_s3
-
-
-@pytest.fixture
-def semicolon_csv(tmp_path):
-    """CSV with semicolon delimiter and quoted fields."""
-    path = tmp_path / "orgs.csv"
-    path.write_text(
-        'id;name;city\n'
-        '1;"Acme, Inc";"New York"\n'
-        '2;"Beta LLC";London\n',
-        encoding="utf8",
-    )
-    return str(path)
 
 
 class TestResolveCsvDelimiter:

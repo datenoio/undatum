@@ -9,6 +9,11 @@ on:
       - "docs/**"
       - ".github/workflows/deploy-docs.yml"
   workflow_dispatch:
+  # Refresh the benchmark history chart after each nightly run.
+  workflow_run:
+    workflows: [Benchmarks]
+    types: [completed]
+    branches: [master]
 
 permissions:
   contents: read
@@ -25,6 +30,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Benchmark history chart
+        run: |
+          if git fetch -q --depth 1 origin benchmark-history; then
+            git show FETCH_HEAD:history.svg > docs/static/img/benchmark-history.svg
+          fi
 
       - name: Setup Node.js
         uses: actions/setup-node@v4

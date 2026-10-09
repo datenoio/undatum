@@ -1,37 +1,202 @@
-"""Progress indication utilities using tqdm."""
+"""Progress bars on stderr, shown only in an interactive terminal.
+
+Bars are drawn with :mod:`rich.progress`. :class:`ProgressBar` keeps the small
+tqdm-style interface the commands use (iterate over it, ``update``, ``total``,
+``set_description``, ``set_postfix``, ``close``, context manager).
+"""
+
+from __future__ import annotations
 
 import logging
 import sys
-from collections.abc import Iterator
+import time
+from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
-from typing import Any, Optional
+from typing import Any
 
-try:
-    from tqdm import tqdm
+logger = logging.getLogger(__name__)
 
-    TQDM_AVAILABLE = True
-except ImportError:
-    TQDM_AVAILABLE = False
-    tqdm = None
+# Batch advances so per-row overhead stays negligible on large files.
+_FLUSH_ITEMS = 1000
+_FLUSH_SECONDS = 0.1
 
 
 def is_tty() -> bool:
-    """Check if output is a TTY (terminal).
+    """Check whether progress output goes to a terminal.
+
+    Progress is written to stderr so that stdout stays clean for data.
 
     Returns:
-        True if stdout is a TTY, False otherwise
+        True if stderr is a TTY, False otherwise
     """
-    return hasattr(sys.stdout, "isatty") and sys.stdout.isatty()
+    return hasattr(sys.stderr, "isatty") and sys.stderr.isatty()
+
+
+class ProgressBar:
+    """A rich progress bar on stderr with a tqdm-like interface.
+
+    Args:
+        iterable: Optional iterable to wrap; iterating advances the bar.
+        total: Expected number of items (``None`` shows an indeterminate bar).
+        desc: Description shown before the bar.
+        unit: Unit label shown after the counter.
+        leave: Keep the finished bar on screen (``False`` removes it).
+        initial: Starting count.
+    """
+
+    def __init__(
+        self,
+        iterable: Iterable[Any] | None = None,
+        *,
+        total: float | None = None,
+        desc: str | None = None,
+        unit: str = "items",
+        leave: bool = True,
+        initial: int = 0,
+    ):
+        from rich.console import Console
+        from rich.progress import (
+            BarColumn,
+            MofNCompleteColumn,
+            Progress,
+            TextColumn,
+            TimeElapsedColumn,
+        )
+
+        if total is None and iterable is not None and hasattr(iterable, "__len__"):
+            total = len(iterable)  # type: ignore[arg-type]
+        self._iterable = iterable
+        self._progress = Progress(
+            TextColumn("{task.description}"),
+            BarColumn(),
+            MofNCompleteColumn(),
+            TextColumn(unit),
+            TimeElapsedColumn(),
+            TextColumn("{task.fields[postfix]}"),
+            console=Console(file=sys.stderr),
+            transient=not leave,
+        )
+        self._task = self._progress.add_task(desc or "", total=total, completed=initial, postfix="")
+        self._pending = 0.0
+        self._last_flush = time.monotonic()
+        self._closed = False
+        self._progress.start()
+
+    @property
+    def total(self) -> float | None:
+        """Expected number of items."""
+        return self._progress.tasks[0].total
+
+    @total.setter
+    def total(self, value: float | None) -> None:
+        self._progress.update(self._task, total=value)
+
+    def __iter__(self) -> Iterator[Any]:
+        try:
+            for item in self._iterable or ():
+                yield item
+                self._pending += 1
+                if self._pending >= _FLUSH_ITEMS or (
+                    time.monotonic() - self._last_flush >= _FLUSH_SECONDS
+                ):
+                    self._flush()
+        finally:
+            self._flush()
+
+    def _flush(self) -> None:
+        if self._pending:
+            self._progress.advance(self._task, self._pending)
+            self._pending = 0
+        self._last_flush = time.monotonic()
+
+    def update(self, n: float = 1) -> None:
+        """Advance the bar by ``n`` items."""
+        self._pending += n
+        self._flush()
+
+    def set_description(self, desc: str, refresh: bool = True) -> None:
+        """Replace the description."""
+        self._progress.update(self._task, description=desc)
+
+    def set_postfix(self, postfix: dict[str, Any] | None = None, **kwargs: Any) -> None:
+        """Show ``key=value`` pairs after the bar (e.g. throughput)."""
+        values = {**(postfix or {}), **kwargs}
+        text = ", ".join(f"{key}={value}" for key, value in values.items())
+        self._progress.update(self._task, postfix=text)
+
+    def close(self) -> None:
+        """Stop drawing the bar (idempotent)."""
+        if not self._closed:
+            self._closed = True
+            self._flush()
+            self._progress.stop()
+
+    def __enter__(self) -> ProgressBar:
+        return self
+
+    def __exit__(self, *exc: Any) -> None:
+        self.close()
+
+
+class _NoProgress:
+    """No-op stand-in used when progress is disabled or not in a terminal."""
+
+    def __init__(self, iterable: Iterable[Any] | None = None, total: float | None = None):
+        self._iterable = iterable
+        self.total = total
+
+    def __iter__(self) -> Iterator[Any]:
+        return iter(self._iterable or [])
+
+    def __enter__(self) -> _NoProgress:
+        return self
+
+    def __exit__(self, *exc: Any) -> None:
+        return None
+
+    def update(self, n: float = 1) -> None:
+        return None
+
+    def set_description(self, *args: Any, **kwargs: Any) -> None:
+        return None
+
+    def set_postfix(self, *args: Any, **kwargs: Any) -> None:
+        return None
+
+    def close(self) -> None:
+        return None
+
+
+def progress(
+    iterable: Iterable[Any] | None = None, *, show_progress: bool = True, **kwargs: Any
+) -> ProgressBar | _NoProgress:
+    """Return a progress bar on stderr that is drawn only in a terminal.
+
+    Args:
+        iterable: Optional iterable to wrap.
+        show_progress: False disables the bar regardless of the terminal.
+        **kwargs: ``desc``, ``total``, ``unit``, ``leave``, ``initial`` (see
+            :class:`ProgressBar`).
+
+    Returns:
+        A :class:`ProgressBar`, or a no-op object with the same interface when the bar
+        is disabled.
+    """
+    kwargs.pop("file", None)
+    kwargs.pop("disable", None)
+    if not show_progress or not is_tty():
+        return _NoProgress(iterable, total=kwargs.get("total"))
+    return ProgressBar(iterable, **kwargs)
 
 
 @contextmanager
 def progress_bar(
-    total: Optional[int] = None,
-    desc: Optional[str] = None,
+    total: int | None = None,
+    desc: str | None = None,
     unit: str = "items",
     disable: bool = False,
     show_progress: bool = True,
-):
+) -> Iterator[ProgressBar | None]:
     """Create a progress bar context manager.
 
     Args:
@@ -44,24 +209,21 @@ def progress_bar(
     Yields:
         Progress bar object (or None if disabled)
     """
-    if not show_progress or disable or not TQDM_AVAILABLE or not is_tty():
+    if not show_progress or disable or not is_tty():
         yield None
         return
 
-    pbar = None
+    pbar = ProgressBar(total=total, desc=desc, unit=unit)
     try:
-        pbar = tqdm(total=total, desc=desc, unit=unit, file=sys.stdout)
         yield pbar
     finally:
-        # Use identity check: tqdm raises TypeError on bool(pbar) when total is None.
-        if pbar is not None:
-            pbar.close()
+        pbar.close()
 
 
 def wrap_iterable(
-    iterable: Iterator[Any],
-    total: Optional[int] = None,
-    desc: Optional[str] = None,
+    iterable: Iterable[Any],
+    total: int | None = None,
+    desc: str | None = None,
     unit: str = "items",
     disable: bool = False,
     show_progress: bool = True,
@@ -79,21 +241,15 @@ def wrap_iterable(
     Yields:
         Items from iterable with progress tracking
     """
-    if not show_progress or disable or not TQDM_AVAILABLE or not is_tty():
+    if not show_progress or disable or not is_tty():
         yield from iterable
         return
 
-    try:
-        with tqdm(total=total, desc=desc, unit=unit, file=sys.stdout) as pbar:
-            for item in iterable:
-                yield item
-                pbar.update(1)
-    except Exception as e:
-        logging.warning(f"Progress bar error: {e}")
-        yield from iterable
+    with ProgressBar(iterable, total=total, desc=desc, unit=unit) as pbar:
+        yield from pbar
 
 
-def update_progress(pbar: Optional[Any], n: int = 1) -> None:
+def update_progress(pbar: Any | None, n: int = 1) -> None:
     """Update progress bar by n items.
 
     Args:
@@ -104,10 +260,11 @@ def update_progress(pbar: Optional[Any], n: int = 1) -> None:
         try:
             pbar.update(n)
         except Exception:
-            pass  # Ignore errors in progress updates
+            # Best effort: never fail the command because of this step.
+            logger.debug("ignoring progress display error", exc_info=True)
 
 
-def set_progress_description(pbar: Optional[Any], desc: str) -> None:
+def set_progress_description(pbar: Any | None, desc: str) -> None:
     """Set progress bar description.
 
     Args:
@@ -118,10 +275,11 @@ def set_progress_description(pbar: Optional[Any], desc: str) -> None:
         try:
             pbar.set_description(desc)
         except Exception:
-            pass
+            # Best effort: never fail the command because of this step.
+            logger.debug("ignoring progress display error", exc_info=True)
 
 
-def set_progress_postfix(pbar: Optional[Any], postfix: dict[str, Any]) -> None:
+def set_progress_postfix(pbar: Any | None, postfix: dict[str, Any]) -> None:
     """Set progress bar postfix (additional info like throughput).
 
     Args:
@@ -132,4 +290,5 @@ def set_progress_postfix(pbar: Optional[Any], postfix: dict[str, Any]) -> None:
         try:
             pbar.set_postfix(postfix)
         except Exception:
-            pass
+            # Best effort: never fail the command because of this step.
+            logger.debug("ignoring progress display error", exc_info=True)

@@ -1,0 +1,8 @@
+# Only pyproject.toml, README.md, LICENSE and undatum/ are copied into the image.
+*
+!pyproject.toml
+!README.md
+!LICENSE
+!undatum/
+**/__pycache__
+**/*.pyc

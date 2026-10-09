@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import tempfile
 from collections.abc import Callable
@@ -103,7 +104,10 @@ def prepare_doc_source(filename: str) -> tuple[str, Callable[[], None], dict[str
     Returns:
         Tuple of (path to use, cleanup callback, field-name hint map, canonical field names).
     """
-    cleanup: Callable[[], None] = lambda: None
+
+    def cleanup() -> None:
+        return None
+
     path = filename
     hints: dict[str, str] = {}
     field_names: list[str] = []
@@ -112,7 +116,10 @@ def prepare_doc_source(filename: str) -> tuple[str, Callable[[], None], dict[str
     if lower.endswith(".jsonl") or lower.endswith(".ndjson"):
         if _jsonl_needs_key_normalization(filename):
             path = _rewrite_jsonl_keys(filename)
-            cleanup = lambda p=path: os.path.exists(p) and os.remove(p)
+
+            def cleanup(p: str = path) -> None:
+                if os.path.exists(p):
+                    os.remove(p)
 
     try:
         from iterable.ops import schema as schema_ops
@@ -121,7 +128,10 @@ def prepare_doc_source(filename: str) -> tuple[str, Callable[[], None], dict[str
         field_names = list(schema_info.get("fields", {}).keys())
         hints = build_field_hints(field_names)
     except Exception:
-        pass
+        # Best effort: never fail the command because of this step.
+        logging.getLogger(__name__).debug(
+            "optional documentation enrichment step failed", exc_info=True
+        )
 
     return path, cleanup, hints, field_names
 
@@ -155,7 +165,9 @@ def enrich_schema_fields(
         else:
             field = {"name": name}
         if not field.get("description"):
-            field["description"] = hints.get(canonical) or hints.get(name) or hint_from_field_name(name)
+            field["description"] = (
+                hints.get(canonical) or hints.get(name) or hint_from_field_name(name)
+            )
         ordered.append(field)
 
     ordered.extend(by_canonical.values())
@@ -241,7 +253,10 @@ def enrich_blocks_result(
 
         schema_block["markdown"] = blocks_module._render_schema_md(enriched, language)
     except Exception:
-        pass
+        # Best effort: never fail the command because of this step.
+        logging.getLogger(__name__).debug(
+            "optional documentation enrichment step failed", exc_info=True
+        )
 
     if not requested_blocks:
         return
@@ -254,4 +269,7 @@ def enrich_blocks_result(
         subset = {k: blocks[k] for k in keys if k in blocks}
         result["full_document_markdown"] = _assemble_markdown(ctx, subset, requested_blocks, None)
     except Exception:
-        pass
+        # Best effort: never fail the command because of this step.
+        logging.getLogger(__name__).debug(
+            "optional documentation enrichment step failed", exc_info=True
+        )

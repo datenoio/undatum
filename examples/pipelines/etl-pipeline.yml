@@ -8,7 +8,6 @@ variables:
   input_file: data/raw_data.jsonl
   output_dir: data/processed
   db_uri: postgresql://user:pass@localhost:5432/mydb
-  db_name: mydb
   table_name: processed_data
 
 steps:
@@ -50,10 +49,9 @@ steps:
       method: hash
 
   - name: load_to_database
-    command: ingest
+    command: db load
     args:
       input: ${output_dir}/data_anonymized.parquet
-      uri: ${db_uri}
-      db: ${db_name}
+      db: ${db_uri}
       table: ${table_name}
-      dbtype: postgresql
+      create_table: true

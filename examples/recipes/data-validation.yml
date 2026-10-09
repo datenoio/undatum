@@ -19,7 +19,7 @@ variables:
 
 commands:
   - description: Validate data with rules
-    command: undatum validate ${input} --rules ${rules} --output-format json ${output:+--violation-report ${output}}
+    command: undatum validate ${input} --rules ${rules} --format-out json ${output:+--violation-report ${output}}
 
 example: |
   undatum examples run data-validation --var input=data.jsonl --var rules=validation-rules.yml

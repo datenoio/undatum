@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 import os
-from collections.abc import Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from concurrent.futures import (
     FIRST_COMPLETED,
     Future,
@@ -17,9 +17,11 @@ from concurrent.futures import (
     ThreadPoolExecutor,
     wait,
 )
-from typing import Any, Callable, TypeVar
+from typing import Any, TypeVar
 
 from .errors import ConfigurationError
+
+logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
 R = TypeVar("R")
@@ -85,7 +87,7 @@ def _raise_worker_error(exc: BaseException, use_processes: bool) -> None:
             f"payloads. Original error: {exc}"
         ) from exc
     if isinstance(exc, Exception):
-        logging.error("Error in parallel processing: %s", exc)
+        logger.error("Error in parallel processing: %s", exc)
         raise exc
     raise exc
 
@@ -226,7 +228,11 @@ def parallel_process_chunks(
             yield processor(chunk)
         return
 
-    window = max_in_flight if max_in_flight is not None else max(workers * _DEFAULT_WINDOW_FACTOR, workers)
+    window = (
+        max_in_flight
+        if max_in_flight is not None
+        else max(workers * _DEFAULT_WINDOW_FACTOR, workers)
+    )
     window = max(1, int(window))
     executor_class = ProcessPoolExecutor if use_processes else ThreadPoolExecutor
 

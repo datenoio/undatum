@@ -93,8 +93,6 @@ class TestConverter:
         src = tmp_path / "in.csv"
         dst = tmp_path / "out.jsonl"
         src.write_text("a,b\n1,2\n")
-        result = Converter().convert(
-            str(src), str(dst), {"progress": False, "summary": False}
-        )
+        result = Converter().convert(str(src), str(dst), {"progress": False, "summary": False})
         assert result.rows_out == 1
         assert result.elapsed_seconds >= 0

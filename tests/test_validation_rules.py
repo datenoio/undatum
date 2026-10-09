@@ -104,12 +104,11 @@ class TestValidationRule:
         assert is_valid is False
 
     def test_evaluate_field_rule_unknown_type(self):
-        """Test evaluating rule with unknown type."""
-        rule_def = {"field": "email", "type": "unknown_type"}
-        rule = ValidationRule(rule_def)
+        """An unknown rule type is a configuration error when the rule is built."""
+        from undatum.common.errors import ConfigurationError
 
-        with pytest.raises(ValidationRuleError, match="Unknown rule type"):
-            rule.evaluate({}, 0)
+        with pytest.raises(ConfigurationError, match="Unknown rule type"):
+            ValidationRule({"field": "email", "type": "unknown_type"})
 
     def test_type_key_as_data_type(self):
         """Documented rule-file format uses 'type' for the expected data type."""

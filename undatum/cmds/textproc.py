@@ -32,7 +32,7 @@ class TextProcessor:
         pass
 
     def flatten(self, filename, options):
-        """Flatten the data. One field - one line"""
+        """Flatten the data: one field per line."""
         get_file_type(filename) if options["format_in"] is None else options["format_in"]
         iterableargs = get_iterable_options(options)
         iterable = open_iterable(filename, mode="r", iterableargs=iterableargs)

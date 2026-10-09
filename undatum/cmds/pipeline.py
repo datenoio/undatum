@@ -3,7 +3,7 @@
 import logging
 import os
 import tempfile
-from typing import Any, Optional
+from typing import Any
 
 from typer.main import get_command
 
@@ -42,9 +42,14 @@ def _click_root():
 
 
 def _click_command(name: str):
+    """The Click command for ``name``; ``"db load"`` names a group's subcommand."""
     root = _click_root()
     ctx = root.make_context("undatum", [], resilient_parsing=True)
-    return root.get_command(ctx, name)
+    first, *rest = name.split()
+    command = root.get_command(ctx, first)
+    for part in rest:
+        command = getattr(command, "commands", {}).get(part)
+    return command
 
 
 def build_pipeline_argv(command: str, args: dict[str, Any]) -> list[str]:
@@ -56,7 +61,7 @@ def build_pipeline_argv(command: str, args: dict[str, Any]) -> list[str]:
     """
     remaining = dict(args)
     cmd = _click_command(command)
-    argv = [command]
+    argv = command.split()
     if cmd is None:
         for key, value in remaining.items():
             if value is None:
@@ -144,7 +149,7 @@ class PipelineRunner:
         self.step_outputs = {}  # Track outputs from each step
         self.last_output = None
 
-    def run(self, spec: PipelineSpec, variables: Optional[dict[str, str]] = None) -> bool:
+    def run(self, spec: PipelineSpec, variables: dict[str, str] | None = None) -> bool:
         """Execute pipeline specification.
 
         Args:
@@ -302,7 +307,7 @@ class PipelineRunner:
         return True
 
     def _resolve_paths(
-        self, args: dict[str, Any], step_name: str, command: Optional[str] = None
+        self, args: dict[str, Any], step_name: str, command: str | None = None
     ) -> dict[str, Any]:
         """Resolve input/output paths, handling step dependencies.
 

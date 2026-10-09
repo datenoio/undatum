@@ -16,6 +16,8 @@ from ..common.errors import (
 from ..common.path_utils import validate_file_path
 from ..utils import normalize_for_json
 
+logger = logging.getLogger(__name__)
+
 OUTPUT_FORMATS = ["jsonl", "csv", "parquet"]
 
 
@@ -89,7 +91,7 @@ class SqlExecutor:
         conn = create_duckdb_connection(**duckdb_config)
         try:
             views = self._register_views(conn, files)
-            logging.debug(f"sql: registered views {views}")
+            logger.debug(f"sql: registered views {views}")
             if output_format == "parquet":
                 escaped = output.replace("'", "''")
                 try:
@@ -150,7 +152,9 @@ class SqlExecutor:
             columns = [d[0] for d in description]
             raw = result.fetchmany(int(max_rows) + 1)
             truncated = len(raw) > max_rows
-            records = [normalize_for_json(dict(zip(columns, row))) for row in raw[:max_rows]]
+            records = [
+                normalize_for_json(dict(zip(columns, row, strict=False))) for row in raw[:max_rows]
+            ]
             return columns, records, truncated
         finally:
             conn.close()
@@ -207,7 +211,7 @@ class SqlExecutor:
                 if not rows:
                     break
                 for row in rows:
-                    record = normalize_for_json(dict(zip(columns, row)))
+                    record = normalize_for_json(dict(zip(columns, row, strict=False)))
                     out.write(
                         orjson.dumps(
                             record,

@@ -1,10 +1,14 @@
 # undatum
 
+[![PyPI](https://img.shields.io/pypi/v/undatum)](https://pypi.org/project/undatum/)
+[![Python versions](https://img.shields.io/pypi/pyversions/undatum)](https://pypi.org/project/undatum/)
+[![CI](https://github.com/datenoio/undatum/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/datenoio/undatum/actions/workflows/ci.yml)
+[![Docs](https://img.shields.io/badge/docs-datenoio.github.io%2Fundatum-blue)](https://datenoio.github.io/undatum/)
+[![License: MIT](https://img.shields.io/pypi/l/undatum)](LICENSE)
+
 > A command-line tool for data processing and analysis
 
-**Version:** 1.7.0
-
-**undatum** (pronounced *un-da-tum*) is a CLI for converting, analyzing, validating, and transforming datasets across many formats, with a streaming-first design for large files.
+**undatum** (pronounced *un-da-tum*) is a CLI for converting, analyzing, validating, and transforming datasets across many formats. Conversion, statistics, selection, validation and database loads stream records, so file size is not limited by memory; each [command page](https://datenoio.github.io/undatum/commands/) states how much memory the command needs.
 
 ## Features
 
@@ -13,7 +17,8 @@
 - **Multi-cloud I/O**: Read and write `s3://`, `gs://`/`gcs://`, and `az://`/`abfs://`/`abfss://` URIs natively via iterabledata (`pip install "undatum[cloud]"`)
 - **Database sources**: Read from PostgreSQL, MySQL/MariaDB, SQLite, MS SQL Server, ClickHouse, MongoDB, and Elasticsearch/OpenSearch (`undatum db query`, `undatum db dump`)
 - **Optional TUI and web UI**: Explore a bounded sample in the terminal (`undatum tui`) or a local browser (`undatum web`)
-- **Low memory footprint**: Streams data for efficient processing of large files
+- **Large files**: `convert`, `stats`, `select`, `validate`, `mask`, `count` and `db load` stream records; `sort` and `dedup` spill to disk; DuckDB runs SQL and many commands out of core. Some transforms (`fill`, `rename`, `replace`, ...) still load all rows — the command reference says which
+- **Unix pipelines**: `-` reads standard input and results go to standard output in the input's format: `cat data.csv \| undatum sort - --by amount \| undatum head - -n 10`
 - **Automatic detection**: Encoding, delimiters (comma, semicolon, tab, pipe), and file types
 - **Frictionless Data Packaging**: Create, extend, and validate `datapackage.json` descriptors (`undatum package`)
 - **Data validation**: Built-in rules for emails, URLs, and custom validators
@@ -65,9 +70,21 @@ brew install pipx && pipx install undatum
 uv tool install undatum
 ```
 
-Release tags publish **PyInstaller single-file binaries** (Linux, macOS, Windows) on [GitHub Releases](https://github.com/datenoio/undatum/releases). `pipx`/`uv` remain the supported install paths for most users.
+Starting with the next release, tags also publish **PyInstaller single-file binaries** (Linux, macOS, Windows) on [GitHub Releases](https://github.com/datenoio/undatum/releases); 1.7.0 and earlier are on PyPI only. `pipx`/`uv` remain the supported install paths for most users.
 
 A man page ships with the package (`man undatum` after install, or `make man` to regenerate `man/undatum.1`).
+
+### Container
+
+From the next release, images are published to GitHub Container Registry:
+
+```bash
+docker run --rm -v "$PWD:/data" ghcr.io/datenoio/undatum convert data.csv data.parquet
+```
+
+`:<version>` and `:latest` hold the core install, `:<version>-full` and `:latest-full` add the
+common extras. A Homebrew tap and a conda-forge package are planned; see the
+[installation guide](https://datenoio.github.io/undatum/getting-started/installation).
 
 ### Optional extras
 
@@ -85,13 +102,15 @@ A man page ships with the package (`man undatum` after install, or `make man` to
 | `gcs` | Google Cloud Storage (`gs://` / `gcs://`, gcsfs) |
 | `azure` | Azure Blob / ADLS (`az://` / `abfs://`, adlfs) |
 | `cloud` | Multi-cloud storage via fsspec (S3 + GCS + Azure) |
-| `postgres`, `mysql`, `mssql`, `clickhouse` | Database connectors |
+| `postgres`, `mysql`, `mssql`, `clickhouse` | Database connectors (MongoDB is in the base install) |
+| `elastic` | Elasticsearch / OpenSearch |
 | `frictionless` | Full Frictionless Data Package validation |
 | `lakehouse` | Delta / Iceberg / Lance / DuckLake / Hudi via iterabledata |
 | `gis` | Geospatial and LiDAR formats |
 | `scientific` | MATLAB, geophysical, and HDF5 formats |
 | `access` | Microsoft Access (`.mdb` / `.accdb`) |
 | `compression` | Extra codecs (snappy, brotli, lzo) |
+| `all` | Every extra |
 
 ```bash
 pip install "undatum[extract,api]"
@@ -108,13 +127,13 @@ data headers data.csv   # same thing
 ### Shell completion
 
 ```bash
-undatum --install-completion bash   # or zsh / fish
-undatum --show-completion bash      # preview without installing
+undatum --install-completion   # for the shell you run it from (bash, zsh, fish, PowerShell)
+undatum --show-completion      # print the script instead of installing it
 ```
 
 ### Requirements
 
-- Python 3.9 or greater (CI tests 3.9–3.13)
+- Python 3.10 or greater (CI tests 3.10–3.13)
 
 ### Install from source
 
@@ -142,13 +161,16 @@ undatum table data.csv --limit 20
 # Query
 undatum sql "SELECT city, COUNT(*) AS n FROM data GROUP BY city" cities.csv
 
+# Pipelines: '-' reads stdin; CSV in, CSV out (-O jsonl to change it)
+cat data.csv | undatum sort - --by amount --numeric amount | undatum head - -n 5
+
 # Validate and package
 undatum validate data.csv --rules rules.yml
 undatum package create data.csv --output datapackage.json
 
 # Document
 undatum ai doc data.csv
-undatum doc data.jsonl --format markdown --output dataset.md
+undatum doc data.jsonl --format-out markdown --output dataset.md
 ```
 
 More first-success paths: [quick start](https://datenoio.github.io/undatum/getting-started/quick-start) and the [cookbook](https://datenoio.github.io/undatum/getting-started/cookbook).
@@ -157,7 +179,7 @@ More first-success paths: [quick start](https://datenoio.github.io/undatum/getti
 
 All commands are available as `undatum <command>` or via the shorter `data` alias.
 
-**Top-level data commands:** `convert`, `extract`, `analyze`, `doc` (`document`), `stats` (`profile`), `validate`, `schema`, `schema-bulk`, `sql`, `select`, `search`, `mask`, `plot`, `ingest`, `tui`, `web`, and the other transform/inspection commands in the [CLI reference](https://datenoio.github.io/undatum/commands/).
+**Top-level data commands:** `convert`, `extract`, `analyze`, `doc`, `stats`, `validate`, `schema`, `schema-bulk`, `sql`, `select`, `search`, `mask`, `plot`, `tui`, `web`, and the other transform/inspection commands in the [CLI reference](https://datenoio.github.io/undatum/commands/). The older names `document`, `profile`, `ingest` and `scheme` still work with a deprecation warning until 2.0 (use `doc`, `stats`, `db load`, `schema --format cerberus`).
 
 **Command groups:**
 

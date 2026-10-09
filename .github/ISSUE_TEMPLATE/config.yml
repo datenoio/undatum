@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Documentation
+    url: https://datenoio.github.io/undatum/
+    about: Command reference, cookbook and troubleshooting.
+  - name: Security vulnerability
+    url: https://github.com/datenoio/undatum/blob/master/SECURITY.md
+    about: Please report security problems privately as described in SECURITY.md.

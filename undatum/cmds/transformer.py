@@ -18,6 +18,8 @@ from ..common.path_utils import validate_file_path
 from ..common.s3_iterable import open_path as open_iterable
 from ..utils import dict_generator, get_option
 
+logger = logging.getLogger(__name__)
+
 DEFAULT_HEADERS_DETECT_LIMIT = 1000
 
 
@@ -28,8 +30,7 @@ class Transformer:
         pass
 
     def script(self, fromfile, options=None):
-        """Run certain script against selected file"""
-
+        """Run a script against every record of the file."""
         if options is None:
             options = {}
 
@@ -119,7 +120,7 @@ class Transformer:
                 for r in iter_command_rows(read_iterable, options):
                     n += 1
                     if n % 10000 == 0:
-                        logging.info(f"apply script: processing {n} records of {fromfile}")
+                        logger.info(f"apply script: processing {n} records of {fromfile}")
                         if write_to_iterable and len(batch) > 0:
                             if hasattr(write_iterable, "write_bulk"):
                                 write_iterable.write_bulk(batch)
@@ -143,7 +144,7 @@ class Transformer:
                         for item in batch:
                             write_iterable.write(item)
 
-                logging.debug(f"apply script: {n} records processed")
+                logger.debug(f"apply script: {n} records processed")
             finally:
                 read_iterable.close()
         finally:

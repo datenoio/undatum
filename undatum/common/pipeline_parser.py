@@ -5,7 +5,7 @@ import logging
 import os
 import re
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 try:
     import yaml
@@ -13,7 +13,7 @@ try:
     YAML_AVAILABLE = True
 except ImportError:
     YAML_AVAILABLE = False
-    yaml = None
+    yaml = None  # type: ignore[assignment]
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +27,7 @@ class PipelineParseError(Exception):
 class PipelineSpec:
     """Parsed pipeline specification."""
 
-    def __init__(self, steps: list[dict[str, Any]], variables: Optional[dict[str, str]] = None):
+    def __init__(self, steps: list[dict[str, Any]], variables: dict[str, str] | None = None):
         """Initialize pipeline specification.
 
         Args:
@@ -37,7 +37,7 @@ class PipelineSpec:
         self.steps = steps
         self.variables = variables or {}
 
-    def resolve_variables(self, overrides: Optional[dict[str, str]] = None) -> "PipelineSpec":
+    def resolve_variables(self, overrides: dict[str, str] | None = None) -> "PipelineSpec":
         """Resolve variables in steps using environment and overrides.
 
         Args:
@@ -79,7 +79,7 @@ class PipelineSpec:
         Returns:
             Step with resolved variables
         """
-        resolved = {}
+        resolved: dict[str, Any] = {}
         for key, value in step.items():
             if isinstance(value, dict):
                 resolved[key] = self._resolve_step_vars(value, vars)
@@ -105,7 +105,7 @@ class PipelineSpec:
             Text with variables substituted
         """
 
-        def replace_var(match):
+        def replace_var(match: re.Match[str]) -> str:
             var_name = match.group(1)
             return vars.get(var_name, match.group(0))  # Return original if not found
 
@@ -248,6 +248,8 @@ _FALLBACK_PIPELINE_COMMANDS = {
 
 # Interactive / session commands are not valid pipeline steps.
 _PIPELINE_EXCLUDED_COMMANDS = {"tui", "web"}
+# Subcommands of command groups that can be pipeline steps (``command: db load``).
+PIPELINE_SUBCOMMANDS = {"db load", "db query", "db dump"}
 
 
 def known_pipeline_commands() -> set[str]:
@@ -255,7 +257,7 @@ def known_pipeline_commands() -> set[str]:
 
     Prefers the live Typer app so new commands are accepted automatically.
     """
-    names = set(_FALLBACK_PIPELINE_COMMANDS)
+    names = set(_FALLBACK_PIPELINE_COMMANDS) | PIPELINE_SUBCOMMANDS
     try:
         from ..core import app
 
@@ -330,12 +332,12 @@ def render_pipeline_mermaid(spec: PipelineSpec) -> str:
         label = label.replace('"', "'")
         lines.append(f'  {node_id}["{label}"]')
         node_ids.append(node_id)
-    for left, right in zip(node_ids, node_ids[1:]):
+    for left, right in zip(node_ids, node_ids[1:], strict=False):
         lines.append(f"  {left} --> {right}")
     return "\n".join(lines) + "\n"
 
 
-def render_pipeline_markdown(spec: PipelineSpec, source: Optional[str] = None) -> str:
+def render_pipeline_markdown(spec: PipelineSpec, source: str | None = None) -> str:
     """Render a pipeline as Markdown with an embedded Mermaid diagram."""
     title = Path(source).stem if source else "pipeline"
     parts = [f"# {title}", "", "```mermaid", render_pipeline_mermaid(spec).rstrip(), "```", ""]

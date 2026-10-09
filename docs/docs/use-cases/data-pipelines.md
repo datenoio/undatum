@@ -11,7 +11,7 @@ Build repeatable, streaming transformations across formats, databases, and objec
 ```bash
 undatum convert raw.jsonl.zst stage.parquet --low-memory
 undatum dedup stage.parquet --key-fields id --output clean.parquet
-undatum profile clean.parquet
+undatum stats clean.parquet
 ```
 
 ## YAML pipeline
@@ -26,7 +26,7 @@ undatum pipeline run my-pipeline.yml
 
 ## Database round-trip
 
-```bash
+```bash norun
 undatum db dump --db postgresql://user:pass@host/db --query "SELECT * FROM events" \
   --output events.parquet --to parquet
 

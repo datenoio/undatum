@@ -8,7 +8,7 @@ Give agents controlled dataset tools or add AI assistance to documentation.
 
 ## Connect undatum to an MCP client
 
-```bash
+```bash norun
 pip install "undatum[mcp]"
 undatum mcp tools
 undatum mcp serve
@@ -32,7 +32,7 @@ Write tools require `confirm=true`. Full catalog and flags: [MCP](/integrations/
 ## Generate assisted dataset documentation
 
 ```bash
-undatum ai doc data.csv --format json --blocks general,schema,quality
+undatum ai doc data.csv --format-out json --blocks general,schema,quality
 ```
 
 ## Python tools without MCP

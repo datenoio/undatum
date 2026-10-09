@@ -1,0 +1,45 @@
+name: Container image
+
+# Builds both image variants and smoke-tests them; nothing is pushed.
+# Publishing happens in release.yml on version tags.
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - "Dockerfile"
+      - ".dockerignore"
+      - "pyproject.toml"
+      - ".github/workflows/container.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and smoke-test (${{ matrix.variant }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        variant: [core, full]
+    steps:
+    - uses: actions/checkout@v4
+    - uses: docker/setup-buildx-action@v3
+    - name: Build
+      uses: docker/build-push-action@v6
+      with:
+        context: .
+        load: true
+        push: false
+        tags: undatum:test
+        build-args: EXTRAS=${{ matrix.variant == 'full' && 'full' || '' }}
+        cache-from: type=gha,scope=${{ matrix.variant }}
+        cache-to: type=gha,mode=max,scope=${{ matrix.variant }}
+    - name: Smoke test
+      run: |
+        mkdir -p smoke && printf 'id,city\n1,Berlin\n2,Paris\n' > smoke/data.csv
+        chmod 777 smoke
+        docker run --rm undatum:test --version
+        docker run --rm -v "$PWD/smoke:/data" undatum:test convert data.csv data.parquet
+        test "$(docker run --rm -v "$PWD/smoke:/data" undatum:test count data.parquet)" = "2"
+        test "$(docker run --rm --entrypoint id undatum:test -u)" != "0"  # not root

@@ -1,0 +1,46 @@
+name: Bug report
+description: A command fails, crashes or produces wrong output.
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: undatum version
+      description: Output of `undatum --version`.
+      placeholder: undatum 1.7.0
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Python, OS and install method
+      placeholder: Python 3.12, Ubuntu 24.04, pipx
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Command
+      description: The exact command line (remove credentials from database URIs).
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behaviour
+      description: Output and error message. Re-run with `-vv` for logs.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: data
+    attributes:
+      label: Sample data
+      description: The smallest input that reproduces the problem (a few rows are enough).

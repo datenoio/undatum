@@ -8,7 +8,7 @@ import shutil
 import tempfile
 import urllib.parse
 import urllib.request
-from typing import Any, Optional
+from typing import Any
 
 from rich.console import Console
 
@@ -68,7 +68,7 @@ def _slugify(value: str) -> str:
     return slug or "dataset"
 
 
-def _parse_kv_entries(value: Optional[str], default_key: str) -> list[dict[str, str]]:
+def _parse_kv_entries(value: str | None, default_key: str) -> list[dict[str, str]]:
     if not value:
         return []
     entries = []
@@ -97,7 +97,7 @@ def _parse_kv_entries(value: Optional[str], default_key: str) -> list[dict[str, 
     return entries
 
 
-def _normalize_keywords(value: Optional[str]) -> Optional[list[str]]:
+def _normalize_keywords(value: str | None) -> list[str] | None:
     if not value:
         return None
     keywords = [kw.strip() for kw in value.split(",") if kw.strip()]
@@ -112,9 +112,7 @@ def _download_to_temp(url: str) -> str:
     return temp_path
 
 
-def _guess_format_mediatype(
-    file_path: str, file_type: Optional[str]
-) -> tuple[Optional[str], Optional[str]]:
+def _guess_format_mediatype(file_path: str, file_type: str | None) -> tuple[str | None, str | None]:
     if file_type and file_type in FORMAT_MEDIATYPE:
         return FORMAT_MEDIATYPE[file_type]
     ext = os.path.splitext(file_path.rsplit("?", 1)[0])[-1].lower().lstrip(".")
@@ -124,7 +122,7 @@ def _guess_format_mediatype(
 def _resource_path(
     input_path: str,
     output_file: str,
-    package_dir: Optional[str],
+    package_dir: str | None,
 ) -> str:
     if _is_url(input_path):
         return input_path
@@ -143,7 +141,7 @@ def _resource_path(
 
 def _build_resource_schema(
     table,
-    field_descriptions: Optional[dict[str, str]] = None,
+    field_descriptions: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     fields = []
     for field in table.fields or []:
@@ -157,7 +155,7 @@ def _resources_from_report(
     report,
     input_path: str,
     resource_path: str,
-    field_descriptions: Optional[dict[str, str]] = None,
+    field_descriptions: dict[str, str] | None = None,
 ) -> list[dict[str, Any]]:
     resources: list[dict[str, Any]] = []
     tables = report.tables or []
@@ -268,7 +266,7 @@ def _build_package_metadata(report, samples: list[Any], options: dict[str, Any])
             else:
                 logger.debug("package: AI metadata skipped (no sample CSV)")
         except Exception as exc:
-            logging.warning("package: failed to generate AI metadata: %s", exc)
+            logger.warning("package: failed to generate AI metadata: %s", exc)
     return metadata
 
 
@@ -311,7 +309,7 @@ def _write_package_file(package: dict[str, Any], output_file: str) -> None:
         output_stream.write("\n")
 
 
-def _maybe_zip_package(package_dir: str, zip_path: Optional[str]) -> Optional[str]:
+def _maybe_zip_package(package_dir: str, zip_path: str | None) -> str | None:
     if not zip_path:
         return None
     archive_base = zip_path
@@ -329,7 +327,7 @@ class Packager:
         input_files: list[str],
         options: dict[str, Any],
         output_file: str,
-        package_dir: Optional[str],
+        package_dir: str | None,
     ) -> tuple[list[dict[str, Any]], Any]:
         """Analyze input files and return Frictionless resource descriptors."""
         analyze_opts = _analyze_options(options)
@@ -394,7 +392,7 @@ class Packager:
         return resources, primary_report
 
     def create(
-        self, input_files: list[str], options: Optional[dict[str, Any]] = None
+        self, input_files: list[str], options: dict[str, Any] | None = None
     ) -> dict[str, Any]:
         """Generate a Frictionless Data Package descriptor.
 
@@ -483,8 +481,7 @@ class Packager:
         if not options.get("quiet"):
             field_count = sum(len(r.get("schema", {}).get("fields", [])) for r in resources)
             console.print(
-                f"[green]✓[/green] Created Frictionless Data Package "
-                f"([cyan]{output_file}[/cyan])"
+                f"[green]✓[/green] Created Frictionless Data Package ([cyan]{output_file}[/cyan])"
             )
             console.print(
                 f"  Resources: {len(resources)} | Fields: {field_count} | Profile: {FRICTIONLESS_PROFILE}"
@@ -501,7 +498,7 @@ class Packager:
         self,
         package_file: str,
         input_files: list[str],
-        options: Optional[dict[str, Any]] = None,
+        options: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Add resources to an existing Frictionless Data Package descriptor.
 
@@ -559,7 +556,7 @@ class Packager:
             )
         return {"package": package, "output_file": package_file}
 
-    def validate(self, package_file: str, options: Optional[dict[str, Any]] = None) -> bool:
+    def validate(self, package_file: str, options: dict[str, Any] | None = None) -> bool:
         """Validate a Frictionless Data Package descriptor.
 
         Uses the optional ``frictionless`` library when installed; otherwise
@@ -609,7 +606,7 @@ class Packager:
         self,
         package_file: str,
         import_error: Exception,
-        options: Optional[dict[str, Any]] = None,
+        options: dict[str, Any] | None = None,
     ) -> bool:
         if options is None:
             options = {}

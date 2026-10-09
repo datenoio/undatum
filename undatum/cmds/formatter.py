@@ -2,17 +2,29 @@
 
 import csv
 import logging
+import os
 import sys
 
 from ..common.command_utils import (
     ITERABLE_OPTIONS_KEYS,  # noqa: F401
-    get_iterable_options,
-    iter_command_rows,
 )  # noqa: F401
-from ..common.errors import FormatError
-from ..common.iterable import DataWriter
-from ..common.s3_iterable import open_path as open_iterable
-from ..utils import get_file_type, get_option, normalize_for_json
+from ..common.writer import resolve_output_format
+from ..io import open_source
+from ..ops import write_rows
+from ..utils import get_option, normalize_for_json
+
+logger = logging.getLogger(__name__)
+
+
+def _is_plain_csv(path):
+    """Return True for an uncompressed CSV output path (formatting options apply)."""
+    from iterable.helpers.detect import detect_file_type
+
+    if resolve_output_format(path) != "csv":
+        return False
+    detected = detect_file_type(path)
+    ext = path.rsplit(".", 1)[-1].lower()
+    return detected.get("codec") is None and ext not in ("tsv", "tab")
 
 
 class Formatter:
@@ -25,7 +37,7 @@ class Formatter:
         """Reformat CSV data with specific formatting options."""
         if options is None:
             options = {}
-        logging.debug("Formatting %s", fromfile)
+        logger.debug("Formatting %s", fromfile)
 
         delimiter = get_option(options, "delimiter") or ","
         quote_style = get_option(options, "quote") or "minimal"
@@ -58,65 +70,52 @@ class Formatter:
         if quoting in (csv.QUOTE_MINIMAL, csv.QUOTE_ALL) and escapechar == '"':
             escapechar = None  # Use double-quote escape instead
 
-        iterableargs = get_iterable_options(options)
-        iterable = open_iterable(fromfile, mode="r", iterableargs=iterableargs)
-        items = []
-
-        try:
-            count = 0
-            for item in iter_command_rows(iterable, options):
-                items.append(item)
-                count += 1
-                if count % 10000 == 0:
-                    logging.debug("fmt: processed %d records", count)
-        finally:
-            iterable.close()
+        # --delimiter sets the output dialect; the input delimiter is auto-detected.
+        source = open_source(fromfile, {**options, "delimiter": None})
+        # First pass: the header is every field of every record, in first-seen order.
+        names: dict[str, None] = {}
+        for item in source:
+            if isinstance(item, dict):
+                names.update(dict.fromkeys(item))
+        fieldnames = list(names) or None
 
         to_file = get_option(options, "output")
-        if to_file:
-            to_type = get_file_type(to_file)
-            if not to_type:
-                raise FormatError(to_file, to_file.rsplit(".", 1)[-1])
-            # For CSV formatting, force CSV output
-            if to_type != "csv":
-                logging.warning(
-                    "fmt: formatting options apply to CSV only, output will be CSV format"
-                )
-            out = open(to_file, "w", encoding="utf8", newline="")
-        else:
-            to_type = "csv"
-            out = sys.stdout
+        if to_file and not _is_plain_csv(to_file):
+            # Formatting options are CSV-specific; other formats and compressed CSV are
+            # written through the shared writer so the output is never silently empty.
+            logger.warning("fmt: formatting options apply to plain CSV output only")
+            count = write_rows(iter(source), to_file, fieldnames=fieldnames)
+            logger.debug("fmt: formatted %d records", count)
+            return
 
-        # Extract fieldnames from items for CSV output
-        fieldnames = None
-        if items and isinstance(items[0], dict):
-            fieldnames = list(items[0].keys())
+        target = f"{to_file}.undatum-tmp" if to_file else None
+        out = open(target, "w", encoding="utf8", newline="") if target else sys.stdout
+        count = 0
+        try:
+            if fieldnames:
+                writer_kwargs = {
+                    "fieldnames": fieldnames,
+                    "delimiter": delimiter,
+                    "quoting": quoting,
+                    "lineterminator": lineterminator,
+                }
+                # Only add escapechar if it's not None and compatible
+                if escapechar is not None and quoting in (csv.QUOTE_NONE, csv.QUOTE_NONNUMERIC):
+                    writer_kwargs["escapechar"] = escapechar
 
-        if to_type == "csv" and fieldnames:
-            # Build writer kwargs, excluding escapechar if incompatible
-            writer_kwargs = {
-                "fieldnames": fieldnames,
-                "delimiter": delimiter,
-                "quoting": quoting,
-                "lineterminator": lineterminator,
-            }
-            # Only add escapechar if it's not None and compatible
-            if escapechar is not None and quoting in (csv.QUOTE_NONE, csv.QUOTE_NONNUMERIC):
-                writer_kwargs["escapechar"] = escapechar
-
-            writer = csv.DictWriter(out, **writer_kwargs)
-            writer.writeheader()
-            for item in items:
-                if isinstance(item, dict):
-                    writer.writerow(item)
-        else:
-            # Normalize items to convert non-JSON-serializable types (e.g., UUID) to strings
-            normalized_items = [normalize_for_json(item) for item in items]
-            # Fall back to DataWriter for other formats
-            writer = DataWriter(out, filetype=to_type, fieldnames=fieldnames)
-            writer.write_items(normalized_items)
-
-        if to_file:
+                writer = csv.DictWriter(out, **writer_kwargs)
+                writer.writeheader()
+                for item in source:
+                    if isinstance(item, dict):
+                        writer.writerow(normalize_for_json(item))
+                        count += 1
+        except BaseException:
+            if target:
+                out.close()
+                os.remove(target)
+            raise
+        if target:
             out.close()
+            os.replace(target, to_file)
 
-        logging.debug("fmt: formatted %d records", count)
+        logger.debug("fmt: formatted %d records", count)

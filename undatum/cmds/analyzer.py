@@ -15,7 +15,6 @@ import os
 import sys
 import tempfile
 from collections import OrderedDict
-from typing import Optional
 
 import duckdb
 import pandas as pd
@@ -37,6 +36,7 @@ from ..common.engine_selector import is_format_supported_by_duckdb
 from ..common.errors import ValidationError
 from ..common.s3_iterable import open_iterable_with_s3
 from ..common.schema_utils import duckdb_decompose
+from ..common.tables import format_table
 from ..constants import TEXT_DATA_TYPES
 from ..formats.docx import analyze_docx
 from ..utils import detect_encoding, get_dict_value, get_option
@@ -49,7 +49,7 @@ TABULAR_ITERABLE_TYPES = ["csv", "tsv", "json", "jsonl"]
 
 
 def _selected_sheet_names(
-    sheetnames: list[str], table_name: Optional[str] = None, start_page: int = 0
+    sheetnames: list[str], table_name: str | None = None, start_page: int = 0
 ) -> list[str]:
     """Restrict Excel sheets to a named table or 0-based page index."""
     if table_name:
@@ -126,7 +126,7 @@ def _process_json_data(
     use_pandas,
     autodoc,
     lang,
-    ai_service: Optional[AIService] = None,
+    ai_service: AIService | None = None,
     *,
     stats: bool = True,
 ):
@@ -178,14 +178,14 @@ class FieldSchema(BaseModel):
     name: str
     ftype: str
     is_array: bool = False
-    description: Optional[str] = None
-    unique_count: Optional[int] = None
-    total_count: Optional[int] = None
-    uniqueness_pct: Optional[float] = None
+    description: str | None = None
+    unique_count: int | None = None
+    total_count: int | None = None
+    uniqueness_pct: float | None = None
     sem_type: str = None
     sem_url: str = None
-    semantic_types: Optional[list[dict]] = None
-    pii: Optional[bool] = None
+    semantic_types: list[dict] | None = None
+    pii: bool | None = None
 
 
 class TableSchema(BaseModel):
@@ -194,9 +194,9 @@ class TableSchema(BaseModel):
     num_records: int = -1
     num_cols: int = -1
     is_flat: bool = True
-    id: Optional[str] = None
-    fields: Optional[list[FieldSchema]] = []
-    description: Optional[str] = None
+    id: str | None = None
+    fields: list[FieldSchema] | None = []
+    description: str | None = None
 
 
 class ReportSchema(BaseModel):
@@ -208,7 +208,7 @@ class ReportSchema(BaseModel):
     compression: str = None
     total_tables: int = 1
     total_records: int = -1
-    tables: Optional[list[TableSchema]] = []
+    tables: list[TableSchema] | None = []
     metadata: dict = {}
     success: bool = False
     error: str = None
@@ -273,7 +273,7 @@ def table_from_objects(
     filetype="csv",
     autodoc: bool = False,
     lang: str = "English",
-    ai_service: Optional[AIService] = None,
+    ai_service: AIService | None = None,
     stats: bool = True,
 ):
     """Reconstructs table schema from list of objects."""
@@ -327,17 +327,17 @@ def _analyze_iterable_file(
     filename: str,
     filetype: str,
     objects_limit: int,
-    encoding: Optional[str],
-    delimiter: Optional[str],
+    encoding: str | None,
+    delimiter: str | None,
     use_pandas: bool,
     autodoc: bool,
     lang: str,
-    ai_service: Optional[AIService],
+    ai_service: AIService | None,
     stats: bool,
-    table_name: Optional[str] = None,
+    table_name: str | None = None,
     start_page: int = 0,
     trust: bool = False,
-    options: Optional[dict] = None,
+    options: dict | None = None,
 ) -> TableSchema:
     """Analyze a tabular file using the iterabledata row-by-row engine."""
     opts = {
@@ -405,16 +405,25 @@ def analyze(
     ignore_errors: bool = True,
     autodoc: bool = False,
     lang: str = "English",
-    ai_provider: Optional[str] = None,
-    ai_config: Optional[dict] = None,
-    table_name: Optional[str] = None,
+    ai_provider: str | None = None,
+    ai_config: dict | None = None,
+    table_name: str | None = None,
     start_page: int = 0,
     trust: bool = False,
-    options: Optional[dict] = None,
+    options: dict | None = None,
 ):
     """Analyzes any type of data file and provides meaningful insights.
 
     Args:
+        filename: Path of the file to analyze.
+        filetype: Format id; detected from the content and extension when omitted.
+        compression: Compression codec of the file (``raw`` for none).
+        objects_limit: Maximum number of records read to infer the structure.
+        encoding: Text encoding; detected when omitted.
+        use_pandas: Read tabular files with pandas instead of the streaming reader.
+        ignore_errors: Skip unreadable records instead of failing.
+        autodoc: Generate field and dataset descriptions with an AI provider.
+        lang: Language of the generated descriptions.
         ai_provider: AI provider name (openai, openrouter, ollama, lmstudio, perplexity)
         ai_config: Optional AI configuration dictionary
         delimiter: CSV/TSV delimiter (auto-detected for CSV when omitted)
@@ -450,11 +459,9 @@ def analyze(
             if ai_provider:
                 config["provider"] = ai_provider
             ai_service = get_ai_service(provider=ai_provider, config=config)
-        except Exception as e:
-            # If AI service fails to initialize, disable autodoc
-            import warnings
-
-            warnings.warn(f"Failed to initialize AI service: {e}. Disabling autodoc.", stacklevel=2)
+            ai_service.fail_soft = True  # a failing request must not stop the report
+        except Exception as e:  # noqa: BLE001 - the report is still useful without AI
+            logger.warning("AI descriptions skipped: %s", str(e).rstrip("."))
             autodoc = False
 
     if filetype in TEXT_DATA_TYPES:
@@ -469,7 +476,7 @@ def analyze(
         use_duckdb = engine in ("auto", "duckdb") and is_format_supported_by_duckdb(
             filetype, compression
         )
-        if engine == "iterable" or table_name or options.get("flatten_nested"):
+        if engine in ("iterable", "python") or table_name or options.get("flatten_nested"):
             use_duckdb = False
 
         duckdb_failed = False
@@ -525,8 +532,7 @@ def analyze(
                 elif filetype in ["json", "jsonl"]:
                     escaped = filename.replace("'", "''")
                     query_str = (
-                        f"select * from read_json('{escaped}'{text_ignore}) "
-                        f"limit {MAX_SAMPLE_SIZE}"
+                        f"select * from read_json('{escaped}'{text_ignore}) limit {MAX_SAMPLE_SIZE}"
                     )
                 else:
                     escaped = filename.replace("'", "''")
@@ -553,117 +559,133 @@ def analyze(
                     f"Not supported file type {report.file_type} "
                     f"or compression {report.compression}"
                 )
-            else:
-                if filetype in TABULAR_ITERABLE_TYPES:
-                    table = _analyze_iterable_file(
-                        filename,
-                        filetype=filetype,
+            elif filetype in TABULAR_ITERABLE_TYPES:
+                table = _analyze_iterable_file(
+                    filename,
+                    filetype=filetype,
+                    objects_limit=objects_limit,
+                    encoding=encoding,
+                    delimiter=delimiter,
+                    use_pandas=use_pandas,
+                    autodoc=autodoc,
+                    lang=lang,
+                    ai_service=ai_service,
+                    stats=stats,
+                    table_name=table_name,
+                    start_page=start_page,
+                    trust=trust,
+                    options=options,
+                )
+                report.tables = [table]
+                report.total_records = table.num_records
+                report.total_tables = 1
+            elif fileext == "docx":
+                docx_tables = analyze_docx(filename, extract_data=True)
+                total = 0
+                for dtable in docx_tables:
+                    table = table_from_objects(
+                        dtable["data"],
+                        table_id=str(dtable["id"]),
                         objects_limit=objects_limit,
-                        encoding=encoding,
-                        delimiter=delimiter,
                         use_pandas=use_pandas,
+                        filetype="csv",
                         autodoc=autodoc,
                         lang=lang,
                         ai_service=ai_service,
                         stats=stats,
-                        table_name=table_name,
-                        start_page=start_page,
-                        trust=trust,
-                        options=options,
                     )
-                    report.tables = [table]
+                    total += table.num_records
+                    report.tables.append(table)
+                report.total_records = total
+                report.total_tables = len(report.tables)
+            elif filetype == "xlsx":
+                wb = load_workbook(filename, read_only=True, data_only=True)
+                total = 0
+                for sheetname in _selected_sheet_names(list(wb.sheetnames), table_name, start_page):
+                    sheet = wb[sheetname]
+                    objects = []
+                    max_num = min(objects_limit, sheet.max_row or 0)
+                    for row in sheet.iter_rows(max_row=max_num, values_only=True):
+                        objects.append([str(cell) if cell is not None else "" for cell in row])
+                    table = table_from_objects(
+                        objects,
+                        table_id=sheetname,
+                        objects_limit=objects_limit,
+                        use_pandas=use_pandas,
+                        filetype="csv",
+                        autodoc=autodoc,
+                        lang=lang,
+                        ai_service=ai_service,
+                        stats=stats,
+                    )
+                    total += table.num_records
+                    report.tables.append(table)
+                report.total_records = total
+                report.total_tables = len(report.tables)
+            elif filetype == "xls":
+                wb = xlrd.open_workbook(filename)
+                total = 0
+                for sheetname in _selected_sheet_names(
+                    list(wb.sheet_names()), table_name, start_page
+                ):
+                    sheet = wb.sheet_by_name(sheetname)
+                    objects = []
+                    max_num = objects_limit if objects_limit < sheet.nrows else sheet.nrows
+                    for n in range(0, max_num):
+                        tmp = []
+                        for i in range(0, sheet.ncols):
+                            cell_value = sheet.cell_value(n, i)
+                            get_col = str(cell_value)
+                            tmp.append(get_col)
+                        objects.append(tmp)
+                    table = table_from_objects(
+                        objects,
+                        table_id=sheetname,
+                        objects_limit=objects_limit,
+                        use_pandas=use_pandas,
+                        filetype="csv",
+                        autodoc=autodoc,
+                        lang=lang,
+                        ai_service=ai_service,
+                        stats=stats,
+                    )
+                    report.tables.append(table)
+                    total += table.num_records
+                report.total_records = total
+                report.total_tables = len(report.tables)
+            elif filetype == "xml":
+                fileobj = None
+                codec = None
+                if ftype.get("success") and ftype.get("codec") is not None:
+                    codec = ftype["codec"](filename, open_it=True)
+                    fileobj = codec.fileobj()
+                if fileobj is None:
+                    with open(filename, "rb") as f:
+                        data = xmltodict.parse(f, process_namespaces=False)
+                else:
+                    data = xmltodict.parse(fileobj, process_namespaces=False)
+                candidates = _seek_xml_lists(data, level=0)
+                if len(candidates) == 1:
+                    fullkey = str(next(iter(candidates)))
+                    table = TableSchema(id=fullkey)
+                    objects = get_dict_value(data, keys=fullkey.split("."))[0]
+                    table = table_from_objects(
+                        objects,
+                        table_id=fullkey,
+                        objects_limit=objects_limit,
+                        use_pandas=use_pandas,
+                        filetype="jsonl",
+                        autodoc=autodoc,
+                        lang=lang,
+                        ai_service=ai_service,
+                        stats=stats,
+                    )
+                    report.tables.append(table)
+                    report.total_tables = len(report.tables)
                     report.total_records = table.num_records
-                    report.total_tables = 1
-                elif fileext == "docx":
-                    docx_tables = analyze_docx(filename, extract_data=True)
+                elif len(candidates) > 1:
                     total = 0
-                    for dtable in docx_tables:
-                        table = table_from_objects(
-                            dtable["data"],
-                            table_id=str(dtable["id"]),
-                            objects_limit=objects_limit,
-                            use_pandas=use_pandas,
-                            filetype="csv",
-                            autodoc=autodoc,
-                            lang=lang,
-                            ai_service=ai_service,
-                            stats=stats,
-                        )
-                        total += table.num_records
-                        report.tables.append(table)
-                    report.total_records = total
-                    report.total_tables = len(report.tables)
-                elif filetype == "xlsx":
-                    wb = load_workbook(filename, read_only=True, data_only=True)
-                    total = 0
-                    for sheetname in _selected_sheet_names(
-                        list(wb.sheetnames), table_name, start_page
-                    ):
-                        sheet = wb[sheetname]
-                        objects = []
-                        max_num = min(objects_limit, sheet.max_row or 0)
-                        for row in sheet.iter_rows(max_row=max_num, values_only=True):
-                            objects.append([str(cell) if cell is not None else "" for cell in row])
-                        table = table_from_objects(
-                            objects,
-                            table_id=sheetname,
-                            objects_limit=objects_limit,
-                            use_pandas=use_pandas,
-                            filetype="csv",
-                            autodoc=autodoc,
-                            lang=lang,
-                            ai_service=ai_service,
-                            stats=stats,
-                        )
-                        total += table.num_records
-                        report.tables.append(table)
-                    report.total_records = total
-                    report.total_tables = len(report.tables)
-                elif filetype == "xls":
-                    wb = xlrd.open_workbook(filename)
-                    total = 0
-                    for sheetname in _selected_sheet_names(
-                        list(wb.sheet_names()), table_name, start_page
-                    ):
-                        sheet = wb.sheet_by_name(sheetname)
-                        objects = []
-                        max_num = objects_limit if objects_limit < sheet.nrows else sheet.nrows
-                        for n in range(0, max_num):
-                            tmp = []
-                            for i in range(0, sheet.ncols):
-                                cell_value = sheet.cell_value(n, i)
-                                get_col = str(cell_value)
-                                tmp.append(get_col)
-                            objects.append(tmp)
-                        table = table_from_objects(
-                            objects,
-                            table_id=sheetname,
-                            objects_limit=objects_limit,
-                            use_pandas=use_pandas,
-                            filetype="csv",
-                            autodoc=autodoc,
-                            lang=lang,
-                            ai_service=ai_service,
-                            stats=stats,
-                        )
-                        report.tables.append(table)
-                        total += table.num_records
-                    report.total_records = total
-                    report.total_tables = len(report.tables)
-                elif filetype == "xml":
-                    fileobj = None
-                    codec = None
-                    if ftype.get("success") and ftype.get("codec") is not None:
-                        codec = ftype["codec"](filename, open_it=True)
-                        fileobj = codec.fileobj()
-                    if fileobj is None:
-                        with open(filename, "rb") as f:
-                            data = xmltodict.parse(f, process_namespaces=False)
-                    else:
-                        data = xmltodict.parse(fileobj, process_namespaces=False)
-                    candidates = _seek_xml_lists(data, level=0)
-                    if len(candidates) == 1:
-                        fullkey = str(next(iter(candidates)))
+                    for fullkey in candidates:
                         table = TableSchema(id=fullkey)
                         objects = get_dict_value(data, keys=fullkey.split("."))[0]
                         table = table_from_objects(
@@ -677,78 +699,59 @@ def analyze(
                             ai_service=ai_service,
                             stats=stats,
                         )
+                        total += table.num_records
                         report.tables.append(table)
-                        report.total_tables = len(report.tables)
-                        report.total_records = table.num_records
-                    elif len(candidates) > 1:
-                        total = 0
-                        for fullkey in candidates:
-                            table = TableSchema(id=fullkey)
-                            objects = get_dict_value(data, keys=fullkey.split("."))[0]
-                            table = table_from_objects(
-                                objects,
-                                table_id=fullkey,
-                                objects_limit=objects_limit,
-                                use_pandas=use_pandas,
-                                filetype="jsonl",
-                                autodoc=autodoc,
-                                lang=lang,
-                                ai_service=ai_service,
-                                stats=stats,
-                            )
-                            total += table.num_records
-                            report.tables.append(table)
-                        report.total_records = total
-                        report.total_tables = len(report.tables)
-                    if codec is not None:
-                        codec.close()
-                    elif fileobj is not None:
-                        fileobj.close()
-                elif filetype == "json":
-                    fileobj = None
-                    codec = None
-                    if ftype.get("success") and ftype.get("codec") is not None:
-                        codec = ftype["codec"](filename, open_it=True)
-                        fileobj = codec.fileobj()
-                    if fileobj is None:
-                        with open(filename, "rb") as f:
-                            data = json.load(f)
-                    else:
-                        data = json.load(fileobj)
-                    _process_json_data(
-                        data,
-                        report,
-                        objects_limit,
-                        use_pandas,
-                        autodoc,
-                        lang,
-                        ai_service,
-                        stats=stats,
-                    )
-                    if codec is not None:
-                        codec.close()
-                    elif fileobj is not None:
-                        fileobj.close()
-                elif table_name:
-                    table = _analyze_iterable_file(
-                        filename,
-                        filetype=filetype,
-                        objects_limit=objects_limit,
-                        encoding=encoding,
-                        delimiter=delimiter,
-                        use_pandas=use_pandas,
-                        autodoc=autodoc,
-                        lang=lang,
-                        ai_service=ai_service,
-                        stats=stats,
-                        table_name=table_name,
-                        start_page=start_page,
-                        trust=trust,
-                        options=options,
-                    )
-                    report.tables = [table]
-                    report.total_records = table.num_records
-                    report.total_tables = 1
+                    report.total_records = total
+                    report.total_tables = len(report.tables)
+                if codec is not None:
+                    codec.close()
+                elif fileobj is not None:
+                    fileobj.close()
+            elif filetype == "json":
+                fileobj = None
+                codec = None
+                if ftype.get("success") and ftype.get("codec") is not None:
+                    codec = ftype["codec"](filename, open_it=True)
+                    fileobj = codec.fileobj()
+                if fileobj is None:
+                    with open(filename, "rb") as f:
+                        data = json.load(f)
+                else:
+                    data = json.load(fileobj)
+                _process_json_data(
+                    data,
+                    report,
+                    objects_limit,
+                    use_pandas,
+                    autodoc,
+                    lang,
+                    ai_service,
+                    stats=stats,
+                )
+                if codec is not None:
+                    codec.close()
+                elif fileobj is not None:
+                    fileobj.close()
+            elif table_name:
+                table = _analyze_iterable_file(
+                    filename,
+                    filetype=filetype,
+                    objects_limit=objects_limit,
+                    encoding=encoding,
+                    delimiter=delimiter,
+                    use_pandas=use_pandas,
+                    autodoc=autodoc,
+                    lang=lang,
+                    ai_service=ai_service,
+                    stats=stats,
+                    table_name=table_name,
+                    start_page=start_page,
+                    trust=trust,
+                    options=options,
+                )
+                report.tables = [table]
+                report.total_records = table.num_records
+                report.total_tables = 1
 
     if autodoc and report.total_tables > 0:
         for table in report.tables:
@@ -884,11 +887,10 @@ def _analysis_markdown(report, options) -> str:
 
 def _write_analysis_output(report, options, output_stream):
     """Write analysis report to output stream in the specified format."""
-    from tabulate import tabulate
-
     if options["outtype"] == "json":
-        json_output = json.dumps(report.model_dump(), indent=4, ensure_ascii=False)
-        output_stream.write(json_output)
+        from ..common.results import ANALYZE, dumps, envelope
+
+        output_stream.write(dumps(envelope(ANALYZE, report.model_dump())))
         output_stream.write("\n")
     elif options["outtype"] == "yaml":
         yaml_output = yaml.dump(report.model_dump(), Dumper=yaml.Dumper)
@@ -916,7 +918,7 @@ def _write_analysis_output(report, options, output_stream):
         reptable.append(["Total records", _format_number(report.total_records)])
         for k, v in report.metadata.items():
             reptable.append([k.replace("_", " ").title(), str(v)])
-        print(tabulate(reptable, headers=headers, tablefmt="grid"), file=output_stream)
+        print(format_table(reptable, headers, "grid"), file=output_stream)
         print(file=output_stream)
 
         # Tables section
@@ -962,7 +964,7 @@ def _write_analysis_output(report, options, output_stream):
                         )
                     row.append(desc)
                     table.append(row)
-                print(tabulate(table, headers=tabheaders, tablefmt="grid"), file=output_stream)
+                print(format_table(table, tabheaders, "grid"), file=output_stream)
 
                 if rtable.description:
                     print(file=output_stream)
@@ -986,7 +988,7 @@ class Analyzer:
         pass
 
     def analyze(self, filename, options):
-        """Analyzes given data file and returns it's parameters"""
+        """Analyze a data file and return its parameters."""
         from ..common.errors import FileNotFoundError, PermissionError, find_similar_files
         from ..common.path_utils import validate_file_path
 

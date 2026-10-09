@@ -21,13 +21,13 @@ class TestMain:
 
     @patch("undatum.__main__.app")
     def test_main_keyboard_interrupt(self, mock_app):
-        """Test main function with keyboard interrupt exits 0."""
+        """Test main function with keyboard interrupt exits 130."""
         mock_app.side_effect = KeyboardInterrupt()
         with patch("builtins.print") as mock_print:
             with pytest.raises(SystemExit) as exc_info:
                 main()
-            assert exc_info.value.code == 0
-            mock_print.assert_called_once_with("Ctrl-C pressed. Aborting", file=sys.stderr)
+            assert exc_info.value.code == 130
+            mock_print.assert_called_once_with("Interrupted", file=sys.stderr)
 
     @patch("undatum.__main__.app")
     def test_main_undatum_error(self, mock_app):

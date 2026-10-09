@@ -6,7 +6,8 @@ import heapq
 import logging
 import os
 import tempfile
-from typing import Any, Callable, Iterable, Iterator, Optional
+from collections.abc import Callable, Iterable, Iterator
+from typing import Any
 
 import orjson
 
@@ -40,7 +41,7 @@ def external_merge_sort(
     *,
     reverse: bool = False,
     run_size: int = DEFAULT_RUN_SIZE,
-    temp_dir: Optional[str] = None,
+    temp_dir: str | None = None,
 ) -> Iterator[dict]:
     """Sort records with bounded memory via external merge sort.
 
@@ -119,8 +120,9 @@ def _merge_runs(
         # Use max-heap emulation: push (-priority) doesn't work for arbitrary keys.
         # Fall back to heapq.merge with reverse via reading all iterators with key.
         streams = []
-        for sort_key, idx, item, iterator in decorated:
-            def _gen(first=item, it=iterator):
+        for _sort_key, _idx, item, iterator in decorated:
+
+            def _gen(first: Any = item, it: Iterator[Any] = iterator) -> Iterator[Any]:
                 yield first
                 yield from it
 

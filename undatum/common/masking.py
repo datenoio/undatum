@@ -3,7 +3,7 @@
 import hashlib
 import random
 import re
-from typing import Any, Optional
+from typing import Any
 
 
 def redact(value: Any, token: str = "***") -> str:
@@ -21,7 +21,7 @@ def redact(value: Any, token: str = "***") -> str:
     return token
 
 
-def hash_value(value: Any, salt: Optional[str] = None) -> str:
+def hash_value(value: Any, salt: str | None = None) -> str:
     """Hash a value deterministically using SHA-256.
 
     Args:
@@ -43,7 +43,7 @@ def hash_value(value: Any, salt: Optional[str] = None) -> str:
     return hash_obj.hexdigest()[:16]
 
 
-def randomize_string(value: Any, length: Optional[int] = None) -> str:
+def randomize_string(value: Any, length: int | None = None) -> str:
     """Randomize a string value while preserving approximate length.
 
     Args:
@@ -127,9 +127,7 @@ def randomize_phone(value: Any) -> str:
         return random_digits
 
 
-def randomize_number(
-    value: Any, min_val: Optional[float] = None, max_val: Optional[float] = None
-) -> Any:
+def randomize_number(value: Any, min_val: float | None = None, max_val: float | None = None) -> Any:
     """Randomize a numeric value within a range.
 
     Args:
@@ -167,7 +165,7 @@ def randomize_number(
 
 
 def mask_value(
-    value: Any, method: str, field_name: Optional[str] = None, salt: Optional[str] = None
+    value: Any, method: str, field_name: str | None = None, salt: str | None = None
 ) -> Any:
     """Mask a value using the specified method with type-aware handling.
 

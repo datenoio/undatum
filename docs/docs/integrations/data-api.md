@@ -14,7 +14,7 @@ Command examples: [`api`](/commands/api).
 
 Start the server with a key:
 
-```bash
+```bash norun
 undatum api serve --config api.yml --api-key "$UNDATUM_API_KEY"
 # or
 export UNDATUM_API_KEY=replace-me
@@ -42,7 +42,7 @@ Put the API behind nginx, Caddy, or a cloud load balancer and terminate TLS ther
 
 Browser apps need an explicit origin list:
 
-```bash
+```bash norun
 undatum api serve --config api.yml --cors-origins https://app.example.com
 ```
 

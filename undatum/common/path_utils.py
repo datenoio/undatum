@@ -5,6 +5,10 @@ from __future__ import annotations
 import os
 import urllib.parse
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .errors import DependencyError
 
 # Google Cloud Storage
 GCS_URI_SCHEMES = ("gs", "gcs")
@@ -156,7 +160,7 @@ def cloud_object_suffix(path: str) -> str:
     return os.path.splitext(key)[1] or ".tmp"
 
 
-def missing_cloud_extra_error(path: str, cause: BaseException | None = None):
+def missing_cloud_extra_error(path: str, cause: BaseException | None = None) -> DependencyError:
     """Build a DependencyError telling the user which cloud extra to install.
 
     Args:

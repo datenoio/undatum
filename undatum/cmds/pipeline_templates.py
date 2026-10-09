@@ -3,7 +3,7 @@
 import logging
 import re
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 try:
     import yaml
@@ -49,7 +49,7 @@ class TemplateManager:
 
         return templates
 
-    def get_template(self, name: str) -> Optional[Path]:
+    def get_template(self, name: str) -> Path | None:
         """Get template file path by name.
 
         Args:
@@ -131,7 +131,7 @@ class TemplateManager:
         self,
         template_name: str,
         output_path: str,
-        variables: Optional[dict[str, str]] = None,
+        variables: dict[str, str] | None = None,
         interactive: bool = True,
     ) -> bool:
         """Initialize a template with variable substitution.

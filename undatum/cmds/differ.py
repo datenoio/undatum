@@ -3,7 +3,9 @@
 import csv
 import json
 import logging
+import sys
 from io import StringIO
+from typing import Any
 
 from ..common.command_utils import (
     ITERABLE_OPTIONS_KEYS,  # noqa: F401
@@ -12,6 +14,8 @@ from ..common.command_utils import (
 )
 from ..common.s3_iterable import open_path as open_iterable
 from ..utils import field_values, get_option, normalize_for_json
+
+logger = logging.getLogger(__name__)
 
 DETAIL_LIMIT = 100
 
@@ -71,7 +75,8 @@ def _values_equal(value1, value2, numeric_tolerance, ignore_case):
         if len(value1) != len(value2):
             return False
         return all(
-            _values_equal(v1, v2, numeric_tolerance, ignore_case) for v1, v2 in zip(value1, value2)
+            _values_equal(v1, v2, numeric_tolerance, ignore_case)
+            for v1, v2 in zip(value1, value2, strict=False)
         )
 
     return value1 == value2
@@ -125,10 +130,6 @@ def _format_summary(summary):
         f"removed={summary['removed_count']}, "
         f"changed={summary['changed_count']}"
     )
-
-
-def _format_detailed_json(result):
-    return json.dumps(normalize_for_json(result), indent=2, default=str)
 
 
 def _format_detailed_csv(added, removed, changed):
@@ -235,6 +236,133 @@ def _format_detailed_html(result):
     return "\n".join(lines)
 
 
+def compare_files(file1: str, file2: str, options: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Records added, removed and changed between two files.
+
+    Args:
+        file1: Old file.
+        file2: New file.
+        options: ``key`` (comma-separated key fields), ``ignore_order``, ``ignore_case``,
+            ``numeric_tolerance`` and reader options (``*2`` for the second file).
+
+    Returns:
+        ``added``, ``removed``, ``changed`` (``{key, old, new}``), ``key`` and ``summary``.
+    """
+    options = options or {}
+    key_fields = get_option(options, "key")
+    ignore_order = bool(get_option(options, "ignore_order"))
+    numeric_tolerance = get_option(options, "numeric_tolerance")
+    ignore_case = bool(get_option(options, "ignore_case"))
+
+    key_field_list = None
+    if key_fields:
+        key_field_list = [f.strip() for f in key_fields.split(",")]
+
+    iterableargs1 = get_side_iterable_options(options, 1)
+    iterableargs2 = get_side_iterable_options(options, 2)
+
+    # Load file1 into dictionary by key
+    iterable1 = open_iterable(file1, mode="r", iterableargs=iterableargs1)
+    file1_items = {}
+    file1_rows = []
+
+    try:
+        count1 = 0
+        for item in iter_command_rows(iterable1, options):
+            count1 += 1
+            if isinstance(item, dict):
+                file1_rows.append(item)
+                if key_field_list:
+                    key = _get_key_value(item, key_field_list, ignore_case)
+                    file1_items[key] = item
+    finally:
+        iterable1.close()
+
+    # Load file2 into dictionary by key
+    iterable2 = open_iterable(file2, mode="r", iterableargs=iterableargs2)
+    file2_items = {}
+    file2_rows = []
+
+    try:
+        count2 = 0
+        for item in iter_command_rows(iterable2, options):
+            count2 += 1
+            if isinstance(item, dict):
+                file2_rows.append(item)
+                if key_field_list:
+                    key = _get_key_value(item, key_field_list, ignore_case)
+                    file2_items[key] = item
+    finally:
+        iterable2.close()
+
+    # Find differences
+    added = []  # In file2 but not in file1
+    removed = []  # In file1 but not in file2
+    changed = []  # Same key but different values
+
+    if key_field_list:
+        for key, item2 in file2_items.items():
+            if key not in file1_items:
+                added.append(item2)
+            else:
+                item1 = file1_items[key]
+                if not _records_equal(item1, item2, numeric_tolerance, ignore_case):
+                    changed.append({"key": key, "old": item1, "new": item2})
+
+        for key, item1 in file1_items.items():
+            if key not in file2_items:
+                removed.append(item1)
+    elif ignore_order:
+        file1_counts = {}
+        file1_examples = {}
+        for item in file1_rows:
+            signature = _record_signature(item, ignore_case, numeric_tolerance)
+            file1_counts[signature] = file1_counts.get(signature, 0) + 1
+            if signature not in file1_examples:
+                file1_examples[signature] = item
+        file2_counts = {}
+        file2_examples = {}
+        for item in file2_rows:
+            signature = _record_signature(item, ignore_case, numeric_tolerance)
+            file2_counts[signature] = file2_counts.get(signature, 0) + 1
+            if signature not in file2_examples:
+                file2_examples[signature] = item
+
+        for signature, count in file2_counts.items():
+            diff = count - file1_counts.get(signature, 0)
+            if diff > 0:
+                added.extend([file2_examples[signature]] * diff)
+        for signature, count in file1_counts.items():
+            diff = count - file2_counts.get(signature, 0)
+            if diff > 0:
+                removed.extend([file1_examples[signature]] * diff)
+    else:
+        min_len = min(len(file1_rows), len(file2_rows))
+        for index in range(min_len):
+            item1 = file1_rows[index]
+            item2 = file2_rows[index]
+            if not _records_equal(item1, item2, numeric_tolerance, ignore_case):
+                changed.append({"key": index, "old": item1, "new": item2})
+        if len(file2_rows) > min_len:
+            added.extend(file2_rows[min_len:])
+        if len(file1_rows) > min_len:
+            removed.extend(file1_rows[min_len:])
+
+    return {
+        "added": added,
+        "removed": removed,
+        "changed": changed,
+        "key": key_field_list,
+        "summary": {
+            "file1_count": count1,
+            "file2_count": count2,
+            "added_count": len(added),
+            "removed_count": len(removed),
+            "changed_count": len(changed),
+        },
+    }
+
+
 class Differ:
     """Differ command handler - compare two files."""
 
@@ -245,137 +373,46 @@ class Differ:
         """Compare two files and show differences."""
         if options is None:
             options = {}
-        logging.debug("Comparing %s and %s", file1, file2)
+        logger.debug("Comparing %s and %s", file1, file2)
 
-        key_fields = get_option(options, "key")
         format_type = get_option(options, "format")
         output_format = get_option(options, "output_format")
         to_file = get_option(options, "output")
-        ignore_order = bool(get_option(options, "ignore_order"))
-        numeric_tolerance = get_option(options, "numeric_tolerance")
-        ignore_case = bool(get_option(options, "ignore_case"))
         summary_only = bool(get_option(options, "summary_only"))
         max_added_rows = get_option(options, "max_added_rows")
         max_removed_rows = get_option(options, "max_removed_rows")
         max_changed_rows = get_option(options, "max_changed_rows")
 
-        key_field_list = None
-        if key_fields:
-            key_field_list = [f.strip() for f in key_fields.split(",")]
-
-        iterableargs1 = get_side_iterable_options(options, 1)
-        iterableargs2 = get_side_iterable_options(options, 2)
-
-        # Load file1 into dictionary by key
-        iterable1 = open_iterable(file1, mode="r", iterableargs=iterableargs1)
-        file1_items = {}
-        file1_rows = []
-
-        try:
-            count1 = 0
-            for item in iter_command_rows(iterable1, options):
-                count1 += 1
-                if isinstance(item, dict):
-                    file1_rows.append(item)
-                    if key_field_list:
-                        key = _get_key_value(item, key_field_list, ignore_case)
-                        file1_items[key] = item
-        finally:
-            iterable1.close()
-
-        # Load file2 into dictionary by key
-        iterable2 = open_iterable(file2, mode="r", iterableargs=iterableargs2)
-        file2_items = {}
-        file2_rows = []
-
-        try:
-            count2 = 0
-            for item in iter_command_rows(iterable2, options):
-                count2 += 1
-                if isinstance(item, dict):
-                    file2_rows.append(item)
-                    if key_field_list:
-                        key = _get_key_value(item, key_field_list, ignore_case)
-                        file2_items[key] = item
-        finally:
-            iterable2.close()
-
-        # Find differences
-        added = []  # In file2 but not in file1
-        removed = []  # In file1 but not in file2
-        changed = []  # Same key but different values
-
-        if key_field_list:
-            for key, item2 in file2_items.items():
-                if key not in file1_items:
-                    added.append(item2)
-                else:
-                    item1 = file1_items[key]
-                    if not _records_equal(item1, item2, numeric_tolerance, ignore_case):
-                        changed.append({"key": key, "old": item1, "new": item2})
-
-            for key, item1 in file1_items.items():
-                if key not in file2_items:
-                    removed.append(item1)
-        elif ignore_order:
-            file1_counts = {}
-            file1_examples = {}
-            for item in file1_rows:
-                signature = _record_signature(item, ignore_case, numeric_tolerance)
-                file1_counts[signature] = file1_counts.get(signature, 0) + 1
-                if signature not in file1_examples:
-                    file1_examples[signature] = item
-            file2_counts = {}
-            file2_examples = {}
-            for item in file2_rows:
-                signature = _record_signature(item, ignore_case, numeric_tolerance)
-                file2_counts[signature] = file2_counts.get(signature, 0) + 1
-                if signature not in file2_examples:
-                    file2_examples[signature] = item
-
-            for signature, count in file2_counts.items():
-                diff = count - file1_counts.get(signature, 0)
-                if diff > 0:
-                    added.extend([file2_examples[signature]] * diff)
-            for signature, count in file1_counts.items():
-                diff = count - file2_counts.get(signature, 0)
-                if diff > 0:
-                    removed.extend([file1_examples[signature]] * diff)
-        else:
-            min_len = min(len(file1_rows), len(file2_rows))
-            for index in range(min_len):
-                item1 = file1_rows[index]
-                item2 = file2_rows[index]
-                if not _records_equal(item1, item2, numeric_tolerance, ignore_case):
-                    changed.append({"key": index, "old": item1, "new": item2})
-            if len(file2_rows) > min_len:
-                added.extend(file2_rows[min_len:])
-            if len(file1_rows) > min_len:
-                removed.extend(file1_rows[min_len:])
-
-        # Format output
-        result = {
-            "added": added,
-            "removed": removed,
-            "changed": changed,
-            "summary": {
-                "file1_count": count1,
-                "file2_count": count2,
-                "added_count": len(added),
-                "removed_count": len(removed),
-                "changed_count": len(changed),
-            },
-        }
-
-        summary_text = _format_summary(result["summary"])
-        print(summary_text)
+        result = compare_files(file1, file2, options)
+        added, removed, changed = result["added"], result["removed"], result["changed"]
+        key_field_list = result.pop("key")
+        count1 = result["summary"]["file1_count"]
+        count2 = result["summary"]["file2_count"]
 
         detailed_format = output_format or format_type
         if detailed_format is None and to_file:
             detailed_format = "json"
 
+        # JSON on stdout is one document: the summary line goes to stderr then.
+        json_stdout = detailed_format == "json" and not to_file
+        summary_text = _format_summary(result["summary"])
+        print(summary_text, file=sys.stderr if json_stdout else sys.stdout)
+
         output_text = None
-        if not summary_only and detailed_format:
+        if detailed_format == "json":
+            from ..common.results import DIFF, dumps, envelope
+
+            document = {"file1": file1, "file2": file2, "key": key_field_list}
+            document["summary"] = result["summary"]
+            if not summary_only:
+                document.update(added=added, removed=removed, changed=changed)
+            output_text = dumps(envelope(DIFF, document))
+            if to_file:
+                with open(to_file, "w", encoding="utf8") as out:
+                    out.write(output_text + "\n")
+            else:
+                print(output_text)
+        elif not summary_only and detailed_format:
             if detailed_format == "unified":
                 lines = []
                 lines.append(f"--- {file1}")
@@ -399,8 +436,6 @@ class Differ:
                         lines.append(f"  Old: {change['old']}")
                         lines.append(f"  New: {change['new']}")
                 output_text = "\n".join(lines)
-            elif detailed_format == "json":
-                output_text = _format_detailed_json(result)
             elif detailed_format == "csv":
                 output_text = _format_detailed_csv(added, removed, changed)
             elif detailed_format == "markdown":
@@ -428,7 +463,7 @@ class Differ:
         if threshold_exceeded:
             raise SystemExit(1)
 
-        logging.debug(
+        logger.debug(
             "diff: file1=%d rows, file2=%d rows, added=%d, removed=%d, changed=%d",
             count1,
             count2,

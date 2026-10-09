@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://datenoio.github.io/undatum/schemas/undatum.schema-validation.v1.json",
+  "title": "Rows checked against the inferred schema",
+  "description": "Printed by `undatum schema --validate --json`.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "const": "undatum.schema-validation/1",
+      "description": "Result layout"
+    },
+    "valid": {
+      "type": "boolean",
+      "description": "No invalid rows"
+    },
+    "stats": {
+      "type": "object",
+      "description": "valid, invalid, total, errors_by_field"
+    },
+    "invalid_sample": {
+      "type": "array",
+      "description": "Up to 20 invalid rows with their errors"
+    }
+  },
+  "required": [
+    "schema",
+    "valid",
+    "stats"
+  ]
+}

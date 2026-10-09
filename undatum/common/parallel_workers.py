@@ -73,13 +73,14 @@ def stats_accumulate_chunk(
         ``(fielddata, fieldtypes, count)`` partial aggregates.
     """
     chunk, nodates = payload
-    from undatum.utils import dict_generator, guess_datatype
+    from undatum.utils import TypeGuesser, dict_generator
 
     qd = None
     if not nodates:
         from qddate import DateParser
 
         qd = DateParser(generate=True)
+    types = TypeGuesser(qd)
 
     fielddata: dict[str, Any] = {}
     fieldtypes: dict[str, Any] = {}
@@ -122,7 +123,7 @@ def stats_accumulate_chunk(
             if k not in fieldtypes:
                 fieldtypes[k] = {"key": k, "types": {}}
             ft = fieldtypes[k]
-            thetype = guess_datatype(v, qd)["base"]
+            thetype = types.base(k, v)
             ft["types"][thetype] = ft["types"].get(thetype, 0) + 1
 
     return fielddata, fieldtypes, len(chunk)

@@ -4,28 +4,15 @@ import pytest
 
 from undatum.cmds.statistics import StatProcessor
 
-
-@pytest.fixture
-def sample_csv_file(tmp_path):
-    """Create a sample CSV file for testing."""
-    csv_file = tmp_path / "sample.csv"
-    csv_file.write_text("name,age,city\nAlice,30,New York\nBob,25,London\nCharlie,35,Paris\n")
-    return str(csv_file)
-
-
-@pytest.fixture
-def sample_jsonl_file(tmp_path):
-    """Create a sample JSONL file for testing."""
-    jsonl_file = tmp_path / "sample.jsonl"
-    content = (
-        '{"name": "Alice", "age": 30, "city": "New York"}\n'
-        '{"name": "Bob", "age": 25, "city": "London"}\n'
-        '{"name": "Charlie", "age": 35, "city": "Paris"}\n'
-        '{"name": "Diana", "age": 28, "city": "Berlin"}\n'
-        '{"name": "Eve", "age": 32, "city": "Madrid"}\n'
-    )
-    jsonl_file.write_text(content)
-    return str(jsonl_file)
+# Contents of the sample_csv_file / sample_jsonl_file fixtures (tests/conftest.py).
+SAMPLE_CSV = "name,age,city\nAlice,30,New York\nBob,25,London\nCharlie,35,Paris\n"
+SAMPLE_JSONL = (
+    '{"name": "Alice", "age": 30, "city": "New York"}\n'
+    '{"name": "Bob", "age": 25, "city": "London"}\n'
+    '{"name": "Charlie", "age": 35, "city": "Paris"}\n'
+    '{"name": "Diana", "age": 28, "city": "Berlin"}\n'
+    '{"name": "Eve", "age": 32, "city": "Madrid"}\n'
+)
 
 
 @pytest.fixture

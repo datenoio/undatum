@@ -24,6 +24,8 @@ from .base import (
     BasicIngester,
 )
 
+logger = logging.getLogger(__name__)
+
 
 class PostgresIngester(BasicIngester):
     """PostgreSQL data ingester.
@@ -97,33 +99,10 @@ class PostgresIngester(BasicIngester):
         self._first_batch_processed = False
 
     def _parse_uri(self, uri):
-        """Parse PostgreSQL connection URI into parameters."""
-        # Simple URI parsing: postgresql://user:pass@host:port/database
-        params = {}
-        if uri.startswith("postgresql://") or uri.startswith("postgres://"):
-            uri = uri.replace("postgresql://", "").replace("postgres://", "")
-            if "@" in uri:
-                auth, rest = uri.split("@", 1)
-                if ":" in auth:
-                    params["user"], params["password"] = auth.split(":", 1)
-                else:
-                    params["user"] = auth
+        """Parse a PostgreSQL connection URI into driver connection parameters."""
+        from ...common.db_connection import parse_server_uri
 
-            if "/" in rest:
-                host_port, params["database"] = rest.rsplit("/", 1)
-                if ":" in host_port:
-                    params["host"], params["port"] = host_port.split(":")
-                    params["port"] = int(params["port"])
-                else:
-                    params["host"] = host_port
-            else:
-                if ":" in rest:
-                    params["host"], params["port"] = rest.split(":")
-                    params["port"] = int(params["port"])
-                else:
-                    params["host"] = rest
-
-        return params
+        return parse_server_uri(uri, ("postgresql", "postgres"), default_port=5432)
 
     def _get_connection(self):
         """Get a connection from the pool."""
@@ -216,7 +195,7 @@ class PostgresIngester(BasicIngester):
                     conn.commit()
             else:
                 # Table exists and not replacing, just validate schema matches
-                logging.info(f"Table {self.table} already exists, skipping creation")
+                logger.info(f"Table {self.table} already exists, skipping creation")
                 self._schema_created = True
                 self._table_columns = [col for col, _ in schema]
                 return
@@ -231,7 +210,7 @@ class PostgresIngester(BasicIngester):
 
         self._schema_created = True
         self._table_columns = [col for col, _ in schema]
-        logging.info(
+        logger.info(
             f"Created table {self.table} with schema: {', '.join([f'{col} {pg_type}' for col, pg_type in schema])}"
         )
 
@@ -258,7 +237,7 @@ class PostgresIngester(BasicIngester):
             table_schema = {row[0]: row[1] for row in cur.fetchall()}
 
         if not table_schema:
-            logging.warning(f"Table {self.table} does not exist or has no columns")
+            logger.warning(f"Table {self.table} does not exist or has no columns")
             return False
 
         # Check batch columns match
@@ -269,9 +248,9 @@ class PostgresIngester(BasicIngester):
             missing = batch_columns - table_columns
             extra = table_columns - batch_columns
             if missing:
-                logging.warning(f"Batch columns not in table {self.table}: {missing}")
+                logger.warning(f"Batch columns not in table {self.table}: {missing}")
             if extra:
-                logging.warning(f"Table columns not in batch: {extra}")
+                logger.warning(f"Table columns not in batch: {extra}")
             # Allow continuation but warn
             return len(missing) == 0  # Only fail if batch has extra columns
 
@@ -424,17 +403,20 @@ class PostgresIngester(BasicIngester):
                         conn.rollback()
                         self._put_connection(conn)
                     except Exception:
-                        pass
+                        # Best effort: never fail the command because of this step.
+                        logging.getLogger(__name__).debug(
+                            "ignoring rollback error before retry", exc_info=True
+                        )
 
                 last_exception = e
                 if attempt < MAX_RETRIES - 1:
                     delay = INITIAL_RETRY_DELAY * (2**attempt)
-                    logging.warning(
+                    logger.warning(
                         f"PostgreSQL ingestion failed (attempt {attempt + 1}/{MAX_RETRIES}), retrying in {delay}s: {e}"
                     )
                     time.sleep(delay)
                 else:
-                    logging.error(f"PostgreSQL ingestion failed after {MAX_RETRIES} attempts: {e}")
+                    logger.error(f"PostgreSQL ingestion failed after {MAX_RETRIES} attempts: {e}")
                     raise
 
         if last_exception:

@@ -4,9 +4,13 @@ description: "undatum ingest command reference"
 ---
 # `ingest`
 
-Ingests data from files into databases. Supports MongoDB, PostgreSQL, DuckDB, MySQL, SQLite, and Elasticsearch with retry logic, progress tracking, and optional table auto-creation. For a simpler load syntax, see [`db load`](/commands/db).
+:::caution Deprecated
+`ingest` is deprecated and will be removed in 2.0. Use [`db load`](/commands/db), which loads into the same databases (MongoDB and Elasticsearch/OpenSearch included) with `--db URI --table NAME`.
+:::
 
-```bash
+Ingests data from files into databases. Supports MongoDB, PostgreSQL, DuckDB, MySQL, SQLite, and Elasticsearch with retry logic, progress tracking, and optional table auto-creation.
+
+```bash norun
 # Ingest to MongoDB
 undatum ingest data.jsonl mongodb://localhost:27017 mydb mycollection
 undatum ingest workbook.xlsx mongodb://localhost:27017 mydb cities --source-table Sheet2

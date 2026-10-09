@@ -3,7 +3,6 @@
 import csv
 import logging
 import sys
-from typing import Optional
 
 import orjson
 
@@ -24,7 +23,7 @@ class DatabaseQueryExecutor:
         self,
         query: str,
         db_uri: str,
-        output: Optional[str] = None,
+        output: str | None = None,
         output_format: str = "jsonl",
         batch_size: int = 10000,
     ):
@@ -152,7 +151,7 @@ class DatabaseQueryExecutor:
         self,
         query: str,
         db_uri: str,
-        output: Optional[str],
+        output: str | None,
         output_format: str,
         batch_size: int,
     ):
@@ -260,7 +259,7 @@ class DatabaseQueryExecutor:
 
                     # Handle case where columns might not match row length
                     if len(columns) == len(row):
-                        record = dict(zip(columns, row))
+                        record = dict(zip(columns, row, strict=False))
                     else:
                         # Use generic column names if mismatch
                         record = {f"column_{i}": val for i, val in enumerate(row)}
@@ -302,7 +301,7 @@ class DatabaseQueryExecutor:
 
                     # Handle case where columns might not match row length
                     if len(columns) == len(row):
-                        record = dict(zip(columns, row))
+                        record = dict(zip(columns, row, strict=False))
                     else:
                         # Use generic column names if mismatch
                         record = {f"column_{i}": val for i, val in enumerate(row)}
@@ -351,7 +350,7 @@ class DatabaseQueryExecutor:
                         columns = [f"column_{i}" for i in range(len(row))]
                     all_rows.append(
                         dict(
-                            zip(columns, row)
+                            zip(columns, row, strict=False)
                             if len(columns) == len(row)
                             else {f"column_{i}": val for i, val in enumerate(row)}
                         )

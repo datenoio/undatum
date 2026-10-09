@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from undatum.cli.data_commands import convert as convert_cmd
+from undatum.cli.commands.convert import convert as convert_cmd
 from undatum.cmds.converter import Converter, _skip_duckdb_convert
 from undatum.cmds.head import Head
 from undatum.cmds.schemer import build_schema
@@ -24,7 +24,8 @@ from undatum.common.errors import ValidationError
 from undatum.core import app
 from undatum.sdk.dataset import Dataset
 
-runner = CliRunner()
+# Wide terminal so Rich does not truncate option names in help output.
+runner = CliRunner(env={"COLUMNS": "200"})
 
 NESTED_JSONL = (
     '{"name": "TJK", "capital_city": {"lat": 38.56, "lon": 68.77}}\n'
@@ -462,7 +463,7 @@ class TestFlattenNested:
         src = _write_nested_jsonl(tmp_path / "nested.jsonl")
         rules = tmp_path / "rules.yml"
         rules.write_text(
-            "rules:\n" "  - field: capital_city.lat\n" "    type: field\n" "    min: 40\n",
+            "rules:\n  - field: capital_city.lat\n    type: field\n    min: 40\n",
             encoding="utf8",
         )
         with pytest.raises(SystemExit) as exc:
@@ -717,6 +718,7 @@ class TestConvertTableSelection:
                 "dirname": str(tmp_path),
                 "chunksize": 10000,
                 "filter": None,
+                "format_out": "jsonl",
             },
         )
         out = tmp_path / "Dushanbe.jsonl"
@@ -777,7 +779,6 @@ class TestSdkAndCli:
         def fake_convert(self, fromfile, tofile, options, limit=None):
             seen["options"] = options
             Path(tofile).write_text('{"city":"Dushanbe"}\n', encoding="utf8")
-            return None
 
         monkeypatch.setattr(Converter, "convert", fake_convert)
         Dataset.read(str(xlsx), table="Sheet2").write(str(dst))

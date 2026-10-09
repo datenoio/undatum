@@ -43,7 +43,7 @@ KPP_CODE = {
         "(за исключением транспортных средств) - в зависимости от вида "
         "имущества"
     ),
-    "30": ("Российская организация - налоговый агент, не учтенная в качестве " "налогоплательщика"),
+    "30": ("Российская организация - налоговый агент, не учтенная в качестве налогоплательщика"),
     "31": (
         "Постановка на учет налогоплательщика - российской организации "
         "по месту нахождения обособленного подразделения, в отношении "
@@ -74,7 +74,7 @@ KPP_CODE = {
     "59": "резервный код",
     "60": "Постановка на учет посольств иностранных государств",
     "61": "Постановка на учет консульств иностранных государств",
-    "62": ("Постановка на учет представительств, приравненных к " "дипломатическим"),
+    "62": ("Постановка на учет представительств, приравненных к дипломатическим"),
     "63": "Постановка на учет международных организаций",
     "64": "резервный код",
     "65": "резервный код",
@@ -202,9 +202,9 @@ RUS_ACCOUNT_MASK = [7, 1, 3, 7, 1, 3, 7, 1, 3, 7, 1, 3, 7, 1, 3, 7, 1, 3, 7, 1, 
 def calc_personal_check_digits(number):
     """Calculate the check digits for the 12-digit personal ИНН."""
     weights = (7, 2, 4, 10, 3, 5, 9, 4, 6, 8)
-    d1 = str(sum(w * int(n) for w, n in zip(weights, number)) % 11 % 10)
+    d1 = str(sum(w * int(n) for w, n in zip(weights, number, strict=False)) % 11 % 10)
     weights = (3, 7, 2, 4, 10, 3, 5, 9, 4, 6, 8)
-    d2 = str(sum(w * int(n) for w, n in zip(weights, number[:10] + d1)) % 11 % 10)
+    d2 = str(sum(w * int(n) for w, n in zip(weights, number[:10] + d1, strict=False)) % 11 % 10)
     return d1 + d2
 
 
@@ -219,9 +219,11 @@ def _check_inn(code):
             return int(code[9]) == asum
         if len(code) == 12:
             weights = (7, 2, 4, 10, 3, 5, 9, 4, 6, 8)
-            d1 = str(sum(w * int(n) for w, n in zip(weights, code)) % 11 % 10)
+            d1 = str(sum(w * int(n) for w, n in zip(weights, code, strict=False)) % 11 % 10)
             weights = (3, 7, 2, 4, 10, 3, 5, 9, 4, 6, 8)
-            d2 = str(sum(w * int(n) for w, n in zip(weights, code[:10] + d1)) % 11 % 10)
+            d2 = str(
+                sum(w * int(n) for w, n in zip(weights, code[:10] + d1, strict=False)) % 11 % 10
+            )
             chsum = d1 + d2
             return chsum == code[-2:]
     return False

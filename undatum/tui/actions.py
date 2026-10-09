@@ -23,7 +23,7 @@ class TuiAction:
 TUI_ACTIONS: tuple[TuiAction, ...] = (
     TuiAction("open", "Open another file", "undatum tui {source}", "open_file", "a"),
     TuiAction("help", "Show keybindings", "undatum tui --help", "help", "a"),
-    TuiAction("profile", "Profile dataset", "undatum profile {source}", "profile", "b"),
+    TuiAction("profile", "Profile dataset", "undatum stats {source}", "profile", "b"),
     TuiAction(
         "frequency",
         "Frequency on selected field",

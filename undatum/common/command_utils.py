@@ -7,8 +7,10 @@ execution pattern.
 
 import logging
 import os
-from collections.abc import Iterable, Iterator
-from typing import Any, Callable, Optional, TypeVar
+from collections.abc import Callable, Iterable, Iterator
+from typing import Any, TypeVar
+
+logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
 
@@ -53,17 +55,16 @@ def resolve_csv_delimiter(
     iterableargs = iterableargs or {}
     delimiter = iterableargs.get("delimiter")
     if delimiter:
-        return delimiter
+        return str(delimiter)
 
-    is_csv = filetype in ("csv", "tsv")
-    if filename and not is_csv:
-        lower = filename.lower().split("?")[0]
-        is_csv = lower.endswith(".csv") or lower.endswith(".tsv")
+    from .format_names import format_from_name
 
-    if not is_csv or not filename:
+    named = format_from_name(filename.split("?")[0]) if filename else None
+    named_format = named[0] if named else None
+    if not filename or (filetype or named_format) not in ("csv", "tsv"):
         return None
 
-    if filetype == "tsv" or filename.lower().split("?")[0].endswith(".tsv"):
+    if "tsv" in (filetype, named_format):
         return "\t"
 
     import os
@@ -77,7 +78,9 @@ def resolve_csv_delimiter(
     return detect_delimiter(filename, encoding=encoding)
 
 
-def apply_iterable_csv_delimiter(iterable, filename: str | None, iterableargs: dict | None) -> None:
+def apply_iterable_csv_delimiter(
+    iterable: Any, filename: str | None, iterableargs: dict | None
+) -> None:
     """Apply CSV delimiter and quotechar on an open iterable.
 
     ``iterabledata.open_iterable`` passes these via ``options=``, but
@@ -115,7 +118,9 @@ def duckdb_read_csv_options(
     if delimiter:
         escaped = delimiter.replace("\\", "\\\\").replace("'", "''")
         parts.append(f"delim='{escaped}'")
+        # RFC 4180: a quote inside a quoted field is written twice.
         parts.append("quote='\"'")
+        parts.append("escape='\"'")
         parts.append("strict_mode=false")
     if not parts:
         return ""
@@ -218,6 +223,10 @@ def get_iterable_options(options: dict) -> dict:
                 field="quotechar",
             )
         out["quotechar"] = quotechar
+    # --format-in (``filetype`` in older call sites) tells the reader which format to use.
+    format_in = options.get("format_in") or options.get("filetype")
+    if format_in and "format" not in out:
+        out["format"] = str(format_in).lower()
     return out
 
 
@@ -330,7 +339,7 @@ def _source_format_id(filename: str | None) -> str | None:
     try:
         from iterable.helpers.detect import detect_file_type
 
-        info = detect_file_type(filename)
+        info: Any = detect_file_type(filename)
         if info.get("success") and info.get("datatype") is not None:
             datatype = info["datatype"]
             if hasattr(datatype, "id") and callable(datatype.id):
@@ -504,7 +513,7 @@ def run_with_duckdb_fallback(
     operation: str,
     duckdb_fn: Callable[[], T],
     iterable_fn: Callable[[], T],
-    engine: Optional[str] = "duckdb",
+    engine: str | None = "duckdb",
 ) -> T:
     """Run a DuckDB implementation, falling back to the iterable engine on failure.
 
@@ -521,5 +530,5 @@ def run_with_duckdb_fallback(
         try:
             return duckdb_fn()
         except Exception as e:  # noqa: BLE001 - any DuckDB failure falls back
-            logging.warning(f"DuckDB {operation} failed, falling back to iterable: {e}")
+            logger.warning(f"DuckDB {operation} failed, falling back to iterable: {e}")
     return iterable_fn()

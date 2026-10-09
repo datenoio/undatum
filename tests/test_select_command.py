@@ -161,7 +161,7 @@ def test_dataset_select_sdk(sample_csv_file, tmp_path):
     ds = Dataset.read(sample_csv_file)
     result = ds.select(["name", "city"], output=str(output_file))
 
-    assert result._source == str(output_file)
+    assert result.source == str(output_file)
     assert read_jsonl(str(output_file)) == [
         {"name": "Alice", "city": "New York"},
         {"name": "Bob", "city": "London"},

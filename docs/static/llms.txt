@@ -1,13 +1,13 @@
 # undatum
 
-Command-line tool for converting, validating, querying, and documenting datasets across 140+ formats (iterabledata), with a streaming-first CLI. Entry points: `undatum` and `data`.
+Command-line tool for converting, validating, querying, and documenting datasets across 140+ formats (iterabledata), Entry points: `undatum` and `data`. `-` reads stdin; results go to stdout in the input's format (`-O` to change).
 
 Site: https://datenoio.github.io/undatum/
 CLI help: `undatum <command> --help`
 
 ## Getting started
 
-- [Installation](https://datenoio.github.io/undatum/getting-started/installation) — extras, uv/pipx, Python 3.9–3.13 CI, binaries
+- [Installation](https://datenoio.github.io/undatum/getting-started/installation) — extras, uv/pipx, Python 3.10+
 - [Quick start](https://datenoio.github.io/undatum/getting-started/quick-start)
 - [Cookbook](https://datenoio.github.io/undatum/getting-started/cookbook)
 - [Basic usage](https://datenoio.github.io/undatum/getting-started/basic-usage) — `--filter` syntax, encoding, compression
@@ -22,15 +22,14 @@ CLI help: `undatum <command> --help`
 - [repack](https://datenoio.github.io/undatum/commands/repack)
 - [formats](https://datenoio.github.io/undatum/commands/formats)
 - [analyze](https://datenoio.github.io/undatum/commands/analyze)
-- [stats](https://datenoio.github.io/undatum/commands/stats) (`profile` alias)
+- [stats](https://datenoio.github.io/undatum/commands/stats)
 - [select](https://datenoio.github.io/undatum/commands/select) — `--filter` (alias `--filter-expr`)
 - [validate](https://datenoio.github.io/undatum/commands/validate)
 - [schema](https://datenoio.github.io/undatum/commands/schema)
 - [sql](https://datenoio.github.io/undatum/commands/sql)
 - [pipeline](https://datenoio.github.io/undatum/commands/pipeline) — YAML DSL, templates including `jsonl-normalization`
 - [apply](https://datenoio.github.io/undatum/commands/apply) — `--script` or `--plugin`
-- [db](https://datenoio.github.io/undatum/commands/db) — query, load, dump
-- [ingest](https://datenoio.github.io/undatum/commands/ingest)
+- [db](https://datenoio.github.io/undatum/commands/db) — query, load (SQL, MongoDB, Elasticsearch), dump
 - [api](https://datenoio.github.io/undatum/commands/api)
 - [ai](https://datenoio.github.io/undatum/commands/ai) — `ai plan SOURCE TARGET` (two paths, not `--to`)
 - [doc](https://datenoio.github.io/undatum/commands/doc)
@@ -45,6 +44,7 @@ CLI help: `undatum <command> --help`
 
 - [MCP server and tool catalog](https://datenoio.github.io/undatum/integrations/mcp)
 - [Python SDK](https://datenoio.github.io/undatum/integrations/sdk) — Dataset.read/write, fill, dedup, sort, filter, select, join, sample, mask, rename, explode, enum, reverse, stats, package, convert_many
+- [Python SDK reference](https://datenoio.github.io/undatum/integrations/sdk-reference) — generated from docstrings
 - [Data API](https://datenoio.github.io/undatum/integrations/data-api) — optional `--api-key` / `UNDATUM_API_KEY`
 - [Cloud storage](https://datenoio.github.io/undatum/integrations/cloud) — `s3://`, `gs://`, `az://`
 - [Plugins](https://datenoio.github.io/undatum/integrations/plugins)
@@ -54,3 +54,9 @@ CLI help: `undatum <command> --help`
 
 - [Format support matrix](https://datenoio.github.io/undatum/formats/)
 - [iterabledata formats](https://datenoio.github.io/iterabledata/formats/)
+
+## Development
+
+- [Architecture](https://datenoio.github.io/undatum/development/architecture)
+- [Testing](https://datenoio.github.io/undatum/development/testing)
+- [Contributing](https://datenoio.github.io/undatum/development/contributing)

@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://datenoio.github.io/undatum/schemas/undatum.schema-drift.v1.json",
+  "title": "Schema changes of a set of files against a baseline",
+  "description": "Printed by `undatum schema-drift --json`.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "const": "undatum.schema-drift/1",
+      "description": "Result layout"
+    },
+    "baseline": {
+      "type": "string",
+      "description": "Baseline file or schema"
+    },
+    "summary": {
+      "type": "object",
+      "description": "files (compared) and drifted (with changes)"
+    },
+    "files": {
+      "type": "array",
+      "description": "Per file: file, summary, changes, renames"
+    }
+  },
+  "required": [
+    "schema",
+    "baseline",
+    "summary",
+    "files"
+  ]
+}

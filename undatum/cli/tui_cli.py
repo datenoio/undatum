@@ -123,7 +123,7 @@ def tui(
     require_tui_dependencies()
     if not _is_tty():
         raise ValidationError(
-            "undatum tui needs an interactive terminal. Use undatum table / profile / sql instead."
+            "undatum tui needs an interactive terminal. Use undatum table / stats / sql instead."
         )
     from ..tui.app import run_tui
 

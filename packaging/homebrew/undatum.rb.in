@@ -1,0 +1,31 @@
+# Homebrew formula for the datenoio tap, rendered on release by
+# scripts/render_homebrew_formula.py ({{VERSION}}, {{URL}} and {{SHA256}} are filled in).
+#
+# undatum depends on DuckDB, Apache Arrow and pandas, which are impractical to build from
+# source, so the formula installs the released package and its wheels into a private
+# virtualenv instead of listing every dependency as a resource (fine for a tap, not for
+# homebrew-core).
+class Undatum < Formula
+  include Language::Python::Virtualenv
+
+  desc "Convert, inspect, validate and transform data files"
+  homepage "https://github.com/datenoio/undatum"
+  url "{{URL}}"
+  sha256 "{{SHA256}}"
+  license "MIT"
+
+  depends_on "python@3.13"
+
+  def install
+    venv = virtualenv_create(libexec, "python3.13")
+    system libexec/"bin/python", "-m", "pip", "install", "--no-cache-dir", "undatum=={{VERSION}}"
+    bin.install_symlink libexec/"bin/undatum"
+    generate_completions_from_executable(bin/"undatum", "--show-completion", shells: [:bash, :zsh, :fish])
+  end
+
+  test do
+    assert_match "undatum {{VERSION}}", shell_output("#{bin}/undatum --version")
+    (testpath/"data.csv").write "id,city\n1,Berlin\n2,Paris\n"
+    assert_equal "2", shell_output("#{bin}/undatum count #{testpath}/data.csv").strip
+  end
+end

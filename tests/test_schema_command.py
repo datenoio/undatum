@@ -8,26 +8,13 @@ import yaml
 
 from undatum.cmds.schemer import Schemer, TableSchema, _write_schema_output, build_schema
 
-
-@pytest.fixture
-def sample_csv_file(tmp_path):
-    """Create a sample CSV file for testing."""
-    csv_file = tmp_path / "sample.csv"
-    csv_file.write_text("id,name,age\n1,Alice,30\n2,Bob,25\n3,Charlie,35\n")
-    return str(csv_file)
-
-
-@pytest.fixture
-def sample_jsonl_file(tmp_path):
-    """Create a sample JSONL file for testing."""
-    jsonl_file = tmp_path / "sample.jsonl"
-    content = (
-        '{"id": "1", "name": "Alice", "age": 30}\n'
-        '{"id": "2", "name": "Bob", "age": 25}\n'
-        '{"id": "3", "name": "Charlie", "age": 35}\n'
-    )
-    jsonl_file.write_text(content)
-    return str(jsonl_file)
+# Contents of the sample_csv_file / sample_jsonl_file fixtures (tests/conftest.py).
+SAMPLE_CSV = "id,name,age\n1,Alice,30\n2,Bob,25\n3,Charlie,35\n"
+SAMPLE_JSONL = (
+    '{"id": "1", "name": "Alice", "age": 30}\n'
+    '{"id": "2", "name": "Bob", "age": 25}\n'
+    '{"id": "3", "name": "Charlie", "age": 35}\n'
+)
 
 
 class TestBuildSchema:
@@ -439,7 +426,7 @@ class TestSchemeCommandDeprecation:
         """Test that scheme command shows deprecation warning."""
         import warnings
 
-        from undatum.cli.data_commands import scheme
+        from undatum.cli.commands.describe import scheme
 
         # Capture warnings
         with warnings.catch_warnings(record=True) as w:
@@ -457,7 +444,7 @@ class TestSchemeCommandDeprecation:
 
     def test_scheme_command_still_works(self, sample_csv_file, tmp_path):
         """Test that scheme command still produces correct output."""
-        from undatum.cli.data_commands import scheme
+        from undatum.cli.commands.describe import scheme
 
         output_file = tmp_path / "scheme_output.json"
         scheme(input_file=sample_csv_file, output=str(output_file), stype="cerberus", verbose=False)
@@ -472,7 +459,7 @@ class TestSchemeCommandDeprecation:
 
     def test_scheme_migration_path(self, sample_csv_file, tmp_path):
         """Test that scheme command output matches schema --format cerberus."""
-        from undatum.cli.data_commands import scheme
+        from undatum.cli.commands.describe import scheme
         from undatum.cmds.schemer import Schemer
 
         # Get output from scheme command

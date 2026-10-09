@@ -3,7 +3,7 @@
 import logging
 import os
 import tempfile
-from typing import BinaryIO, Optional
+from typing import BinaryIO
 
 try:
     import boto3
@@ -18,8 +18,10 @@ except ImportError:
 
 from ..common.path_utils import parse_s3_uri
 
+logger = logging.getLogger(__name__)
 
-def get_s3_client(region: Optional[str] = None, profile: Optional[str] = None):
+
+def get_s3_client(region: str | None = None, profile: str | None = None):
     """Create and return an S3 client.
 
     Args:
@@ -56,7 +58,7 @@ def get_s3_client(region: Optional[str] = None, profile: Optional[str] = None):
 class S3Reader:
     """Reader for S3 objects that provides file-like interface."""
 
-    def __init__(self, s3_uri: str, region: Optional[str] = None, profile: Optional[str] = None):
+    def __init__(self, s3_uri: str, region: str | None = None, profile: str | None = None):
         """Initialize S3 reader.
 
         Args:
@@ -111,7 +113,7 @@ class S3Reader:
             os.close(temp_fd)
 
             # Download from S3
-            logging.info(f"Downloading s3://{self.bucket}/{self.key} to temporary file")
+            logger.info(f"Downloading s3://{self.bucket}/{self.key} to temporary file")
             self.client.download_fileobj(self.bucket, self.key, open(temp_path, "wb"))
 
             self._temp_file = temp_path
@@ -139,7 +141,7 @@ class S3Reader:
 class S3Writer:
     """Writer for S3 objects that provides file-like interface."""
 
-    def __init__(self, s3_uri: str, region: Optional[str] = None, profile: Optional[str] = None):
+    def __init__(self, s3_uri: str, region: str | None = None, profile: str | None = None):
         """Initialize S3 writer.
 
         Args:
@@ -203,7 +205,7 @@ class S3Writer:
         # Upload to S3 if file was written
         if self._temp_file and os.path.exists(self._temp_file):
             try:
-                logging.info(f"Uploading to s3://{self.bucket}/{self.key}")
+                logger.info(f"Uploading to s3://{self.bucket}/{self.key}")
                 self.client.upload_file(self._temp_file, self.bucket, self.key)
             except ClientError as e:
                 raise ValueError(f"Failed to upload to S3: {e}") from e
@@ -216,7 +218,7 @@ class S3Writer:
 
 
 def open_s3(
-    s3_uri: str, mode: str = "rb", region: Optional[str] = None, profile: Optional[str] = None
+    s3_uri: str, mode: str = "rb", region: str | None = None, profile: str | None = None
 ) -> BinaryIO:
     """Open S3 URI as file-like object.
 

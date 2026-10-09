@@ -3,8 +3,6 @@
 import logging
 import time
 
-from tqdm import tqdm
-
 from ...common.chunked_io import chunked_reader
 from ...common.command_utils import (
     get_iterable_options,
@@ -14,9 +12,12 @@ from ...common.command_utils import (
 )
 from ...common.parallel import parallel_process_chunks
 from ...common.parallel_workers import merge_stats_partials, stats_accumulate_chunk
+from ...common.progress import progress
 from ...common.s3_iterable import open_iterable_with_s3
 from ...constants import DEFAULT_DICT_SHARE
-from ...utils import dict_generator, get_option, guess_datatype
+from ...utils import dict_generator, get_option
+
+logger = logging.getLogger(__name__)
 
 
 class IterableStatsMixin:
@@ -27,7 +28,6 @@ class IterableStatsMixin:
 
         This is the original implementation, now refactored into a separate method.
         """
-
         iterableargs = get_iterable_options(options)
         iterable_context = open_iterable_with_s3(fromfile, mode="r", iterableargs=iterableargs)
         iterable = iterable_context.__enter__()
@@ -62,13 +62,13 @@ class IterableStatsMixin:
         nodates = self.qd is None
 
         # process data items one by one
-        logging.debug(f"Start processing {fromfile}")
+        logger.debug(f"Start processing {fromfile}")
         start_time = time.time()
         try:
             if use_parallel:
                 batch_size = int(options.get("batch_size") or 5000)
                 records = (
-                    tqdm(records, desc="Analyzing statistics", unit="rows")
+                    progress(records, desc="Analyzing statistics", unit="rows")
                     if show_progress
                     else records
                 )
@@ -88,12 +88,12 @@ class IterableStatsMixin:
                 )
                 fielddata, fieldtypes, count = merge_stats_partials(partials)
             elif show_progress:
-                iterable_wrapped = tqdm(records, desc="Analyzing statistics", unit="rows")
+                iterable_wrapped = progress(records, desc="Analyzing statistics", unit="rows")
                 with iterable_wrapped as pbar:
                     for item in pbar:
                         count += 1
                         if count % 1000 == 0:
-                            logging.debug(f"Processing {count} records of {fromfile}")
+                            logger.debug(f"Processing {count} records of {fromfile}")
                             elapsed = time.time() - start_time
                             if elapsed > 0:
                                 pbar.set_postfix({"throughput": f"{count / elapsed:.0f} rows/s"})
@@ -102,7 +102,7 @@ class IterableStatsMixin:
                 for item in records:
                     count += 1
                     if count % 1000 == 0:
-                        logging.debug(f"Processing {count} records of {fromfile}")
+                        logger.debug(f"Processing {count} records of {fromfile}")
                     self._accumulate_stats_item(item, fielddata, fieldtypes)
         finally:
             iterable.close()
@@ -199,7 +199,7 @@ class IterableStatsMixin:
             if k not in fieldtypes:
                 fieldtypes[k] = {"key": k, "types": {}}
             fd = fieldtypes[k]
-            thetype = guess_datatype(v, self.qd)["base"]
+            thetype = self.types.base(k, v)
             uniqval = fd["types"].get(thetype, 0)
             fd["types"][thetype] = uniqval + 1
             fieldtypes[k] = fd
@@ -212,7 +212,6 @@ class IterableStatsMixin:
             finfields: Dictionary mapping field paths to final types
             dictkeys: List of field paths that are dictionary keys
         """
-
         # Display enhanced statistics table with profiling metrics
         self._display_enhanced_statistics_table(fielddata, finfields, dictkeys)
 

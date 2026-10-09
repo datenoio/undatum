@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://datenoio.github.io/undatum/schemas/undatum.schema.v1.json",
+  "title": "Inferred table schema (undatum's own format)",
+  "description": "Printed by `undatum schema --json`.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "const": "undatum.schema/1",
+      "description": "Result layout"
+    },
+    "id": {
+      "type": "string",
+      "description": "Table id (file name)"
+    },
+    "key": {
+      "type": "string",
+      "description": "Hash of the field list"
+    },
+    "num_cols": {
+      "type": "integer",
+      "description": "Number of fields"
+    },
+    "num_records": {
+      "type": "integer",
+      "description": "Records read (-1 when not counted)"
+    },
+    "is_flat": {
+      "type": "boolean",
+      "description": "No nested fields"
+    },
+    "description": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Description (with --autodoc)"
+    },
+    "fields": {
+      "type": "array",
+      "description": "Fields: name, ftype, is_array, description, ..."
+    },
+    "files": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "description": "Files with this schema (schema-bulk)"
+    },
+    "success": {
+      "type": "boolean",
+      "description": "Inference succeeded"
+    },
+    "error": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Error message when inference failed"
+    }
+  },
+  "required": [
+    "schema",
+    "fields"
+  ]
+}

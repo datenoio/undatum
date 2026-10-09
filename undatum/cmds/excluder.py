@@ -1,119 +1,45 @@
-"""Exclude command module - remove rows based on keys in another file."""
+"""Exclude command: drop records whose key appears in another file."""
 
 import logging
-import sys
 
-from ..common.command_utils import (
-    ITERABLE_OPTIONS_KEYS,  # noqa: F401
-    get_side_iterable_options,
-    iter_command_rows,
-)
-from ..common.errors import FormatError, ValidationError
-from ..common.iterable import DataWriter
-from ..common.s3_iterable import open_path as open_iterable
-from ..utils import field_values, get_file_type, get_option, normalize_for_json
+from ..common.errors import ValidationError
+from ..common.path_utils import validate_file_path
+from ..io import open_source, side_options
+from ..ops import ExcludeConfig, run
+from ..utils import get_option
 
-
-def _get_key_value(item, key_fields):
-    """Get key value for exclusion comparison."""
-    if not key_fields:
-        # Use all fields as key
-        return tuple(sorted((k, v) for k, v in item.items() if v is not None))
-    values = []
-    for field in key_fields:
-        found = field_values(item, field)
-        values.append(found[0] if found else None)
-    return tuple(values)
+logger = logging.getLogger(__name__)
 
 
 class Excluder:
-    """Excluder command handler - exclude rows based on keys."""
-
-    def __init__(self):
-        pass
+    """Exclude command handler."""
 
     def exclude(self, fromfile, exclude_file, options=None):
-        """Remove rows from fromfile where keys match exclude_file."""
-        if options is None:
-            options = {}
-        logging.debug("Processing %s, excluding %s", fromfile, exclude_file)
+        """Write the records of ``fromfile`` whose ``on`` key is not in ``exclude_file``.
 
+        Args:
+            fromfile: Input path.
+            exclude_file: Records whose keys are excluded (read with ``table2``/``sheet2``).
+            options: ``on`` (comma-separated key fields, dotted paths allowed),
+                ``output`` and reader options.
+
+        Raises:
+            ValidationError: If no key fields are given.
+        """
+        options = options or {}
         on_fields = get_option(options, "on")
         if not on_fields:
             raise ValidationError("exclude requires key fields (--on)", field="on")
-
-        key_field_list = [f.strip() for f in on_fields.split(",")]
-
-        # Build exclusion set from exclude_file
-        iterableargs1 = get_side_iterable_options(options, 1)
-        iterableargs2 = get_side_iterable_options(options, 2)
-        exclude_iterable = open_iterable(exclude_file, mode="r", iterableargs=iterableargs2)
-        exclude_keys = set()
-
-        try:
-            count_exclude = 0
-            for item in iter_command_rows(exclude_iterable, options):
-                count_exclude += 1
-                if isinstance(item, dict):
-                    key = _get_key_value(item, key_field_list)
-                    exclude_keys.add(key)
-        finally:
-            exclude_iterable.close()
-
-        logging.debug("exclude: loaded %d exclusion keys", len(exclude_keys))
-
-        # Filter fromfile
-        iterable = open_iterable(fromfile, mode="r", iterableargs=iterableargs1)
-        items = []
-
-        try:
-            count = 0
-            excluded = 0
-            for item in iter_command_rows(iterable, options):
-                count += 1
-                if isinstance(item, dict):
-                    key = _get_key_value(item, key_field_list)
-                    if key not in exclude_keys:
-                        items.append(item)
-                    else:
-                        excluded += 1
-                else:
-                    # For non-dict items, use item itself as key
-                    if item not in exclude_keys:
-                        items.append(item)
-                    else:
-                        excluded += 1
-
-                if count % 100000 == 0:
-                    logging.debug("exclude: processed %d records, excluded %d", count, excluded)
-        finally:
-            iterable.close()
-
-        to_file = get_option(options, "output")
-        if to_file:
-            to_type = get_file_type(to_file)
-            if not to_type:
-                raise FormatError(to_file, to_file.rsplit(".", 1)[-1])
-            out = open(to_file, "w", encoding="utf8")
-        else:
-            to_type = "jsonl"
-            out = sys.stdout
-
-        # Normalize items to convert non-JSON-serializable types (e.g., UUID) to strings
-        normalized_items = [normalize_for_json(item) for item in items]
-
-        # Extract fieldnames from items for CSV output
-        fieldnames = None
-        if to_type == "csv" and normalized_items:
-            if isinstance(normalized_items[0], dict):
-                fieldnames = list(normalized_items[0].keys())
-
-        writer = DataWriter(out, filetype=to_type, fieldnames=fieldnames)
-        writer.write_items(normalized_items)
-
-        if to_file:
-            out.close()
-
-        logging.debug(
-            "exclude: processed %d records, excluded %d, kept %d", count, excluded, len(items)
+        validate_file_path(fromfile, check_read=True)
+        validate_file_path(exclude_file, check_read=True)
+        cfg = ExcludeConfig(
+            exclude=open_source(exclude_file, side_options(options, 2)),
+            on=tuple(f.strip() for f in on_fields.split(",")),
         )
+        count = run(
+            "exclude",
+            cfg,
+            open_source(fromfile, side_options(options, 1)),
+            get_option(options, "output"),
+        )
+        logger.debug("exclude: wrote %d records", count)

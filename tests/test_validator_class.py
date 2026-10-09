@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from undatum.cmds.validator import Validator
+from undatum.common.errors import ValidationError
 
 
 class TestValidator:
@@ -27,7 +28,7 @@ class TestValidator:
 
         try:
             options = {}  # No fields option
-            with pytest.raises(ValueError, match="validate requires 'fields' option"):
+            with pytest.raises(ValidationError, match="requires --rules, or --fields"):
                 validator.validate(temp_path, options)
         finally:
             os.unlink(temp_path)
@@ -42,7 +43,7 @@ class TestValidator:
 
         try:
             options = {"fields": "email"}  # No rule option
-            with pytest.raises(ValueError, match="validate requires 'rule' option"):
+            with pytest.raises(ValidationError, match="requires --rule with --fields"):
                 validator.validate(temp_path, options)
         finally:
             os.unlink(temp_path)

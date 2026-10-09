@@ -9,20 +9,10 @@ from undatum.common.errors import FileNotFoundError
 
 
 @pytest.fixture
-def semicolon_csv(tmp_path):
-    path = tmp_path / "orgs.csv"
-    path.write_text(
-        "id;name;city\n" '1;"Acme, Inc";"New York"\n' '2;"Beta LLC";London\n',
-        encoding="utf8",
-    )
-    return str(path)
-
-
-@pytest.fixture
 def simple_csv(tmp_path):
     path = tmp_path / "people.csv"
     path.write_text(
-        "id,name,city\n" "1,Alice,NYC\n" "2,Bob,NYC\n" "3,Carol,LA\n",
+        "id,name,city\n1,Alice,NYC\n2,Bob,NYC\n3,Carol,LA\n",
         encoding="utf8",
     )
     return str(path)

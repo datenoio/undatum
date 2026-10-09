@@ -1,0 +1,125 @@
+name: Benchmarks
+
+# Wall time and peak memory of core commands (scripts/benchmarks.py).
+# Pull requests: 100k rows, head against the base branch on the same runner; fails on a
+# regression above 20% or a budget overrun (tests/benchmarks/budgets.toml).
+# Nightly: 1M rows on master; results are kept as an artifact and appended to the
+# `benchmark-history` branch, whose chart the documentation site shows.
+
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - "undatum/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - "scripts/benchmarks.py"
+      - "tests/benchmarks/**"
+      - ".github/workflows/benchmarks.yml"
+  schedule:
+    - cron: "23 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: benchmarks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pull-request:
+    name: 100k rows against the base branch
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        path: head
+    - uses: actions/checkout@v4
+      with:
+        ref: ${{ github.event.pull_request.base.sha }}
+        path: base
+    - uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+    - uses: astral-sh/setup-uv@v6
+    - name: Install both checkouts
+      shell: bash
+      run: |
+        for dir in head base; do
+          if [ -f "$dir/uv.lock" ]; then
+            (cd "$dir" && uv sync --frozen --python 3.12)
+          else
+            (cd "$dir" && uv venv --python 3.12 && uv pip install --python .venv/bin/python -e .)
+          fi
+        done
+    - name: Generate the 100k-row datasets
+      run: head/.venv/bin/python head/scripts/benchmarks.py generate --tier 100k --dir bench-data
+    - name: Measure base and head (interleaved)
+      run: >-
+        head/.venv/bin/python head/scripts/benchmarks.py run --tier 100k --data bench-data
+        --python base=base/.venv/bin/python --python head=head/.venv/bin/python
+        --out benchmarks.json
+    - name: Compare with the base branch and the budgets
+      shell: bash
+      run: >-
+        head/.venv/bin/python head/scripts/benchmarks.py compare benchmarks.json
+        --base base --head head --budgets head/tests/benchmarks/budgets.toml
+        | tee -a "$GITHUB_STEP_SUMMARY"
+    - uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: benchmarks-pr-${{ github.event.pull_request.number }}
+        path: benchmarks.json
+
+  nightly:
+    name: 1M rows (nightly history)
+    if: github.event_name != 'pull_request' && github.repository == 'datenoio/undatum'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+    - uses: astral-sh/setup-uv@v6
+    - name: Install locked dependencies
+      run: uv sync --frozen --python 3.12
+    - name: Generate the 1M-row datasets
+      run: .venv/bin/python scripts/benchmarks.py generate --tier 1m --dir "$RUNNER_TEMP/bench-data"
+    - name: Measure
+      run: >-
+        .venv/bin/python scripts/benchmarks.py run --tier 1m --data "$RUNNER_TEMP/bench-data"
+        --python master=.venv/bin/python --out benchmarks.json
+    - uses: actions/upload-artifact@v4
+      with:
+        name: benchmarks-nightly-${{ github.run_id }}
+        path: benchmarks.json
+        retention-days: 90
+    - name: Append to the history branch
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        mkdir history
+        git -C history init -q -b benchmark-history
+        git -C history remote add origin \
+          "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+        if git -C history fetch -q --depth 1 origin benchmark-history; then
+          git -C history reset -q --hard FETCH_HEAD
+        fi
+        .venv/bin/python scripts/benchmarks.py history benchmarks.json \
+          --file history/history.jsonl --svg history/history.svg
+        git -C history add history.jsonl history.svg
+        git -C history -c user.name="github-actions[bot]" \
+          -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+          commit -q -m "bench: nightly ${GITHUB_SHA::7}"
+        git -C history push -q origin HEAD:benchmark-history
+    - name: Check the 1M-row budgets
+      shell: bash
+      run: |
+        .venv/bin/python scripts/benchmarks.py check benchmarks.json | tee -a "$GITHUB_STEP_SUMMARY"
