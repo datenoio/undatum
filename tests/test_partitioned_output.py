@@ -85,6 +85,13 @@ def test_engines_write_the_same_layout(data):
     )
 
 
+def test_duckdb_before_1_5_falls_back_to_python(data, monkeypatch):
+    # DuckDB 1.3 and 1.4 name the NULL partition "region=NULL", not HIVE_NULL.
+    monkeypatch.setattr(duckdb, "__version__", "1.4.4")
+    _invoke("convert", "s.csv", "o", "--partition-by", "region", "-O", "csv", "-e", "duckdb")
+    assert f"region={HIVE_NULL}/data_0.csv" in _files(data / "o")
+
+
 def test_jsonl_and_where(data):
     _invoke(
         "convert", "s.csv", "j", "--partition-by", "year", "-O", "jsonl", "--where", "month = 1"

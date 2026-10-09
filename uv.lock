@@ -9130,7 +9130,7 @@ requires-dist = [
     { name = "s3fs", marker = "extra == 'cloud'", specifier = ">=2024.2" },
     { name = "textract", marker = "extra == 'extract'", specifier = ">=2.0,<3" },
     { name = "textual", marker = "extra == 'tui'", specifier = ">=0.80,<9" },
-    { name = "typer", specifier = ">=0.17,<1" },
+    { name = "typer", specifier = ">=0.26,<1" },
     { name = "types-pymysql", marker = "extra == 'dev'" },
     { name = "types-pyyaml", marker = "extra == 'dev'" },
     { name = "types-requests", marker = "extra == 'dev'" },

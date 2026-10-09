@@ -69,9 +69,9 @@ undatum convert data.csv by_place --partition-by country,city -O csv --where "am
 duckdb -c "SELECT country, count(*) FROM read_parquet('by_country/**/*.parquet') GROUP BY 1"
 ```
 
-CSV and Parquet output from DuckDB-readable inputs is written by DuckDB
-(`COPY ... PARTITION_BY`); other formats and inputs go through a streaming writer with at
-most `--max-open-files` (default 128) open files. Both produce the same layout:
+CSV and Parquet output from DuckDB-readable inputs is written by DuckDB 1.5 or later
+(`COPY ... PARTITION_BY`); other formats, inputs and DuckDB versions go through a streaming
+writer with at most `--max-open-files` (default 128) open files. Both produce the same layout:
 `country=DE/data_0.parquet`, percent-encoded values, `__HIVE_DEFAULT_PARTITION__` for
 missing and empty values, partition fields kept out of the files. The output directory must
 be new or empty. `split --hive` writes the same layout.

@@ -43,9 +43,9 @@ forces the streaming Python path, for example to compare results.
 ## Partitioned output
 
 `convert --partition-by` and `split --fields ... --hive` write Hive-style `field=value/`
-directories. CSV and Parquet go through DuckDB `COPY ... PARTITION_BY`; other formats use a
-streaming writer that keeps at most `--max-open-files` files open (default 128), so keys with
-many distinct values work too:
+directories. CSV and Parquet go through DuckDB `COPY ... PARTITION_BY` (DuckDB 1.5 or later);
+other formats use a streaming writer that keeps at most `--max-open-files` files open
+(default 128), so keys with many distinct values work too:
 
 ```bash
 undatum convert data.csv by_country --partition-by country -O parquet

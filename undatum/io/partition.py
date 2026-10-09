@@ -210,7 +210,7 @@ def duckdb_partitioned_copy(
 ) -> bool:
     """Write ``query`` Hive-partitioned with DuckDB ``COPY``; ``False`` when not possible."""
     native = DUCKDB_FORMATS.get(format_out)
-    if native is None:
+    if native is None or not _duckdb_names_null_partitions():
         return False
     described = conn.sql(f"DESCRIBE {query}").fetchall()
     columns = [str(row[0]) for row in described]
@@ -243,6 +243,17 @@ def duckdb_partitioned_copy(
         _remove_contents(directory)  # it was empty or missing before (check_output_directory)
         raise
     return True
+
+
+def _duckdb_names_null_partitions() -> bool:
+    """True when DuckDB names the NULL partition ``HIVE_NULL`` (1.5+; older versions use NULL)."""
+    import duckdb
+
+    try:
+        major, minor = (int(part) for part in duckdb.__version__.split(".")[:2])
+    except ValueError:
+        return True
+    return (major, minor) >= (1, 5)
 
 
 def _remove_contents(directory: str) -> None:
