@@ -76,7 +76,7 @@ undatum db query "SELECT 1" --db postgresql://user:pass@host/db
 | audit | `pip-audit` (advisory) |
 
 `.github/workflows/benchmarks.yml` compares wall time and memory with the base branch on pull
-requests and records a nightly history ([Benchmarks](./benchmarks.md)).
+requests and records a 1M-row history when started by hand ([Benchmarks](./benchmarks.md)).
 
 Release builds (`release.yml`) require the same tests, a clean install and the binaries to
 pass before anything is published.

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased](https://github.com/datenoio/undatum/compare/v1.8.0...HEAD)
 
+### Changed
+
+- **Benchmarks** — the 1M-row benchmark no longer runs every night; start it from the Actions tab (Benchmarks → Run workflow) when needed. Pull requests still compare 100k-row runs with the base branch
+
 ## [1.8.0](https://github.com/datenoio/undatum/compare/v1.7.0...v1.8.0) - 2026-10-09
 
 Upgrading: read **Breaking** below and the [migration guide](https://datenoio.github.io/undatum/getting-started/migrating-to-2); `undatum migrate-script` rewrites deprecated commands and options in scripts.

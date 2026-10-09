@@ -9,7 +9,7 @@ on:
       - "docs/**"
       - ".github/workflows/deploy-docs.yml"
   workflow_dispatch:
-  # Refresh the benchmark history chart after each nightly run.
+  # Refresh the benchmark history chart after each 1M-row benchmark run.
   workflow_run:
     workflows: [Benchmarks]
     types: [completed]
