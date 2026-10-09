@@ -15,16 +15,22 @@
 - **140+ formats via iterabledata**: CSV, JSON, JSON Lines, BSON, XML, XLS/XLSX, Parquet, AVRO, ORC, plus geospatial, lakehouse (Delta/Iceberg/Lance/DuckLake/Paimon), scientific, RDF, log, config, graph, and feed formats. Run `undatum formats list` to see every supported format and its read/write capabilities.
 - **Compression support**: GZ, XZ, BZ2, ZIP, ZSTD, LZ4, 7Z, Brotli, Snappy, LZO
 - **Multi-cloud I/O**: Read and write `s3://`, `gs://`/`gcs://`, and `az://`/`abfs://`/`abfss://` URIs natively via iterabledata (`pip install "undatum[cloud]"`)
-- **Database sources**: Read from PostgreSQL, MySQL/MariaDB, SQLite, MS SQL Server, ClickHouse, MongoDB, and Elasticsearch/OpenSearch (`undatum db query`, `undatum db dump`)
-- **Optional TUI and web UI**: Explore a bounded sample in the terminal (`undatum tui`) or a local browser (`undatum web`)
-- **Large files**: `convert`, `stats`, `select`, `validate`, `mask`, `count` and `db load` stream records; `sort` and `dedup` spill to disk; DuckDB runs SQL and many commands out of core. Some transforms (`fill`, `rename`, `replace`, ...) still load all rows — the command reference says which
+- **Databases**: Query and dump PostgreSQL, MySQL/MariaDB, SQLite, SQL Server, ClickHouse, MongoDB, and Elasticsearch/OpenSearch (`undatum db query`, `undatum db dump`); load files into DuckDB, SQLite, PostgreSQL, MySQL, ClickHouse, SQL Server, MongoDB, and Elasticsearch/OpenSearch (`undatum db load`, with create-table, replace and upsert where the database supports them)
+- **Large files**: record commands stream with bounded memory; `sort`, `dedup` and `reverse` spill to disk; DuckDB runs SQL and many transforms out of core. Each [command page](https://datenoio.github.io/undatum/commands/) states its memory use (for example `uniq` and `frequency` grow with the number of distinct values)
 - **Unix pipelines**: `-` reads standard input and results go to standard output in the input's format: `cat data.csv \| undatum sort - --by amount \| undatum head - -n 10`
-- **Automatic detection**: Encoding, delimiters (comma, semicolon, tab, pipe), and file types
+- **SQL expressions**: `--where "amount > 100 AND city = 'Berlin'"` filters and `--add "total = price * qty"` adds computed fields on `select`, `convert` and other commands, evaluated by DuckDB on typed values
+- **Partitioned output**: `undatum convert data.csv out/ --partition-by year,month -O parquet` writes Hive-style `field=value/` directories that DuckDB, Spark, Athena and BigQuery read
+- **Automatic detection**: Encoding, delimiters (comma, semicolon, tab, pipe), headers, compression and file types
+- **Data validation**: rule files with a built-in library — emails, URLs, dates, E.164 phones, ISO country/currency/language codes, IBAN, UUID, patterns, ranges, `unique` and `references` to another file (`undatum validate --rules`; `--list-rules` prints the catalogue)
+- **Quality reports**: `undatum quality` profiles a dataset (empty values, distinct and top values, type conformance), checks it against an expected schema and rules, and fails CI when a threshold is not met (Markdown, HTML or JSON)
+- **Schema drift**: `undatum diff --schema` and `undatum schema-drift` report added, removed, retyped and renamed fields across deliveries; `--fail-on` turns drift into a non-zero exit code
+- **Machine-readable output**: `--json` on informational commands (`count`, `headers`, `sniff`, `stats`, `schema`, `diff`, `validate`, ...) prints versioned [JSON documents](https://datenoio.github.io/undatum/commands/json-output); errors become JSON too, with [documented exit codes](https://datenoio.github.io/undatum/getting-started/troubleshooting)
 - **Frictionless Data Packaging**: Create, extend, and validate `datapackage.json` descriptors (`undatum package`)
-- **Data validation**: Built-in rules for emails, URLs, and custom validators
 - **Ad-hoc SQL on files**: Run DuckDB SQL over CSV, JSONL, Parquet, and other formats (`undatum sql`)
-- **AI-powered tooling**: `ai doc` / `ai filter` via iterabledata (OpenAI, Anthropic, Gemini, Azure, OpenRouter, Ollama, LM Studio, Perplexity). Legacy `--autodoc` on `analyze` / `schema` / `doc` supports openai, openrouter, ollama, lmstudio, and perplexity.
-- **Agent tools & MCP server**: JSON tools, LangChain `StructuredTool`s, or `undatum mcp serve`
+- **Python SDK**: a lazy `Dataset` API — chained steps build a plan that runs as one DuckDB query when every step has a SQL form
+- **AI-powered tooling**: `undatum ai` and `--autodoc` on `analyze`, `schema` and `doc` share iterabledata's providers (OpenAI, Anthropic, Gemini, Azure, OpenRouter, Ollama, LM Studio, Perplexity, OpenAI-compatible endpoints); values in personal-data columns are masked in samples sent to remote providers
+- **Agent tools & MCP server**: one tool per operation for MCP and LangChain; `undatum mcp serve` also exposes dataset listings, schemas and samples as resources and ships ready-made prompts (mcp 1.x and 2.x)
+- **Optional TUI and web UI**: Explore a bounded sample in the terminal (`undatum tui`) or a local browser (`undatum web`)
 - **Optional Data API**: Serve file-backed datasets over HTTP (FastAPI + DuckDB)
 
 ## Documentation
@@ -39,7 +45,9 @@ The full documentation site (Docusaurus) lives in [`docs/`](docs/) and is publis
 | [Formats](https://datenoio.github.io/undatum/formats/) | Honest capability matrix |
 | [Python SDK](https://datenoio.github.io/undatum/integrations/sdk) | Fluent `Dataset` API |
 | [MCP / agents](https://datenoio.github.io/undatum/integrations/mcp) | Agent tools and MCP server |
+| [JSON output](https://datenoio.github.io/undatum/commands/json-output) | Versioned JSON layouts for scripts and agents |
 | [Troubleshooting](https://datenoio.github.io/undatum/getting-started/troubleshooting) | Exit codes and common errors |
+| [Migrating to 2.0](https://datenoio.github.io/undatum/getting-started/migrating-to-2) | Renamed commands and options, changed defaults |
 
 Source pages: [`docs/docs/`](docs/docs/). Changelog: [`CHANGELOG.md`](CHANGELOG.md). Contributor workflow: [`WORKFLOW_GUIDE.md`](WORKFLOW_GUIDE.md).
 
@@ -93,6 +101,7 @@ common extras. A Homebrew tap and a conda-forge package are planned; see the
 | `api` | Data API server (`undatum api`, FastAPI + uvicorn + httpx) |
 | `extract` | Document extraction (`undatum extract`, PDF/DOC/DOCX tables and text) |
 | `plot` | Plotting (`undatum plot`, matplotlib) |
+| `phone` | National phone numbers in validation rules (`format: phone` with `region`, phonenumbers) |
 | `tui` | Interactive terminal UI (`undatum tui`, Textual) |
 | `web` | Local web UI (`undatum web`, FastAPI + Jinja2) |
 | `mcp` | MCP server for AI agents (`undatum mcp serve`) |
@@ -158,15 +167,22 @@ undatum analyze data.jsonl
 undatum stats data.csv
 undatum table data.csv --limit 20
 
-# Query
+# Query and transform
 undatum sql "SELECT city, COUNT(*) AS n FROM data GROUP BY city" cities.csv
+undatum select sales.csv --where "amount > 100" --add "total = price * qty" --output big.csv
+undatum convert sales.csv sales/ --partition-by year -O parquet
 
 # Pipelines: '-' reads stdin; CSV in, CSV out (-O jsonl to change it)
 cat data.csv | undatum sort - --by amount --numeric amount | undatum head - -n 5
 
-# Validate and package
+# Validate, check quality and drift, package
 undatum validate data.csv --rules rules.yml
+undatum quality data.csv --rules rules.yml --thresholds quality.yml --output report.html
+undatum schema-drift deliveries/ --baseline schema.json --fail-on removed,type
 undatum package create data.csv --output datapackage.json
+
+# JSON for scripts and agents
+undatum count data.csv --json
 
 # Document
 undatum ai doc data.csv
@@ -179,7 +195,9 @@ More first-success paths: [quick start](https://datenoio.github.io/undatum/getti
 
 All commands are available as `undatum <command>` or via the shorter `data` alias.
 
-**Top-level data commands:** `convert`, `extract`, `analyze`, `doc`, `stats`, `validate`, `schema`, `schema-bulk`, `sql`, `select`, `search`, `mask`, `plot`, `tui`, `web`, and the other transform/inspection commands in the [CLI reference](https://datenoio.github.io/undatum/commands/). The older names `document`, `profile`, `ingest` and `scheme` still work with a deprecation warning until 2.0 (use `doc`, `stats`, `db load`, `schema --format cerberus`).
+**Top-level data commands:** `convert`, `extract`, `analyze`, `doc`, `stats`, `validate`, `quality`, `schema`, `schema-bulk`, `schema-drift`, `diff`, `sql`, `select`, `search`, `mask`, `plot`, `tui`, `web`, `migrate-script`, and the other transform/inspection commands in the [CLI reference](https://datenoio.github.io/undatum/commands/).
+
+**Upgrading:** the older names `document`, `profile`, `ingest` and `scheme` and the old option spellings (`--filetype`, `--outtype`, `--n`, ...) still work with a deprecation warning until 2.0 (use `doc`, `stats`, `db load`, `schema --format cerberus`). `undatum migrate-script scripts/ --write` rewrites them in shell scripts, Makefiles, Markdown and pipeline YAML; the [migration guide](https://datenoio.github.io/undatum/getting-started/migrating-to-2) and the [changelog](CHANGELOG.md) list the changed defaults.
 
 **Command groups:**
 
