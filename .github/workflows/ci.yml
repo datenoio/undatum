@@ -122,8 +122,9 @@ jobs:
         uv run --frozen --no-sync pytest --cov=undatum --cov-report=term --cov-report=xml --cov-fail-under=65
     - name: Diff coverage for pull requests
       if: github.event_name == 'pull_request' && matrix.python-version == '3.12'
+      # The checkout is shallow; diff-cover needs the merge base with the base branch.
       run: |
-        git fetch --no-tags origin "${{ github.base_ref }}"
+        git fetch --no-tags --unshallow origin "${{ github.base_ref }}"
         uvx "diff-cover>=9" coverage.xml --compare-branch="origin/${{ github.base_ref }}" --fail-under=80
 
   memory-budget:
