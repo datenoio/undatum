@@ -2,21 +2,12 @@
 
 import logging
 import sys
-from typing import Annotated, Optional
+from typing import Annotated
 
 import typer
 
-from ..cmds.pipeline import PipelineRunner
-from ..cmds.pipeline_templates import TemplateManager
 from ..common.errors import UndatumError, ValidationError
-from ..common.pipeline_parser import (
-    PipelineParseError,
-    parse_pipeline,
-    render_pipeline_markdown,
-    render_pipeline_mermaid,
-    validate_pipeline,
-)
-from .common import enable_verbose
+from .common import console, enable_verbose
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +22,7 @@ def run(
         str, typer.Argument(help="Path to pipeline specification file (YAML or JSON).")
     ],
     var: Annotated[
-        Optional[list[str]],
+        list[str] | None,
         typer.Option(help="Variable overrides in format key=value (can be used multiple times)."),
     ] = None,
     dry_run: Annotated[bool, typer.Option(help="Validate pipeline without executing.")] = False,
@@ -49,6 +40,9 @@ def run(
         # Validate without executing
         undatum pipeline run pipeline.yml --dry-run
     """
+    from ..cmds.pipeline import PipelineRunner
+    from ..common.pipeline_parser import PipelineParseError, parse_pipeline
+
     if verbose:
         enable_verbose()
 
@@ -104,6 +98,8 @@ def pipeline_validate(
         # Validate pipeline
         undatum pipeline validate pipeline.yml
     """
+    from ..common.pipeline_parser import PipelineParseError, parse_pipeline, validate_pipeline
+
     if verbose:
         enable_verbose()
 
@@ -120,7 +116,7 @@ def pipeline_validate(
                 logger.error(f"  - {error}")
             sys.exit(1)
         else:
-            logger.info("Pipeline specification is valid")
+            console.print("[green]Pipeline specification is valid[/green]")
 
     except PipelineParseError as e:
         logger.error(f"Pipeline parsing error: {e}")
@@ -140,7 +136,7 @@ def pipeline_doc(
         str, typer.Argument(help="Path to pipeline specification file (YAML or JSON).")
     ],
     output: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(help="Write documentation to this path instead of stdout."),
     ] = None,
     format: Annotated[
@@ -155,6 +151,13 @@ def pipeline_doc(
         undatum pipeline doc pipeline.yml
         undatum pipeline doc pipeline.yml --format mermaid --output flow.mmd
     """
+    from ..common.pipeline_parser import (
+        PipelineParseError,
+        parse_pipeline,
+        render_pipeline_markdown,
+        render_pipeline_mermaid,
+    )
+
     if verbose:
         enable_verbose()
 
@@ -195,6 +198,8 @@ def templates_list(
     from rich import print as rich_print
     from rich.table import Table
 
+    from ..cmds.pipeline_templates import TemplateManager
+
     if verbose:
         enable_verbose()
 
@@ -223,11 +228,12 @@ def templates_init(
     ],
     output: Annotated[str, typer.Option(help="Path to output pipeline file.")] = "pipeline.yml",
     var: Annotated[
-        Optional[list[str]],
+        list[str] | None,
         typer.Option(help="Variable values in format key=value (can be used multiple times)."),
     ] = None,
     interactive: Annotated[
-        bool, typer.Option(help="Prompt for missing variables interactively.")
+        bool,
+        typer.Option(help="Prompt for missing variables (only when stdin is a terminal)."),
     ] = True,
     verbose: Annotated[bool, typer.Option(help="Enable verbose logging output.")] = False,
 ):
@@ -240,6 +246,8 @@ def templates_init(
         # Initialize with variables, no prompts
         undatum pipeline templates init s3-etl --output etl.yml --var input_bucket=my-bucket --no-interactive
     """
+    from ..cmds.pipeline_templates import TemplateManager
+
     if verbose:
         enable_verbose()
 
@@ -264,8 +272,9 @@ def templates_init(
             suggestions=available if available else None,
         )
 
+    # Prompts need a terminal; in scripts and CI the template defaults and --var apply.
     success = manager.init_template(
-        template_name, output, variables=variables, interactive=interactive
+        template_name, output, variables=variables, interactive=interactive and sys.stdin.isatty()
     )
     if not success:
         raise UndatumError(f"Failed to initialize template '{template_name}'")

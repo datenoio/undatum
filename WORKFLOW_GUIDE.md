@@ -12,13 +12,13 @@ openspec list
 openspec list --specs
 
 # Show a specific proposal
-openspec show optimize-stats-command-duckdb
+openspec show <change-id>
 
 # Validate a proposal
-openspec validate optimize-stats-command-duckdb --strict
+openspec validate <change-id> --strict
 
 # Archive completed work
-openspec archive optimize-stats-command-duckdb --yes
+openspec archive <change-id> --yes
 ```
 
 ## Three-Stage Workflow
@@ -37,7 +37,6 @@ openspec archive optimize-stats-command-duckdb --yes
 3. Validate: `openspec validate [change-id] --strict`
 4. **Wait for approval** before implementing
 
-**Example:** We just created `optimize-stats-command-duckdb`
 
 ### Stage 2: Implementing Changes
 
@@ -51,7 +50,6 @@ openspec archive optimize-stats-command-duckdb --yes
 5. Test thoroughly
 6. Update documentation
 
-**Current Status:** `optimize-stats-command-duckdb` is waiting for approval
 
 ### Stage 3: Archiving Changes
 
@@ -115,17 +113,7 @@ openspec/
 - Optimization → Create proposal
 - Breaking change → Create proposal
 
-## Example: Stats Command Optimization
+## Related
 
-**What we did:**
-1. ✅ Created proposal: `optimize-stats-command-duckdb`
-2. ✅ Added design document (technical decisions)
-3. ✅ Created tasks checklist (80+ tasks)
-4. ✅ Modified requirements in `specs/data-processing/spec.md`
-5. ✅ Validated proposal
-
-**Next steps:**
-1. ⏳ You review and approve
-2. ⏳ I implement following `tasks.md`
-3. ⏳ You test and verify
-4. ⏳ Archive when complete
+- [`openspec/AGENTS.md`](openspec/AGENTS.md) — full workflow and spec format
+- [Contributing](docs/docs/development/contributing.md), [architecture](docs/docs/development/architecture.md), [testing](docs/docs/development/testing.md)

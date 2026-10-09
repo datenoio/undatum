@@ -7,14 +7,18 @@ from typing import Any
 from . import schemas
 
 
-def get_tools() -> list[Any]:
+def get_tools(root: str | None = None, allow_anywhere: bool = False) -> list[Any]:
     """Return LangChain ``StructuredTool`` instances for undatum operations.
 
-    Covers the iterabledata foundation tools plus undatum-specific tools
-    (DuckDB SQL, frequency, dedup, mask, sample).
+    Covers the iterabledata foundation tools, undatum-specific tools (DuckDB SQL,
+    frequency, ...) and one tool per registered operation. Tool paths are confined to
+    ``root`` (default: the current directory) unless ``allow_anywhere`` is set.
 
     Requires ``langchain-core`` (``pip install langchain-core``).
     """
+    from .sandbox import configure_sandbox
+
+    configure_sandbox(root, allow_anywhere=allow_anywhere)
     try:
         from langchain_core.tools import StructuredTool
     except ImportError as err:
@@ -37,6 +41,8 @@ def get_tools() -> list[Any]:
                 func=_make_func(name),
                 name=name,
                 description=definition["description"],
+                # The JSON Schema of the tool, so agents see every parameter.
+                args_schema=definition["parameters"],
             )
         )
     return tools

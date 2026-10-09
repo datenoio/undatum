@@ -1,7 +1,6 @@
 """Data masking command module."""
 
 import logging
-from typing import Optional
 
 from ..common.command_utils import (
     ITERABLE_OPTIONS_KEYS,  # noqa: F401
@@ -12,7 +11,10 @@ from ..common.errors import FileNotFoundError, PermissionError, ValidationError,
 from ..common.masking import mask_value
 from ..common.path_utils import validate_file_path
 from ..common.s3_iterable import open_path as open_iterable
+from ..common.writer import emit_records
 from ..utils import get_option
+
+logger = logging.getLogger(__name__)
 
 
 class Masker:
@@ -21,7 +23,7 @@ class Masker:
     def __init__(self):
         pass
 
-    def mask(self, fromfile: str, tofile: Optional[str], options: Optional[dict] = None):
+    def mask(self, fromfile: str, tofile: str | None, options: dict | None = None):
         """Mask sensitive fields in a data file.
 
         Args:
@@ -73,75 +75,22 @@ class Masker:
         # Get iterable options
         iterableargs = get_iterable_options(options)
 
-        # Determine output format
         format_out = get_option(options, "format_out")
-        if format_out:
-            iterableargs["format_out"] = format_out
-
-        logging.info(f"Masking fields: {fields_to_mask} using method: {method}")
+        logger.info(f"Masking fields: {fields_to_mask} using method: {method}")
 
         it_in = open_iterable(fromfile, mode="r", iterableargs=iterableargs)
-
         try:
-            first_record = None
-            keys = None
-            records = iter_command_rows(it_in, options)
-
-            try:
-                first_record = next(records)
-                if isinstance(first_record, dict):
-                    keys = list(first_record.keys())
-            except StopIteration:
-                pass
-
-            out_args = {"keys": keys} if keys else {}
-            it_out = open_iterable(tofile or "-", mode="w", iterableargs=out_args)
-
-            try:
-                if first_record is not None:
-                    masked_record = self._mask_record(first_record, fields_to_mask, method, salt)
-                    if hasattr(it_out, "write"):
-                        it_out.write(masked_record)
-                    else:
-                        it_out.write_bulk([masked_record])
-
-                count = 0
-                batch = []
-                batch_size = 10000
-
-                for record in records:
-                    masked_record = self._mask_record(record, fields_to_mask, method, salt)
-                    batch.append(masked_record)
-                    count += 1
-
-                    if len(batch) >= batch_size:
-                        if hasattr(it_out, "write_bulk"):
-                            it_out.write_bulk(batch)
-                        else:
-                            for item in batch:
-                                it_out.write(item)
-                        batch = []
-
-                    if count % 100000 == 0:
-                        logging.info(f"Masked {count} records")
-
-                if batch:
-                    if hasattr(it_out, "write_bulk"):
-                        it_out.write_bulk(batch)
-                    else:
-                        for item in batch:
-                            it_out.write(item)
-
-                logging.info(f"Successfully masked {count + (1 if first_record else 0)} records")
-
-            finally:
-                it_out.close()
-
+            masked = (
+                self._mask_record(record, fields_to_mask, method, salt)
+                for record in iter_command_rows(it_in, options)
+            )
+            count = emit_records(masked, tofile, format_out=format_out)
+            logger.info("Masked %d records", count)
         finally:
             it_in.close()
 
     def _mask_record(
-        self, record: dict, fields_to_mask: list[str], method: str, salt: Optional[str] = None
+        self, record: dict, fields_to_mask: list[str], method: str, salt: str | None = None
     ) -> dict:
         """Mask specified fields in a record.
 

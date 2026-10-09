@@ -14,16 +14,21 @@ Command examples: [`api`](/commands/api).
 
 Start the server with a key:
 
-```bash
+```bash norun
 undatum api serve --config api.yml --api-key "$UNDATUM_API_KEY"
 # or
 export UNDATUM_API_KEY=replace-me
 undatum api run data.csv
 ```
 
-Clients must send the key as `X-API-Key` (or `?api_key=`). Requests without a matching
-key receive HTTP 401. `/docs`, `/redoc`, and `/openapi.json` stay open so operators can
-inspect the schema.
+Clients must send the key in the `X-API-Key` header; the `?api_key=` query parameter is
+ignored, so keys do not end up in access logs. Keys are compared in constant time. Requests
+without a matching key receive HTTP 401. `/docs`, `/redoc`, and `/openapi.json` stay open so
+operators can inspect the schema.
+
+```bash norun
+curl -H "X-API-Key: $UNDATUM_API_KEY" "http://127.0.0.1:8000/sales?limit=10"
+```
 
 This is a shared-secret check, not a full identity system. Do not treat it as a
 replacement for SSO or per-user authorization.
@@ -42,11 +47,16 @@ Put the API behind nginx, Caddy, or a cloud load balancer and terminate TLS ther
 
 Browser apps need an explicit origin list:
 
-```bash
+```bash norun
 undatum api serve --config api.yml --cors-origins https://app.example.com
 ```
 
 Leave `--cors-origins` unset for CLI/server-to-server use.
+
+## Query timeout
+
+Each query runs outside the event loop and is cancelled after `--query-timeout` seconds
+(default 30, `0` disables; `query_timeout` in the config file); the client receives HTTP 504.
 
 ## Cloud-backed resources
 

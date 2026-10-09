@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://datenoio.github.io/undatum/schemas/undatum.stats.v1.json",
+  "title": "Field statistics",
+  "description": "Printed by `undatum stats --json`.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "const": "undatum.stats/1",
+      "description": "Result layout"
+    },
+    "count": {
+      "type": "integer",
+      "description": "Records profiled"
+    },
+    "num_fields": {
+      "type": "integer",
+      "description": "Number of fields"
+    },
+    "fieldtypes": {
+      "type": "object",
+      "description": "Field -> detected type"
+    },
+    "fields": {
+      "type": "array",
+      "description": "Per-field statistics"
+    },
+    "dictkeys": {
+      "type": "array",
+      "description": "Fields with few distinct values"
+    },
+    "dicts": {
+      "type": "object",
+      "description": "Value lists of the dictionary fields"
+    },
+    "debug": {
+      "type": "object",
+      "description": "Engine diagnostics (engine, timings); not stable"
+    }
+  },
+  "required": [
+    "schema",
+    "count",
+    "num_fields",
+    "fieldtypes",
+    "fields"
+  ]
+}

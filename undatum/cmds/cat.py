@@ -1,122 +1,43 @@
-"""Cat command module - concatenate files."""
+"""Cat command: concatenate files by rows or by columns."""
 
 import logging
-import sys
 
-from ..common.command_utils import (
-    ITERABLE_OPTIONS_KEYS,  # noqa: F401
-    get_iterable_options,
-    iter_command_rows,
-)  # noqa: F401
-from ..common.errors import FileNotFoundError, FormatError, PermissionError, find_similar_files
-from ..common.iterable import DataWriter
+from ..common.errors import ValidationError
 from ..common.path_utils import validate_file_path
-from ..common.s3_iterable import open_path as open_iterable
-from ..utils import get_file_type, get_option, normalize_for_json
+from ..io import open_source
+from ..ops import CatConfig, run
+from ..ops.structure import Cat as CatOperation
+from ..utils import get_option
+
+logger = logging.getLogger(__name__)
 
 
 class Cat:
-    """Cat command handler - concatenate files."""
-
-    def __init__(self):
-        pass
+    """Cat command handler."""
 
     def cat(self, fromfiles, options=None):
-        """Concatenate files by rows or columns."""
-        from ..common.errors import ValidationError
+        """Concatenate ``fromfiles``.
 
-        if options is None:
-            options = {}
+        Args:
+            fromfiles: Input paths, in order.
+            options: ``mode`` (``rows`` or ``columns``), ``output`` and reader options.
+
+        Raises:
+            ValidationError: If no input is given or the mode is unknown.
+        """
+        options = options or {}
         if not fromfiles:
             raise ValidationError("At least one input file is required", field="fromfiles")
-
-        # Validate all input files exist and are readable
         for fromfile in fromfiles:
-            try:
-                validate_file_path(fromfile, check_read=True)
-            except FileNotFoundError as e:
-                suggestions = find_similar_files(fromfile)
-                raise FileNotFoundError(fromfile, suggestions) from e
-            except PermissionError as e:
-                raise PermissionError(fromfile, operation="read") from e
-
-        logging.debug("Processing %s files", len(fromfiles))
+            validate_file_path(fromfile, check_read=True)
         mode = get_option(options, "mode") or "rows"
-        to_file = get_option(options, "output")
-
-        if mode == "rows":
-            # Row concatenation: append files vertically
-            iterableargs = get_iterable_options(options)
-            all_items = []
-            all_headers = set()
-
-            for fromfile in fromfiles:
-                iterable = open_iterable(fromfile, mode="r", iterableargs=iterableargs)
-                try:
-                    first = True
-                    for item in iter_command_rows(iterable, options):
-                        if isinstance(item, dict):
-                            all_items.append(item)
-                            if first:
-                                all_headers.update(item.keys())
-                                first = False
-                finally:
-                    iterable.close()
-
-            items = all_items
-
-        elif mode == "columns":
-            # Column concatenation: combine files side-by-side
-            iterableargs = get_iterable_options(options)
-            all_file_items = []
-
-            # Read all files
-            for fromfile in fromfiles:
-                file_items = []
-                iterable = open_iterable(fromfile, mode="r", iterableargs=iterableargs)
-                try:
-                    for item in iter_command_rows(iterable, options):
-                        if isinstance(item, dict):
-                            file_items.append(item)
-                finally:
-                    iterable.close()
-                all_file_items.append(file_items)
-
-            # Combine side-by-side
-            max_len = max(len(items) for items in all_file_items) if all_file_items else 0
-            items = []
-            for i in range(max_len):
-                combined = {}
-                for file_items in all_file_items:
-                    if i < len(file_items):
-                        combined.update(file_items[i])
-                items.append(combined)
-        else:
-            logging.error(f'Invalid mode: {mode}. Use "rows" or "columns"')
-            return
-
-        if to_file:
-            to_type = get_file_type(to_file)
-            if not to_type:
-                raise FormatError(to_file, to_file.rsplit(".", 1)[-1])
-            out = open(to_file, "w", encoding="utf8")
-        else:
-            to_type = "jsonl"
-            out = sys.stdout
-
-        # Normalize items to convert non-JSON-serializable types (e.g., UUID) to strings
-        normalized_items = [normalize_for_json(item) for item in items]
-
-        # Extract fieldnames from items for CSV output
-        fieldnames = None
-        if to_type == "csv" and normalized_items:
-            if isinstance(normalized_items[0], dict):
-                fieldnames = list(normalized_items[0].keys())
-
-        writer = DataWriter(out, filetype=to_type, fieldnames=fieldnames)
-        writer.write_items(normalized_items)
-
-        if to_file:
-            out.close()
-
-        logging.debug("cat: concatenated %d files, %d total rows", len(fromfiles), len(items))
+        if mode not in ("rows", "columns"):
+            raise ValidationError(
+                f"Invalid mode: {mode}", field="mode", suggestions=["rows", "columns"]
+            )
+        sources = [open_source(path, options) for path in fromfiles]
+        cfg = CatConfig(others=tuple(sources[1:]), mode=mode)
+        # Files may have different fields; take the union so no column is dropped.
+        fieldnames = CatOperation.fieldnames(sources) if mode == "rows" else None
+        count = run("cat", cfg, sources[0], get_option(options, "output"), fieldnames=fieldnames)
+        logger.debug("cat: wrote %d records from %d files", count, len(fromfiles))

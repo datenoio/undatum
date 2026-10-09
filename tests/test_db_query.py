@@ -1,6 +1,7 @@
 """Tests for database query command."""
 
 import os
+import sys
 import tempfile
 from unittest.mock import MagicMock, patch
 
@@ -250,8 +251,7 @@ class TestDatabaseQueryExecutor:
 
     @patch("undatum.cmds.db_query.get_db_connection")
     @patch("undatum.cmds.db_query.parse_db_uri")
-    @patch("builtins.__import__")
-    def test_query_postgresql_named_cursor(self, mock_import, mock_parse_uri, mock_get_conn):
+    def test_query_postgresql_named_cursor(self, mock_parse_uri, mock_get_conn):
         """Test query with PostgreSQL named cursor."""
         mock_parse_uri.return_value = ("postgresql", {"host": "localhost"})
 
@@ -262,7 +262,6 @@ class TestDatabaseQueryExecutor:
 
         mock_psycopg2 = MagicMock()
         mock_psycopg2.extras.RealDictCursor = MagicMock
-        mock_import.return_value = mock_psycopg2
         mock_conn.cursor.return_value = mock_named_cursor
         mock_get_conn.return_value = mock_conn
 
@@ -271,13 +270,15 @@ class TestDatabaseQueryExecutor:
         with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".jsonl") as tmp:
             output_path = tmp.name
 
+        fake_modules = {"psycopg2": mock_psycopg2, "psycopg2.extras": mock_psycopg2.extras}
         try:
-            executor.query(
-                "SELECT * FROM users",
-                "postgresql://localhost/db",
-                output=output_path,
-                output_format="jsonl",
-            )
+            with patch.dict(sys.modules, fake_modules):
+                executor.query(
+                    "SELECT * FROM users",
+                    "postgresql://localhost/db",
+                    output=output_path,
+                    output_format="jsonl",
+                )
 
             # Verify named cursor was used
             mock_conn.cursor.assert_called()
@@ -287,8 +288,7 @@ class TestDatabaseQueryExecutor:
 
     @patch("undatum.cmds.db_query.get_db_connection")
     @patch("undatum.cmds.db_query.parse_db_uri")
-    @patch("builtins.__import__")
-    def test_query_parquet_no_pandas(self, mock_import, mock_parse_uri, mock_get_conn):
+    def test_query_parquet_no_pandas(self, mock_parse_uri, mock_get_conn):
         """Test query with Parquet output when pandas is not available."""
         mock_parse_uri.return_value = ("sqlite", {"path": ":memory:"})
 
@@ -297,16 +297,10 @@ class TestDatabaseQueryExecutor:
         mock_conn.cursor.return_value = mock_cursor
         mock_get_conn.return_value = mock_conn
 
-        def import_side_effect(name, *args, **kwargs):
-            if name == "pandas":
-                raise ImportError("No module named 'pandas'")
-            return MagicMock()
-
-        mock_import.side_effect = import_side_effect
-
         executor = DatabaseQueryExecutor()
 
-        with pytest.raises(ImportError):
+        # A None entry in sys.modules makes "import pandas" raise ImportError.
+        with patch.dict(sys.modules, {"pandas": None}), pytest.raises(ImportError):
             executor.query(
                 "SELECT * FROM users",
                 "sqlite://:memory:",

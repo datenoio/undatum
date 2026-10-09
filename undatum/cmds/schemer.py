@@ -9,12 +9,10 @@ import os
 import sys
 import tempfile
 import zipfile
-from typing import Optional, Union
 
 import duckdb
 import orjson
 import pandas as pd
-import tqdm
 import xxhash
 import yaml
 from pydantic import BaseModel
@@ -22,10 +20,15 @@ from pyzstd import ZstdFile
 from qddate import DateParser
 
 from ..ai import get_ai_service, get_description, get_fields_info
+from ..common.command_utils import resolve_csv_delimiter
+from ..common.progress import progress
 from ..common.schema_utils import duckdb_decompose, duckdb_to_json_schema_type
 from ..common.scheme import generate_scheme_from_file
+from ..common.tables import format_table
 from ..constants import DUCKABLE_CODECS, DUCKABLE_FILE_TYPES
 from ..utils import get_file_type, get_option
+
+logger = logging.getLogger(__name__)
 
 try:
     from iterable.helpers.detect import detect_file_type
@@ -37,7 +40,8 @@ except ImportError:
 
 def get_schema_key(fields):
     """Generate hash key for schema based on field names."""
-    return xxhash.xxh64("|".join(sorted(fields))).hexdigest()
+    # xxhash 4 accepts only bytes.
+    return xxhash.xxh64("|".join(sorted(fields)).encode("utf8")).hexdigest()
 
 
 class FieldSchema(BaseModel):
@@ -46,7 +50,7 @@ class FieldSchema(BaseModel):
     name: str
     ftype: str
     is_array: bool = False
-    description: Optional[str] = None
+    description: str | None = None
     sem_type: str = None
     sem_url: str = None
 
@@ -54,16 +58,16 @@ class FieldSchema(BaseModel):
 class TableSchema(BaseModel):
     """Table schema definition."""
 
-    key: Optional[str] = None
+    key: str | None = None
     num_cols: int = -1
     num_records: int = -1
     is_flat: bool = True
-    id: Optional[str] = None
-    fields: Optional[list[FieldSchema]] = []
-    description: Optional[str] = None
-    files: Optional[list[str]] = []
+    id: str | None = None
+    fields: list[FieldSchema] | None = []
+    description: str | None = None
+    files: list[str] | None = []
     success: bool = True
-    error: Optional[str] = None
+    error: str | None = None
 
 
 MAX_SAMPLE_SIZE = 200
@@ -80,7 +84,7 @@ def table_from_objects(
     autodoc: bool = False,
     lang: str = "English",
 ):
-    """Reconstructs table schema from list of objects"""
+    """Reconstruct a table schema from a list of objects."""
     table = TableSchema(id=id)
     table.num_records = len(objects)
     if autodoc:
@@ -209,7 +213,7 @@ def build_schema(
     """
     options = options or {}
     if options.get("engine"):
-        engine = options["engine"]
+        engine = get_option(options, "engine")
     flatten_nested = bool(options.get("flatten_nested"))
     if flatten_nested:
         engine = "iterable"
@@ -285,7 +289,7 @@ def build_schema(
                 num_records = duckdb.sql(query_str).fetchall()[0][0]
                 table.num_records = num_records
             except Exception as e:
-                logging.warning(f"Could not count records: {e}")
+                logger.warning(f"Could not count records: {e}")
                 table.num_records = -1
         else:
             # For iterable engine, we can't easily count without reading all records
@@ -299,9 +303,7 @@ def build_schema(
                 filename, filetype=filetype, path="*", limit=objects_limit
             )
         else:
-            logging.warning(
-                f"Schema extraction with iterable engine not yet fully implemented for {filetype} files. Falling back to DuckDB."
-            )
+            logger.debug("schema: inferring the structure of %s with DuckDB", filename)
             try:
                 columns_raw = duckdb_decompose(
                     filename, filetype=filetype, path="*", limit=objects_limit
@@ -325,7 +327,7 @@ def build_schema(
         table.success = True
         return table
     except Exception as e:
-        logging.error(f"Schema extraction failed: {e}")
+        logger.error(f"Schema extraction failed: {e}")
         table.success = False
         table.error = str(e)
         return table
@@ -382,7 +384,7 @@ def _duckdb_to_json_schema_type(duckdb_type: str, is_array: bool) -> dict:
     return duckdb_to_json_schema_type(duckdb_type, is_array)
 
 
-def _duckdb_to_avro_type(duckdb_type: str, is_array: bool) -> Union[str, list]:
+def _duckdb_to_avro_type(duckdb_type: str, is_array: bool) -> str | list:
     """Convert DuckDB type to Avro type.
 
     Args:
@@ -561,8 +563,6 @@ def _convert_to_format(table: TableSchema, format_name: str) -> dict:
 
 def _write_schema_output(table, options, output_stream):
     """Write schema to output stream in specified format."""
-    from tabulate import tabulate
-
     # Check if a specific schema format is requested (cerberus, jsonschema, avro, parquet)
     schema_format = options.get("format")
     if schema_format and schema_format.lower() in [
@@ -580,13 +580,15 @@ def _write_schema_output(table, options, output_stream):
             output_stream.write("\n")
             return
         except Exception as e:
-            logging.error(f"Format conversion failed: {e}")
-            # Fall through to default output
+            from ..common.errors import UndatumError
+
+            raise UndatumError(f"Schema conversion to '{schema_format}' failed: {e}") from e
 
     # Default output formats (yaml, json, text)
-    if options.get("outtype") == "json":
-        json_output = json.dumps(table.model_dump(), indent=4, ensure_ascii=False)
-        output_stream.write(json_output)
+    if options.get("outtype") == "json" or (schema_format or "").lower() == "json":
+        from ..common.results import SCHEMA, dumps, envelope
+
+        output_stream.write(dumps(envelope(SCHEMA, table.model_dump())))
         output_stream.write("\n")
     elif options.get("outtype") == "yaml":
         yaml_output = yaml.dump(table.model_dump(), Dumper=yaml.Dumper)
@@ -616,7 +618,7 @@ def _write_schema_output(table, options, output_stream):
         reptable.append(["Structure", "Flat" if table.is_flat else "Nested"])
         if table.key:
             reptable.append(["Schema key", table.key])
-        print(tabulate(reptable, headers=headers, tablefmt="grid"), file=output_stream)
+        print(format_table(reptable, headers, "grid"), file=output_stream)
         print(file=output_stream)
 
         # Fields section
@@ -633,7 +635,7 @@ def _write_schema_output(table, options, output_stream):
                 table_data.append(
                     [field.name, field.ftype, "Yes" if field.is_array else "No", desc]
                 )
-            print(tabulate(table_data, headers=tabheaders, tablefmt="grid"), file=output_stream)
+            print(format_table(table_data, tabheaders, "grid"), file=output_stream)
 
             if table.description:
                 print(file=output_stream)
@@ -712,7 +714,9 @@ def _write_schema_validation(report: dict, options: dict, output_stream) -> None
     fmt = (options.get("format") or "").lower()
     as_json = outtype == "json" or fmt == "json"
     if as_json:
-        output_stream.write(json.dumps(report, indent=2, ensure_ascii=False, default=str))
+        from ..common.results import SCHEMA_VALIDATION, dumps, envelope
+
+        output_stream.write(dumps(envelope(SCHEMA_VALIDATION, report)))
         output_stream.write("\n")
         return
     stats = report.get("stats") or {}
@@ -778,7 +782,7 @@ class Schemer:
                     if field.name in descriptions:
                         field.description = descriptions[field.name]
             except Exception as e:
-                logging.warning(f"Failed to generate AI documentation: {e}")
+                logger.warning(f"Failed to generate AI documentation: {e}")
                 # Continue without AI documentation
 
         # Determine output destination
@@ -790,9 +794,10 @@ class Schemer:
             _write_schema_output(table, options, sys.stdout)
 
     def extract_schema_bulk(self, fromdir, options):
-        """Extracts schemes from all data files and writes schema structures"""
+        """Extract schemas from all data files and write the schema structures."""
         files = []
         tables = {}
+        failed: list[str] = []
         supported_exts = ["csv", "json", "jsonl", "parquet"]
 
         # Support both directory paths and glob patterns
@@ -818,6 +823,9 @@ class Schemer:
                         files.extend(glob.glob(pattern))
         mode = options.get("mode", "distinct")
         print(f"Found {len(files)} files. Processing mode {mode}")
+        if options.get("output"):
+            # --output names a directory of schema files; create it like other outputs.
+            os.makedirs(options["output"], exist_ok=True)
 
         # Initialize AI service if autodoc is enabled
         ai_service = None
@@ -827,11 +835,11 @@ class Schemer:
                     provider=options.get("ai_provider"), config=options.get("ai_config")
                 )
             except Exception as e:
-                logging.warning(f"Failed to initialize AI service: {e}. Disabling autodoc.")
+                logger.warning("AI descriptions skipped: %s", str(e).rstrip("."))
                 options["autodoc"] = False
 
         engine = options.get("engine", "auto")
-        for filename in tqdm.tqdm(files):
+        for filename in progress(files, desc="Extracting schemas", unit="files"):
             try:
                 table = build_schema(filename, engine=engine, options=options)
                 fbase = os.path.basename(filename)
@@ -876,7 +884,8 @@ class Schemer:
                         with open(output_path, "w", encoding="utf8") as f:
                             _write_schema_output(table, options, f)
             except Exception as e:
-                logging.error(f"Failed to process {filename}: {e}")
+                logger.warning("Failed to process %s: %s", filename, e)
+                failed.append(f"{filename}: {e}")
                 continue
         if mode == "distinct":
             print(f"Total schemas {len(tables)}, files {len(files)}")
@@ -905,13 +914,21 @@ class Schemer:
                     output_path = os.path.join(options["output"], table.key + "." + ext)
                     with open(output_path, "w", encoding="utf8") as f:
                         _write_schema_output(table, options, f)
+        if failed:
+            from ..common.errors import UndatumError
+
+            details = "\n".join(f"  - {item}" for item in failed[:20])
+            raise UndatumError(
+                f"Schema extraction failed for {len(failed)} of {len(files)} files:\n{details}"
+            )
 
     def generate_scheme(self, fromfile, options):
-        """Generates cerberus scheme from JSON lines or BSON file"""
+        """Generate a Cerberus schema from a JSON Lines, BSON or CSV file."""
         f_type = get_file_type(fromfile) if options["format_in"] is None else options["format_in"]
         if f_type not in ["jsonl", "bson", "csv"]:
-            print("Only JSON lines, CSV and BSON (.jsonl, .csv, .bson) files supported now")
-            return
+            from ..common.errors import FormatError
+
+            raise FormatError(fromfile, str(f_type), ["jsonl", "bson", "csv"])
         if options["zipfile"]:
             z = zipfile.ZipFile(fromfile, mode="r")
             fnames = z.namelist()
@@ -920,17 +937,18 @@ class Schemer:
                 infile = z.open(fnames[0], "rb")
             else:
                 infile = z.open(fnames[0], "r")
+        elif f_type == "bson":
+            infile = open(fromfile, "rb")
         else:
-            if f_type == "bson":
-                infile = open(fromfile, "rb")
-            else:
-                infile = open(fromfile, encoding=get_option(options, "encoding"))
+            infile = open(fromfile, encoding=get_option(options, "encoding"))
 
-        logging.debug("Start identifying scheme for %s", fromfile)
+        logger.debug("Start identifying scheme for %s", fromfile)
         scheme = generate_scheme_from_file(
             fileobj=infile,
             filetype=f_type,
-            delimiter=options["delimiter"],
+            delimiter=options["delimiter"]
+            or resolve_csv_delimiter({}, filename=fromfile, filetype=f_type)
+            or ",",
             encoding=options["encoding"],
         )
         if options["output"]:

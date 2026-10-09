@@ -4,20 +4,23 @@ This module provides custom exception classes and error handling utilities
 to ensure consistent, user-friendly error messages across all commands.
 """
 
+import builtins
 import sys
 from difflib import get_close_matches
 from pathlib import Path
-from typing import Optional
 
 
 class UndatumError(Exception):
     """Base exception class for all undatum errors.
 
     All custom exceptions should inherit from this class to ensure
-    consistent error handling across the application.
+    consistent error handling across the application. ``code`` is the stable,
+    machine-readable name used in JSON error output.
     """
 
-    def __init__(self, message: str, context: Optional[dict] = None, exit_code: int = 1):
+    code = "error"
+
+    def __init__(self, message: str, context: dict | None = None, exit_code: int = 1):
         """Initialize error with message and optional context.
 
         Args:
@@ -40,7 +43,9 @@ class FileNotFoundError(UndatumError):
     Provides suggestions for similar file names to help with typos.
     """
 
-    def __init__(self, file_path: str, suggestions: Optional[list[str]] = None):
+    code = "file_not_found"
+
+    def __init__(self, file_path: str, suggestions: list[str] | None = None):
         """Initialize file not found error.
 
         Args:
@@ -66,6 +71,8 @@ class PermissionError(UndatumError):
 
     Provides actionable guidance for fixing permission issues.
     """
+
+    code = "permission_denied"
 
     def __init__(self, file_path: str, operation: str = "read"):
         """Initialize permission error.
@@ -95,8 +102,10 @@ class ValidationError(UndatumError):
     Provides clear explanation of what was wrong and suggestions for fixing.
     """
 
+    code = "validation_error"
+
     def __init__(
-        self, message: str, field: Optional[str] = None, suggestions: Optional[list[str]] = None
+        self, message: str, field: str | None = None, suggestions: list[str] | None = None
     ):
         """Initialize validation error.
 
@@ -127,8 +136,14 @@ class FormatError(UndatumError):
     Lists supported formats and suggests conversion if applicable.
     """
 
+    code = "format_error"
+
     def __init__(
-        self, file_path: str, format_name: str, supported_formats: Optional[list[str]] = None
+        self,
+        file_path: str,
+        format_name: str,
+        supported_formats: list[str] | None = None,
+        output: bool = False,
     ):
         """Initialize format error.
 
@@ -136,13 +151,23 @@ class FormatError(UndatumError):
             file_path: Path to the file with unsupported format
             format_name: The unsupported format name/extension
             supported_formats: Optional list of supported formats
+            output: True when the format cannot be written (output path), False when
+                it cannot be read (input path)
         """
-        message = f"Unsupported file format: '{format_name}'"
+        if output:
+            message = f"Unsupported file format: '{format_name}' cannot be written"
+            message += f" (output '{file_path}')"
+        else:
+            message = f"Unsupported file format: '{format_name}'"
 
         if supported_formats:
-            message += f"\nSupported formats: {', '.join(supported_formats)}"
+            label = "Writable formats" if output else "Supported formats"
+            message += f"\n{label}: {', '.join(supported_formats)}"
 
-        message += f"\nConvert the file with: undatum convert '{file_path}' <output>"
+        if output:
+            message += "\nList writable formats with: undatum formats list --writable"
+        else:
+            message += f"\nConvert the file with: undatum convert '{file_path}' <output>"
 
         super().__init__(
             message, context={"file_path": file_path, "format": format_name}, exit_code=1
@@ -155,9 +180,9 @@ class ConfigurationError(UndatumError):
     Provides guidance for fixing configuration problems.
     """
 
-    def __init__(
-        self, message: str, config_key: Optional[str] = None, fix_hint: Optional[str] = None
-    ):
+    code = "configuration_error"
+
+    def __init__(self, message: str, config_key: str | None = None, fix_hint: str | None = None):
         """Initialize configuration error.
 
         Args:
@@ -182,11 +207,13 @@ class DependencyError(UndatumError):
     Provides installation instructions.
     """
 
+    code = "dependency_missing"
+
     def __init__(
         self,
         package_name: str,
-        feature: Optional[str] = None,
-        install_command: Optional[str] = None,
+        feature: str | None = None,
+        install_command: str | None = None,
     ):
         """Initialize dependency error.
 
@@ -216,9 +243,9 @@ class DatabaseError(UndatumError):
     Provides connection and query error guidance.
     """
 
-    def __init__(
-        self, message: str, db_type: Optional[str] = None, connection_uri: Optional[str] = None
-    ):
+    code = "database_error"
+
+    def __init__(self, message: str, db_type: str | None = None, connection_uri: str | None = None):
         """Initialize database error.
 
         Args:
@@ -341,15 +368,56 @@ def format_error_message(error: Exception, verbose: bool = False) -> str:
         return f"Invalid value: {error_msg}"
     elif isinstance(error, KeyError):
         return f"Missing key: {error_msg}"
+    elif isinstance(error, ImportError):
+        return f"Missing dependency: {error_msg}"
     elif isinstance(error, TypeError):
         return f"Type error: {error_msg}"
-    else:
-        if verbose:
-            import traceback
+    elif verbose:
+        import traceback
 
-            return f"{error_type}: {error_msg}\n\n{traceback.format_exc()}"
-        else:
-            return f"Error: {error_msg}\n\nRun with --verbose for detailed error information."
+        return f"{error_type}: {error_msg}\n\n{traceback.format_exc()}"
+    else:
+        return (
+            f"Internal error ({error_type}): {error_msg}\n\n"
+            "Run with --verbose for detailed error information."
+        )
+
+
+def error_code(error: BaseException) -> str:
+    """Stable machine-readable code of an error (``file_not_found``, ``usage_error``, ...)."""
+    if isinstance(error, UndatumError):
+        return error.code
+    if isinstance(error, KeyboardInterrupt):
+        return "interrupted"
+    if hasattr(error, "format_message") and hasattr(error, "exit_code"):  # click exceptions
+        return "usage_error" if getattr(error, "exit_code", None) == 2 else "error"
+    if isinstance(error, builtins.FileNotFoundError):
+        return "file_not_found"
+    if isinstance(error, builtins.PermissionError):
+        return "permission_denied"
+    if isinstance(error, ImportError):
+        return "dependency_missing"
+    if isinstance(error, (ValueError, KeyError)):
+        return "invalid_value"
+    return "internal_error"
+
+
+def exit_code_for(error: BaseException) -> int:
+    """Exit code of an error: 1 user, 2 configuration or dependency, 3 system, 4 internal."""
+    if isinstance(error, UndatumError):
+        return error.exit_code
+    if isinstance(error, KeyboardInterrupt):
+        return 130
+    click_exit_code = getattr(error, "exit_code", None)
+    if hasattr(error, "format_message") and isinstance(click_exit_code, int):
+        return click_exit_code
+    if isinstance(error, ImportError):
+        return 2  # Missing optional dependency (same as DependencyError)
+    if isinstance(error, (builtins.FileNotFoundError, ValueError, KeyError)):
+        return 1  # User error
+    if isinstance(error, builtins.PermissionError):
+        return 3  # System error
+    return 4  # Internal error
 
 
 def handle_command_error(error: Exception, verbose: bool = False) -> int:
@@ -374,11 +442,4 @@ def handle_command_error(error: Exception, verbose: bool = False) -> int:
     # Format non-UndatumError exceptions
     message = format_error_message(error, verbose=verbose)
     print(f"Error: {message}", file=sys.stderr)
-
-    # Default exit codes based on exception type
-    if isinstance(error, (FileNotFoundError, ValueError, KeyError)):
-        return 1  # User error
-    elif isinstance(error, PermissionError):
-        return 3  # System error
-    else:
-        return 4  # Internal error
+    return exit_code_for(error)

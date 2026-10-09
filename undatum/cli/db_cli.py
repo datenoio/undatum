@@ -2,13 +2,11 @@
 
 import logging
 import sys
-from typing import Annotated, Optional
+from typing import Annotated
 
 import typer
 
-from ..cmds.db_dump import DatabaseDumper
-from ..cmds.db_load import DatabaseLoader
-from ..cmds.db_query import DatabaseQueryExecutor
+from ..common.errors import UndatumError
 from .common import enable_verbose
 
 logger = logging.getLogger(__name__)
@@ -64,6 +62,8 @@ def db_query(
         # Query from file
         undatum db query --query-file query.sql --db postgresql://user:pass@host/db
     """
+    from ..cmds.db_query import DatabaseQueryExecutor
+
     if verbose:
         enable_verbose()
 
@@ -79,6 +79,8 @@ def db_query(
     executor = DatabaseQueryExecutor()
     try:
         executor.query(query, db, output, output_format, batch_size)
+    except (UndatumError, ImportError):
+        raise  # reported by the entry point with the documented exit code
     except Exception as e:
         logger.error(f"Query execution failed: {e}")
         if verbose:
@@ -106,7 +108,7 @@ def load(
         str, typer.Option(help="Key field(s) for upsert mode (comma-separated).")
     ] = None,
     source_table: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(
             "--source-table",
             "--sheet",
@@ -122,21 +124,21 @@ def load(
         ),
     ] = False,
     on_error: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(
             "--on-error",
             help="Parse-error policy: raise (default), skip, or warn.",
         ),
     ] = None,
     error_log: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(
             "--error-log",
             help="Append parse errors as JSONL (use with --on-error skip or warn).",
         ),
     ] = None,
     quotechar: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(
             "--quotechar",
             help="CSV quote character (iterabledata default '\"' when omitted).",
@@ -150,7 +152,7 @@ def load(
         ),
     ] = False,
     max_nested_depth: Annotated[
-        Optional[int],
+        int | None,
         typer.Option(
             "--max-nested-depth",
             help="With --flatten-nested, maximum nest depth to unfold (engine default 5).",
@@ -163,12 +165,48 @@ def load(
             help="With --flatten-nested, keep parent dict/array fields alongside dotted children.",
         ),
     ] = True,
+    api_key: Annotated[
+        str | None,
+        typer.Option(
+            "--api-key",
+            envvar="ELASTIC_API_KEY",
+            help="Elasticsearch/OpenSearch API key (or set ELASTIC_API_KEY).",
+        ),
+    ] = None,
+    doc_id: Annotated[
+        str | None,
+        typer.Option("--doc-id", help="Field used as the document ID (Elasticsearch)."),
+    ] = None,
+    insecure: Annotated[
+        bool,
+        typer.Option(
+            "--insecure",
+            help="Disable TLS certificate verification (Elasticsearch). Not recommended.",
+        ),
+    ] = False,
+    ca_cert: Annotated[
+        str | None,
+        typer.Option("--ca-cert", help="CA bundle for TLS verification (Elasticsearch)."),
+    ] = None,
+    es_pipeline: Annotated[
+        str | None,
+        typer.Option("--es-pipeline", help="Elasticsearch ingest pipeline to apply."),
+    ] = None,
+    table_engine: Annotated[
+        str | None,
+        typer.Option(
+            "--table-engine",
+            help="ClickHouse ENGINE for --create-table (default: MergeTree ORDER BY tuple()).",
+        ),
+    ] = None,
     verbose: Annotated[bool, typer.Option(help="Enable verbose logging output.")] = False,
 ):
     """Load data from file to database table.
 
-    Simplified interface for loading data to databases. Supports PostgreSQL, MySQL/MariaDB, and SQLite.
-    This is a convenience wrapper around the ingest command with a cleaner syntax.
+    Supports PostgreSQL, MySQL/MariaDB, SQLite, DuckDB, ClickHouse (``clickhouse://host:8123/db``),
+    SQL Server (``mssql://user:pass@host:1433/db``), MongoDB (``mongodb://host/db``, the
+    collection is ``--table``) and Elasticsearch/OpenSearch (``elasticsearch://host:9200``
+    over HTTPS, ``elasticsearch+http://`` for plain HTTP; the index is ``--table``).
 
     Examples:
         # Load data to PostgreSQL (append mode)
@@ -182,8 +220,14 @@ def load(
 
         # Auto-create table
         undatum db load data.parquet --db sqlite:///db.db --table new_table --create-table
+
+        # MongoDB collection and Elasticsearch index
+        undatum db load data.jsonl --db mongodb://localhost:27017/shop --table orders
+        undatum db load data.jsonl --db elasticsearch://localhost:9200 --table logs --api-key KEY
         undatum db load nested.jsonl --db sqlite:///db.db --table cities --create-table --flatten-nested
     """
+    from ..cmds.db_load import DatabaseLoader
+
     if verbose:
         enable_verbose()
 
@@ -205,7 +249,15 @@ def load(
             flatten_nested=flatten_nested,
             max_nested_depth=max_nested_depth,
             keep_nested_parents=keep_nested_parents,
+            api_key=api_key,
+            doc_id=doc_id,
+            insecure=insecure,
+            ca_cert=ca_cert,
+            es_pipeline=es_pipeline,
+            table_engine=table_engine,
         )
+    except (UndatumError, ImportError):
+        raise  # reported by the entry point with the documented exit code
     except Exception as e:
         logger.error(f"Load operation failed: {e}")
         if verbose:
@@ -248,6 +300,8 @@ def dump(
         undatum db dump --db postgresql://user:pass@host/db --query "SELECT * FROM events" \\
             --output events.csv --to csv
     """
+    from ..cmds.db_dump import DatabaseDumper
+
     if verbose:
         enable_verbose()
 
@@ -256,6 +310,8 @@ def dump(
         dumper.dump(
             db, output, table=table, query=query, output_format=to_format, batch_size=batch_size
         )
+    except (UndatumError, ImportError):
+        raise  # reported by the entry point with the documented exit code
     except Exception as e:
         logger.error(f"Dump operation failed: {e}")
         if verbose:

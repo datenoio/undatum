@@ -4,7 +4,7 @@ import glob
 import os
 import sys
 import tempfile
-from typing import Any, Optional
+from typing import Any
 
 import pandas as pd
 
@@ -21,7 +21,7 @@ OUTPUT_EXT = {
 }
 
 
-def _normalize_output_format(value: Optional[str]) -> str:
+def _normalize_output_format(value: str | None) -> str:
     if not value:
         return "csv"
     value = value.lower()
@@ -30,13 +30,13 @@ def _normalize_output_format(value: Optional[str]) -> str:
     return value
 
 
-def _normalize_method(value: Optional[str]) -> Optional[str]:
+def _normalize_method(value: str | None) -> str | None:
     if not value:
         return None
     return value.lower()
 
 
-def _parse_pages(value: Optional[str]) -> Optional[list[int]]:
+def _parse_pages(value: str | None) -> list[int] | None:
     if not value:
         return None
     pages: set[int] = set()
@@ -145,7 +145,13 @@ def _write_dataframe_stdout(df: pd.DataFrame, output_format: str) -> None:
 class Extractor:
     """Document extraction command handler."""
 
-    def extract(self, input_files: list[str], options: Optional[dict[str, Any]] = None) -> None:
+    def extract(self, input_files: list[str], options: dict[str, Any] | None = None) -> None:
+        """Extract tables or text from PDF, DOCX, DOC, image and HTML files.
+
+        Args:
+            input_files: Documents to process.
+            options: CLI options (``method``, ``pages``, ``output``, ``output_format``...).
+        """
         if options is None:
             options = {}
         if not input_files:
@@ -216,8 +222,8 @@ class Extractor:
         self,
         input_path: str,
         filetype: str,
-        method: Optional[str],
-        pages: Optional[list[int]],
+        method: str | None,
+        pages: list[int] | None,
         flatten: bool,
     ) -> list[dict[str, Any]]:
         if filetype == "pdf":
@@ -248,8 +254,8 @@ class Extractor:
     def _extract_pdf(
         self,
         input_path: str,
-        method: Optional[str],
-        pages: Optional[list[int]],
+        method: str | None,
+        pages: list[int] | None,
     ) -> list[dict[str, Any]]:
         try:
             import pdfplumber  # type: ignore
@@ -337,7 +343,7 @@ class Extractor:
         self,
         input_path: str,
         filetype: str,
-        method: Optional[str],
+        method: str | None,
     ) -> list[dict[str, Any]]:
         if method is None:
             method = "text" if filetype == "docx" else "text"
@@ -434,8 +440,8 @@ class Extractor:
     def _write_datapackage(
         self,
         tables: list[dict[str, Any]],
-        output: Optional[str],
-        output_dir: Optional[str],
+        output: str | None,
+        output_dir: str | None,
     ) -> None:
         if not output and not output_dir:
             raise ValueError("datapackage output requires --output or --output-dir")

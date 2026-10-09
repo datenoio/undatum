@@ -6,6 +6,8 @@ import time
 
 from .base import INITIAL_RETRY_DELAY, MAX_RETRIES, BasicIngester
 
+logger = logging.getLogger(__name__)
+
 
 class SQLiteIngester(BasicIngester):
     """SQLite data ingester.
@@ -117,7 +119,7 @@ class SQLiteIngester(BasicIngester):
             if self.mode == "replace":
                 self.conn.execute(f"DROP TABLE IF EXISTS {self.table}")
             else:
-                logging.info(f"Table {self.table} already exists, skipping creation")
+                logger.info(f"Table {self.table} already exists, skipping creation")
                 self._schema_created = True
                 self._table_columns = [col for col, _ in schema]
                 return
@@ -138,7 +140,7 @@ class SQLiteIngester(BasicIngester):
 
         self._schema_created = True
         self._table_columns = [col for col, _ in schema]
-        logging.info(
+        logger.info(
             f"Created table {self.table} with schema: {', '.join([f'{col} {sqlite_type}' for col, sqlite_type in schema])}"
         )
 
@@ -228,12 +230,12 @@ class SQLiteIngester(BasicIngester):
                 last_exception = e
                 if attempt < MAX_RETRIES - 1:
                     delay = INITIAL_RETRY_DELAY * (2**attempt)
-                    logging.warning(
+                    logger.warning(
                         f"SQLite ingestion failed (attempt {attempt + 1}/{MAX_RETRIES}), retrying in {delay}s: {e}"
                     )
                     time.sleep(delay)
                 else:
-                    logging.error(f"SQLite ingestion failed after {MAX_RETRIES} attempts: {e}")
+                    logger.error(f"SQLite ingestion failed after {MAX_RETRIES} attempts: {e}")
                     raise
 
         if last_exception:
@@ -245,4 +247,7 @@ class SQLiteIngester(BasicIngester):
             try:
                 self.conn.close()
             except Exception:
-                pass
+                # Best effort: never fail the command because of this step.
+                logging.getLogger(__name__).debug(
+                    "ignoring error while closing SQLite connection", exc_info=True
+                )

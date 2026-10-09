@@ -2,12 +2,30 @@
 
 import os
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import yaml
 
+# API-key variables per provider, in auto-detection order (first set wins; the historical
+# providers come first). Azure also needs an endpoint, so it is never auto-detected.
+PROVIDER_KEY_VARIABLES: dict[str, tuple[str, ...]] = {
+    "openai": ("OPENAI_API_KEY",),
+    "openrouter": ("OPENROUTER_API_KEY",),
+    "perplexity": ("PERPLEXITY_API_KEY",),
+    "anthropic": ("ANTHROPIC_API_KEY",),
+    "gemini": ("GEMINI_API_KEY", "GOOGLE_API_KEY"),
+}
 
-def find_config_file() -> Optional[Path]:
+
+def _provider_api_keys() -> dict[str, str | None]:
+    """The API key set in the environment for each provider (``None`` when unset)."""
+    return {
+        provider: next((os.environ[name] for name in names if os.getenv(name)), None)
+        for provider, names in PROVIDER_KEY_VARIABLES.items()
+    }
+
+
+def find_config_file() -> Path | None:
     """Find configuration file in standard locations.
 
     Checks:
@@ -52,8 +70,9 @@ def get_env_config() -> dict[str, Any]:
     """Load configuration from environment variables.
 
     Environment variables:
-    - UNDATUM_AI_PROVIDER: Provider name (openai, openrouter, ollama, lmstudio, perplexity)
-    - {PROVIDER}_API_KEY: API key for the provider
+    - UNDATUM_AI_PROVIDER: Provider name (see ``undatum.ai.PROVIDERS``)
+    - UNDATUM_AI_PII_MASK_SAMPLES: Mask likely PII in AI samples (true/false)
+    - API keys: see :data:`PROVIDER_KEY_VARIABLES`
     - OLLAMA_BASE_URL: Base URL for Ollama (defaults to http://localhost:11434)
     - LMSTUDIO_BASE_URL: Base URL for LM Studio (defaults to http://localhost:1234/v1)
 
@@ -65,13 +84,12 @@ def get_env_config() -> dict[str, Any]:
     provider = os.getenv("UNDATUM_AI_PROVIDER")
     if provider:
         config["provider"] = provider
+    mask = os.getenv("UNDATUM_AI_PII_MASK_SAMPLES")
+    if mask:
+        config["pii_mask_samples"] = mask
 
     # Check for provider-specific API keys
-    api_keys = {
-        "openai": os.getenv("OPENAI_API_KEY"),
-        "openrouter": os.getenv("OPENROUTER_API_KEY"),
-        "perplexity": os.getenv("PERPLEXITY_API_KEY"),
-    }
+    api_keys = _provider_api_keys()
 
     # Use the first available API key if provider not specified
     if not provider:
@@ -99,9 +117,9 @@ def get_env_config() -> dict[str, Any]:
 
 
 def merge_config(
-    cli_config: Optional[dict[str, Any]] = None,
-    file_config: Optional[dict[str, Any]] = None,
-    env_config: Optional[dict[str, Any]] = None,
+    cli_config: dict[str, Any] | None = None,
+    file_config: dict[str, Any] | None = None,
+    env_config: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Merge configurations with precedence: CLI > File > Environment.
 
@@ -132,7 +150,7 @@ def merge_config(
     return merged
 
 
-def get_ai_config(cli_config: Optional[dict[str, Any]] = None) -> dict[str, Any]:
+def get_ai_config(cli_config: dict[str, Any] | None = None) -> dict[str, Any]:
     """Get AI configuration with proper precedence.
 
     Args:
@@ -155,11 +173,7 @@ def get_provider_config(config: dict[str, Any], provider: str) -> dict[str, Any]
         Provider-specific configuration
     """
     # Map providers to their environment variable API keys
-    provider_api_keys = {
-        "openai": os.getenv("OPENAI_API_KEY"),
-        "openrouter": os.getenv("OPENROUTER_API_KEY"),
-        "perplexity": os.getenv("PERPLEXITY_API_KEY"),
-    }
+    provider_api_keys = _provider_api_keys()
 
     # Determine API key: use provider-specific env var if available, otherwise use config
     api_key = None

@@ -24,7 +24,7 @@ variables:
 
 commands:
   - description: Query database and export results
-    command: undatum db query "${query}" --db ${db} --output ${output} --output-format ${format}
+    command: undatum db query "${query}" --db ${db} --output ${output} --format-out ${format}
 
 example: |
   undatum examples run database-query-export \

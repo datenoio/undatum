@@ -8,7 +8,8 @@ subset is translated to SQL ``WHERE`` for DuckDB. Use ``undatum sql`` for
 
 import logging
 import re
-from typing import Any, Optional
+from collections.abc import Iterator
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +24,7 @@ class _FilterTranslationError(Exception):
     """Raised when a filter expression cannot be translated or evaluated."""
 
 
-def _iter_code_and_strings(expr: str):
+def _iter_code_and_strings(expr: str) -> Iterator[tuple[str, str]]:
     """Yield ``("code"|"string", fragment)`` pairs, keeping quoted spans intact."""
     i = 0
     n = len(expr)
@@ -59,7 +60,7 @@ def _rewrite_logical_ops(expr: str, and_token: str, or_token: str) -> str:
     return "".join(parts)
 
 
-def match_filter(record: dict, filter_expr: Optional[str]) -> bool:
+def match_filter(record: dict, filter_expr: str | None) -> bool:
     """Match a record against a comparison/boolean filter expression.
 
     Args:
@@ -95,7 +96,7 @@ def match_filter(record: dict, filter_expr: Optional[str]) -> bool:
         raise ValueError(f'Invalid filter expression "{filter_expr}": {exc}') from exc
 
 
-def _as_number(value: Any) -> Optional[float]:
+def _as_number(value: Any) -> float | None:
     if isinstance(value, bool) or value is _MISSING:
         return None
     if isinstance(value, (int, float)):
@@ -169,8 +170,8 @@ def _compare(left: Any, op: str, right: Any) -> bool:
             right = float(right)
 
     if op == "==":
-        return left == right
-    return left != right
+        return bool(left == right)
+    return bool(left != right)
 
 
 def _eval_atom(record: dict, expr: str) -> bool:
@@ -214,7 +215,7 @@ def _eval_expr(record: dict, expr: str) -> bool:
     return _eval_comparison(record, expr)
 
 
-def translate_filter_to_sql(filter_expr: Optional[str]) -> Optional[str]:
+def translate_filter_to_sql(filter_expr: str | None) -> str | None:
     """Translate basic filter expression to SQL WHERE clause.
 
     Supports comparisons (``==``, ``!=``, ``>=``, ``<=``, ``>``, ``<``),

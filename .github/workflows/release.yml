@@ -1,101 +1,274 @@
 name: Release
 
+# Order: verify -> test -> build -> install-gate + binaries + container -> publish -> GitHub release.
+# Nothing is published unless every earlier job succeeded. Tags with "rc" go to TestPyPI.
 on:
   push:
     tags:
       - "v*"
 
+permissions:
+  contents: read
+
 jobs:
-  build:
+  verify:
+    name: Tag matches package version
     runs-on: ubuntu-latest
+    outputs:
+      prerelease: ${{ steps.kind.outputs.prerelease }}
     steps:
       - uses: actions/checkout@v4
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Compare tag and __version__
+        run: |
+          version=$(python -c "import ast,pathlib; t=ast.parse(pathlib.Path('undatum/__init__.py').read_text()); print(next(n.value.value for n in t.body if isinstance(n, ast.Assign) and n.targets[0].id == '__version__'))")
+          tag="${GITHUB_REF_NAME#v}"
+          echo "tag=$tag version=$version"
+          test "$tag" = "$version"
+      - id: kind
+        run: |
+          if [[ "$GITHUB_REF_NAME" == *rc* ]]; then echo "prerelease=true" >> "$GITHUB_OUTPUT"; else echo "prerelease=false" >> "$GITHUB_OUTPUT"; fi
+
+  test:
+    needs: verify
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ matrix.python-version }}
+      - name: Run test suite
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[api,dev]"
+          pytest -q
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
       - name: Build distributions
         run: |
-          python -m pip install --upgrade pip build
+          python -m pip install --upgrade pip build twine
           python -m build
-      - name: Check distributions
-        run: |
-          pip install twine
           twine check dist/*
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/*
       - uses: actions/upload-artifact@v4
         with:
           name: dist
           path: dist/
 
-  publish:
+  install-gate:
     needs: build
     runs-on: ubuntu-latest
-    environment: pypi
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.13"]
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - name: Clean install of the built wheel
+        run: |
+          python -m venv /tmp/rel
+          /tmp/rel/bin/pip install dist/*.whl
+          /tmp/rel/bin/undatum --version
+          printf 'name,age\nAlice,30\nBob,25\n' > /tmp/sample.csv
+          /tmp/rel/bin/undatum convert /tmp/sample.csv /tmp/sample.parquet --no-progress
+          /tmp/rel/bin/undatum rename /tmp/sample.csv --map name:who --output /tmp/renamed.parquet
+          test -s /tmp/renamed.parquet
+
+  binaries:
+    needs: build
+    uses: ./.github/workflows/binaries.yml
+    with:
+      attest: true
     permissions:
-      # Required for PyPI trusted publishing (OIDC)
+      contents: read
+      id-token: write
+      attestations: write
+
+  container:
+    name: Container image (${{ matrix.variant }})
+    needs: [verify, install-gate]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        variant: [core, full]
+    env:
+      IMAGE: ghcr.io/${{ github.repository_owner }}/undatum
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: undatum:release
+          build-args: EXTRAS=${{ matrix.variant == 'full' && 'full' || '' }}
+          cache-from: type=gha,scope=release-${{ matrix.variant }}
+          cache-to: type=gha,mode=max,scope=release-${{ matrix.variant }}
+      - name: Smoke test
+        run: |
+          mkdir -p smoke && printf 'id,city\n1,Berlin\n2,Paris\n' > smoke/data.csv
+          chmod 777 smoke
+          test "$(docker run --rm undatum:release --version)" = "undatum ${GITHUB_REF_NAME#v}"
+          docker run --rm -v "$PWD/smoke:/data" undatum:release convert data.csv data.parquet
+          test "$(docker run --rm -v "$PWD/smoke:/data" undatum:release count data.parquet)" = "2"
+      - name: Tags
+        id: tags
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          suffix=""; [ "${{ matrix.variant }}" = "full" ] && suffix="-full"
+          tags="$IMAGE:$version$suffix"
+          if [ "${{ needs.verify.outputs.prerelease }}" = "false" ]; then
+            tags="$tags,$IMAGE:latest$suffix"
+          fi
+          echo "tags=$tags" >> "$GITHUB_OUTPUT"
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.tags.outputs.tags }}
+          build-args: EXTRAS=${{ matrix.variant == 'full' && 'full' || '' }}
+          cache-from: type=gha,scope=release-${{ matrix.variant }}
+
+  publish-testpypi:
+    if: needs.verify.outputs.prerelease == 'true'
+    needs: [verify, install-gate, binaries, container]
+    runs-on: ubuntu-latest
+    environment: testpypi
+    permissions:
       id-token: write
     steps:
       - uses: actions/download-artifact@v4
         with:
           name: dist
           path: dist/
-      - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
 
-  binaries:
-    name: Single-binary artifacts
-    needs: build
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            artifact: undatum-linux-x86_64
-          - os: macos-latest
-            artifact: undatum-macos
-          - os: windows-latest
-            artifact: undatum-windows-x86_64.exe
-    runs-on: ${{ matrix.os }}
+  verify-testpypi:
+    needs: publish-testpypi
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install the release candidate from TestPyPI
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          python -m venv /tmp/rc
+          for attempt in 1 2 3 4 5; do
+            /tmp/rc/bin/pip install --index-url https://test.pypi.org/simple/ \
+              --extra-index-url https://pypi.org/simple/ "undatum==$version" && break
+            sleep 30
+          done
+          /tmp/rc/bin/undatum --version
+
+  publish-pypi:
+    if: needs.verify.outputs.prerelease == 'false'
+    needs: [verify, install-gate, binaries, container]
+    runs-on: ubuntu-latest
+    # Configure required reviewers on the "pypi" environment for a manual approval step.
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+
+  homebrew:
+    name: Homebrew tap
+    # Runs once the tap exists: set the repository variable HOMEBREW_TAP_REPO
+    # (e.g. datenoio/homebrew-tap) and the secret HOMEBREW_TAP_TOKEN (contents: write on it).
+    if: needs.verify.outputs.prerelease == 'false' && vars.HOMEBREW_TAP_REPO != ''
+    needs: [verify, publish-pypi]
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Render the formula from the PyPI release
+        run: |
+          for attempt in 1 2 3 4 5; do
+            python3 scripts/render_homebrew_formula.py "$GITHUB_REF_NAME" > undatum.rb && break
+            sleep 30
+          done
+          test -s undatum.rb
+      - uses: actions/checkout@v4
         with:
-          python-version: "3.11"
-      - name: Install package and PyInstaller
+          repository: ${{ vars.HOMEBREW_TAP_REPO }}
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: tap
+      - name: Install and test the formula
         run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[s3]"
-          pip install pyinstaller
-      - name: Assert PyInstaller spec is present
-        shell: bash
-        run: test -f packaging/undatum.spec
-      - name: Build binary
-        run: pyinstaller --noconfirm packaging/undatum.spec
-      - name: Smoke-test binary (Unix)
-        if: runner.os != 'Windows'
+          mkdir -p tap/Formula && cp undatum.rb tap/Formula/undatum.rb
+          brew tap-new --no-git local/undatum-test
+          cp undatum.rb "$(brew --repository)/Library/Taps/local/homebrew-undatum-test/Formula/undatum.rb"
+          brew install local/undatum-test/undatum
+          brew test local/undatum-test/undatum
+      - name: Publish to the tap
         run: |
-          BIN=dist/undatum
-          "$BIN" --help
-          printf 'name,age\nAlice,30\n' > /tmp/sample.csv
-          "$BIN" convert /tmp/sample.csv /tmp/sample.jsonl --no-progress
-      - name: Smoke-test binary (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $bin = "dist/undatum.exe"
-          & $bin --help
-          Set-Content -Path sample.csv -Value "name,age`nAlice,30"
-          & $bin convert sample.csv sample.jsonl --no-progress
-      - name: Rename artifact
-        shell: bash
-        run: |
-          if [ -f dist/undatum.exe ]; then
-            mv dist/undatum.exe "dist/${{ matrix.artifact }}"
-          else
-            mv dist/undatum "dist/${{ matrix.artifact }}"
-          fi
-      - uses: actions/upload-artifact@v4
+          cd tap
+          git add Formula/undatum.rb
+          git -c user.name="github-actions[bot]" \
+            -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -m "undatum ${GITHUB_REF_NAME#v}"
+          git push
+
+  github-release:
+    needs: [verify, publish-pypi]
+    if: always() && needs.publish-pypi.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
         with:
-          name: ${{ matrix.artifact }}
-          path: dist/${{ matrix.artifact }}
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+      - name: Release notes from commits
+        id: notes
+        uses: orhun/git-cliff-action@v4
+        with:
+          config: cliff.toml
+          args: --latest --strip header
+      - name: Create GitHub release with all assets
+        uses: softprops/action-gh-release@v2
+        with:
+          body: ${{ steps.notes.outputs.content }}
+          files: |
+            artifacts/dist/*
+            artifacts/undatum-*/*

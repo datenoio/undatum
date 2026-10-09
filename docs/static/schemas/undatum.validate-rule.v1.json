@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://datenoio.github.io/undatum/schemas/undatum.validate-rule.v1.json",
+  "title": "Values checked against one built-in rule",
+  "description": "Printed by `undatum validate --rule --json`.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "const": "undatum.validate-rule/1",
+      "description": "Result layout"
+    },
+    "rule": {
+      "type": "string",
+      "description": "Rule name, e.g. common.email"
+    },
+    "field": {
+      "type": "string",
+      "description": "Checked field"
+    },
+    "mode": {
+      "type": "string",
+      "description": "invalid, valid, all or stats"
+    },
+    "statistics": {
+      "type": "object",
+      "description": "total, invalid, novalue, share (percent invalid)"
+    },
+    "records": {
+      "type": "array",
+      "description": "Checked values with a FIELD_valid flag (omitted with --mode stats)"
+    }
+  },
+  "required": [
+    "schema",
+    "rule",
+    "field",
+    "statistics"
+  ]
+}

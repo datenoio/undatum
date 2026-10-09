@@ -34,7 +34,7 @@ class TestGetIterableOptions:
 class TestDetectEngine:
     """Test _detect_engine function."""
 
-    @patch("undatum.cmds.statistics.engine.detect_file_type")
+    @patch("undatum.common.engine_selector.detect_file_type")
     def test_detect_engine_auto_duckdb(self, mock_detect):
         """Test auto-detection selecting DuckDB."""
         mock_detect.return_value = {
@@ -46,7 +46,7 @@ class TestDetectEngine:
         result = _detect_engine("test.csv", "auto", None)
         assert result == "duckdb"
 
-    @patch("undatum.cmds.statistics.engine.detect_file_type")
+    @patch("undatum.common.engine_selector.detect_file_type")
     def test_detect_engine_auto_iterable(self, mock_detect):
         """Test auto-detection selecting iterable engine."""
         mock_detect.return_value = {

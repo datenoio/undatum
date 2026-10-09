@@ -13,6 +13,8 @@ from ..common.command_utils import (  # noqa: F401
 from ..common.s3_iterable import open_path as open_iterable
 from ..utils import get_option
 
+logger = logging.getLogger(__name__)
+
 
 class TableFormatter:
     """Table command handler - pretty print data."""
@@ -24,7 +26,7 @@ class TableFormatter:
         """Display data in a formatted, aligned table."""
         if options is None:
             options = {}
-        logging.debug("Processing %s", fromfile)
+        logger.debug("Processing %s", fromfile)
         iterableargs = get_iterable_options(options)
         limit = get_option(options, "limit") or 20
         fields = get_option(options, "fields")

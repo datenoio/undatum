@@ -11,7 +11,7 @@ Add domain-specific commands, connectors, or transforms without maintaining a fo
 my-plugin = "mypackage.plugin:register"
 ```
 
-```bash
+```bash norun
 undatum plugins list
 undatum plugins info my-plugin
 undatum plugins validate
@@ -63,7 +63,7 @@ class UpperPlugin(TransformPlugin):
         return {k: v.upper() if isinstance(v, str) else v for k, v in record.items()}
 ```
 
-```bash
+```bash norun
 undatum apply data.jsonl --plugin example-transform --output out.jsonl
 ```
 

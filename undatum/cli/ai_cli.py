@@ -14,12 +14,11 @@ overridden per-invocation with CLI options.
 
 import json
 import logging
-from typing import Annotated, Optional
+from typing import Annotated
 
 import typer
 from rich.console import Console
 
-from ..ai.config import get_ai_config
 from .common import console, enable_verbose
 
 logger = logging.getLogger(__name__)
@@ -38,12 +37,12 @@ ai_app = typer.Typer(help="AI-assisted documentation, filtering, planning, and s
 
 
 def _source_iterableargs(
-    table: Optional[str] = None,
+    table: str | None = None,
     start_page: int = 0,
     trust: bool = False,
-    on_error: Optional[str] = None,
-    error_log: Optional[str] = None,
-    quotechar: Optional[str] = None,
+    on_error: str | None = None,
+    error_log: str | None = None,
+    quotechar: str | None = None,
 ) -> dict:
     from ..common.command_utils import get_iterable_options
 
@@ -76,15 +75,17 @@ DEFAULT_DOC_BLOCKS = [
 
 
 def _resolve_ai(
-    provider: Optional[str],
-    model: Optional[str],
-    api_key: Optional[str],
-    base_url: Optional[str],
+    provider: str | None,
+    model: str | None,
+    api_key: str | None,
+    base_url: str | None,
 ) -> dict:
     """Merge CLI AI options with undatum's configured defaults.
 
     CLI values take precedence over config-file/environment values.
     """
+    from ..ai.config import get_ai_config
+
     cfg = get_ai_config()
     resolved_provider = provider or cfg.get("provider") or "openai"
     resolved_model = model or cfg.get("model")
@@ -134,7 +135,7 @@ def doc(
         bool, typer.Option(help="Detect semantic types (requires metacrafter).")
     ] = False,
     tables: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(
             "--tables",
             help="Comma-separated table/sheet names for multi-table sources.",
@@ -159,7 +160,7 @@ def doc(
         ),
     ] = False,
     context: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(
             "--context",
             help='JSON object of extra prompt context, e.g. \'{"title": "Sales"}\'.',
@@ -173,7 +174,7 @@ def doc(
         ),
     ] = False,
     sample_size: Annotated[
-        Optional[int],
+        int | None,
         typer.Option(
             "--sample-size",
             help="Override sample row count for documentation (engine default if omitted).",
@@ -194,21 +195,21 @@ def doc(
         ),
     ] = True,
     temperature: Annotated[
-        Optional[float],
+        float | None,
         typer.Option(
             "--temperature",
             help="LLM sampling temperature (engine default if omitted).",
         ),
     ] = None,
     max_tokens: Annotated[
-        Optional[int],
+        int | None,
         typer.Option(
             "--max-tokens",
             help="Maximum tokens per LLM documentation block (engine default if omitted).",
         ),
     ] = None,
     job_id: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(
             "--job-id",
             help="Stable job identifier for documentation progress and JSON results.",
@@ -366,7 +367,7 @@ def ai_filter(
     base_url: Annotated[str, typer.Option(help="Base URL override (local providers).")] = None,
     verbose: Annotated[bool, typer.Option(help="Enable verbose logging output.")] = False,
     table: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(
             "--table",
             "--sheet",
@@ -382,28 +383,28 @@ def ai_filter(
         ),
     ] = False,
     on_error: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(
             "--on-error",
             help="Parse-error policy: raise (default), skip, or warn.",
         ),
     ] = None,
     error_log: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(
             "--error-log",
             help="Append parse errors as JSONL (use with --on-error skip or warn).",
         ),
     ] = None,
     quotechar: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(
             "--quotechar",
             help="CSV quote character (iterabledata default '\"' when omitted).",
         ),
     ] = None,
     sample_size: Annotated[
-        Optional[int],
+        int | None,
         typer.Option(
             "--sample-size",
             help="Rows to sample when inferring schema context for a file (engine default 10000).",
@@ -417,7 +418,7 @@ def ai_filter(
         ),
     ] = False,
     max_nested_depth: Annotated[
-        Optional[int],
+        int | None,
         typer.Option(
             "--max-nested-depth",
             help="With --flatten-nested, maximum nest depth to unfold (engine default 5).",
@@ -596,7 +597,7 @@ def suggest(
         typer.Option("--yes", "-y", help="Do not prompt before applying the transform."),
     ] = False,
     sample_size: Annotated[
-        Optional[int],
+        int | None,
         typer.Option(
             "--sample-size",
             help="Override sample row count sent to the suggestion engine (default 5).",
@@ -604,7 +605,7 @@ def suggest(
     ] = None,
     verbose: Annotated[bool, typer.Option(help="Enable verbose logging output.")] = False,
     table: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(
             "--table",
             "--sheet",
@@ -620,21 +621,21 @@ def suggest(
         ),
     ] = False,
     on_error: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(
             "--on-error",
             help="Parse-error policy: raise (default), skip, or warn.",
         ),
     ] = None,
     error_log: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(
             "--error-log",
             help="Append parse errors as JSONL (use with --on-error skip or warn).",
         ),
     ] = None,
     quotechar: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(
             "--quotechar",
             help="CSV quote character (iterabledata default '\"' when omitted).",

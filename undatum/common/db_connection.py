@@ -2,7 +2,8 @@
 
 import logging
 import sqlite3
-from urllib.parse import parse_qs, urlparse
+from typing import Any
+from urllib.parse import parse_qs, unquote, urlparse
 
 logger = logging.getLogger(__name__)
 
@@ -13,7 +14,49 @@ class DatabaseConnectionError(Exception):
     pass
 
 
-def parse_db_uri(uri: str) -> tuple[str, dict[str, any]]:
+def parse_server_uri(uri: str, schemes: tuple[str, ...], default_port: int) -> dict:
+    """Parse a client/server database URI into connection keyword arguments.
+
+    Credentials are URL-decoded, so passwords may contain ``@``, ``:`` or ``/`` when
+    percent-encoded. Missing parts are omitted so the driver applies its defaults.
+
+    Args:
+        uri: URI such as ``postgresql://user:pass@host:5432/db``.
+        schemes: Accepted URI schemes (for example ``("postgresql", "postgres")``).
+        default_port: Port used when the URI has none.
+
+    Returns:
+        Dict with ``host``, ``port`` and, when present, ``user``, ``password`` and
+        ``database``.
+
+    Raises:
+        ValidationError: If the scheme is not accepted or the port is not a number.
+    """
+    from .errors import ValidationError
+
+    parsed = urlparse(uri)
+    if parsed.scheme.lower() not in schemes:
+        raise ValidationError(
+            f"Unsupported database URI scheme '{parsed.scheme}'",
+            field="db",
+            suggestions=[f"{scheme}://user:password@host/database" for scheme in schemes[:1]],
+        )
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        raise ValidationError(f"Invalid port in database URI: {exc}", field="db") from exc
+    params: dict = {"host": parsed.hostname or "localhost", "port": port or default_port}
+    if parsed.username:
+        params["user"] = unquote(parsed.username)
+    if parsed.password is not None:
+        params["password"] = unquote(parsed.password)
+    database = parsed.path.lstrip("/") if parsed.path else ""
+    if database:
+        params["database"] = unquote(database)
+    return params
+
+
+def parse_db_uri(uri: str) -> tuple[str, dict[str, Any]]:
     """Parse database connection URI into database type and connection parameters.
 
     Args:
@@ -65,11 +108,11 @@ def parse_db_uri(uri: str) -> tuple[str, dict[str, any]]:
         raise DatabaseConnectionError(f"Unsupported database type: {scheme}")
 
     # Extract connection parameters
-    params = {
+    params: dict[str, Any] = {
         "host": parsed.hostname or "localhost",
         "port": parsed.port,
-        "user": parsed.username,
-        "password": parsed.password,
+        "user": unquote(parsed.username) if parsed.username else None,
+        "password": unquote(parsed.password) if parsed.password is not None else None,
         "database": parsed.path.lstrip("/") if parsed.path else None,
     }
 
@@ -91,7 +134,7 @@ def parse_db_uri(uri: str) -> tuple[str, dict[str, any]]:
     return db_type, params
 
 
-def get_db_connection(db_type: str, params: dict[str, any]):
+def get_db_connection(db_type: str, params: dict[str, Any]) -> Any:
     """Get database connection based on type and parameters.
 
     Args:

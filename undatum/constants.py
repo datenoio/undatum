@@ -83,12 +83,36 @@ def _build_text_data_types() -> list[str]:
     return sorted(text)
 
 
-SUPPORTED_FILE_TYPES = _build_supported_file_types()
-COMPRESSED_FILE_TYPES = _build_compressed_file_types()
-TEXT_DATA_TYPES = _build_text_data_types()
-BINARY_FILE_TYPES = sorted(
-    (set(SUPPORTED_FILE_TYPES) - set(TEXT_DATA_TYPES)) | set(COMPRESSED_FILE_TYPES)
-)
+_LAZY: dict[str, list[str]] = {}
+
+
+def __getattr__(name: str) -> list[str]:
+    """Build the iterabledata-derived lists on first use.
+
+    Importing iterabledata takes about a second, so ``SUPPORTED_FILE_TYPES``,
+    ``COMPRESSED_FILE_TYPES``, ``TEXT_DATA_TYPES`` and ``BINARY_FILE_TYPES`` are computed
+    only when a command actually reads them.
+    """
+    if name not in (
+        "SUPPORTED_FILE_TYPES",
+        "COMPRESSED_FILE_TYPES",
+        "TEXT_DATA_TYPES",
+        "BINARY_FILE_TYPES",
+    ):
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    if name not in _LAZY:
+        if name == "SUPPORTED_FILE_TYPES":
+            _LAZY[name] = _build_supported_file_types()
+        elif name == "COMPRESSED_FILE_TYPES":
+            _LAZY[name] = _build_compressed_file_types()
+        elif name == "TEXT_DATA_TYPES":
+            _LAZY[name] = _build_text_data_types()
+        else:
+            supported = set(__getattr__("SUPPORTED_FILE_TYPES"))
+            text = set(__getattr__("TEXT_DATA_TYPES"))
+            _LAZY[name] = sorted((supported - text) | set(__getattr__("COMPRESSED_FILE_TYPES")))
+    return _LAZY[name]
+
 
 DEFAULT_OPTIONS = {"encoding": "utf8", "delimiter": ",", "limit": 1000}
 

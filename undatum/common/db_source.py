@@ -38,6 +38,15 @@ DB_URI_SCHEMES: dict[str, str] = {
     "opensearch": "elasticsearch",
 }
 
+# iterabledata engine -> undatum extra that installs its driver.
+ENGINE_EXTRAS: dict[str, str] = {
+    "postgres": "postgres",
+    "mysql": "mysql",
+    "mssql": "mssql",
+    "clickhouse": "clickhouse",
+    "elasticsearch": "elastic",
+}
+
 # Engines without a native undatum connection layer; ``db query`` must route
 # these through iterabledata's drivers.
 ITERABLE_ONLY_DB_ENGINES = frozenset({"mssql", "clickhouse", "mongo", "elasticsearch"})
@@ -111,7 +120,7 @@ def open_db_source(
     query: str | None = None,
     iterableargs: dict[str, Any] | None = None,
     **kwargs: Any,
-):
+) -> Any:
     """Open a database URI as an iterable via iterabledata's DB drivers.
 
     Args:
@@ -127,6 +136,7 @@ def open_db_source(
 
     Raises:
         ValueError: If the URI scheme is not a recognized database engine.
+        DependencyError: If the database driver is not installed.
     """
     engine = detect_db_engine(uri)
     if engine is None:
@@ -138,4 +148,14 @@ def open_db_source(
         driver_kwargs.update(kwargs)
     if query is not None:
         driver_kwargs["query"] = query
-    return open_iterable(clean_uri, engine=engine, iterableargs=driver_kwargs)
+    try:
+        return open_iterable(clean_uri, engine=engine, iterableargs=driver_kwargs)
+    except ImportError as exc:
+        from .errors import DependencyError
+
+        extra = ENGINE_EXTRAS.get(engine)
+        raise DependencyError(
+            exc.name or engine,
+            feature=f"{engine} database URIs",
+            install_command=f'pip install "undatum[{extra}]"' if extra else None,
+        ) from exc

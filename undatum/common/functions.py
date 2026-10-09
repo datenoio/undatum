@@ -4,8 +4,10 @@ This module provides helper functions for accessing nested dictionary
 values using dot-notation keys.
 """
 
+from typing import Any
 
-def get_dict_value(adict, key, prefix=None):
+
+def get_dict_value(adict: Any, key: str, prefix: list[str] | None = None) -> Any:
     """Get value from dictionary using dot-notation key.
 
     Args:
@@ -26,7 +28,13 @@ def get_dict_value(adict, key, prefix=None):
     return get_dict_value(adict[prefix[0]], key, prefix=prefix[1:])
 
 
-def get_dict_value_deep(adict, key, prefix=None, as_array=False, splitter="."):
+def get_dict_value_deep(
+    adict: Any,
+    key: str,
+    prefix: list[str] | None = None,
+    as_array: bool = False,
+    splitter: str = ".",
+) -> Any:
     """Get value from hierarchical dictionaries with deep traversal.
 
     Supports nested dictionaries and lists, with optional array collection

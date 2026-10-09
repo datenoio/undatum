@@ -6,6 +6,35 @@ description: "Fluent Dataset API for read, transform, and write"
 
 Undatum provides a Python SDK for programmatic data processing with a fluent API that mirrors CLI commands.
 
+Every method with its parameters is listed in the [SDK reference](/integrations/sdk-reference), generated from the docstrings.
+
+### How a Dataset runs
+
+A `Dataset` is a **lazy plan**: `read()` and every transform method return a new `Dataset`
+with one more step and read nothing. The plan runs when you ask for results — iterating,
+`write()`, `count()`, `head()`, `stats()`, `collect()` or a DataFrame export — and records
+stream from step to step as Python objects:
+
+- no intermediate files are written between steps, and a plan can run as many times as you
+  iterate it;
+- values keep their Python types between steps (`datetime.date`, `Decimal`, nested dicts and
+  lists); only the final writer converts them;
+- `write()` runs the whole plan as one DuckDB query when the source is CSV/TSV/JSON/JSON
+  Lines/Parquet and every step has a SQL form (`rename`, `fill`, `replace`, `filter(pattern=)`,
+  `select`, `limit`, `slice`); otherwise records stream through Python;
+- invalid arguments (an unknown `keep=`, a bad regular expression) fail when the step is added;
+  data errors surface when the plan runs.
+
+```python
+plan = Dataset.read("big.csv").rename({"a": "x"}).fill("x", value="0").dedup()
+print(plan.explain())          # the steps, nothing read yet
+plan.write("clean.parquet")    # reads big.csv once, streaming
+rows = Dataset.from_records([{"a": 1}, {"a": 2}]).enum("row").collect()
+```
+
+Operations that need the whole input (`sort`, `reverse`, `dedup` with many keys,
+`fill(strategy="backward")`) spill to temporary files inside the step and clean them up.
+
 ### Quick Start
 
 ```python
@@ -88,6 +117,25 @@ ds = ds.sample(percent=10.0)
 # Mask sensitive fields
 ds = ds.mask(["email", "phone"], method="redact")
 ds = ds.mask("user_id", method="hash", salt="my-salt")
+
+# Replace text, drop excluded keys, append other files
+ds = ds.replace("phone", "-", "", global_replace=True)
+ds = ds.exclude("blocklist.csv", on="email")
+ds = ds.concat("more.csv", Dataset.read("even_more.jsonl"))
+
+# Windows and reshaping
+ds = ds.limit(100).slice(10, 20)
+ds = ds.fixlengths().transpose()
+```
+
+### Query and quality methods
+
+```python
+ds = Dataset.read("data.csv")
+ds.uniq("country")                 # distinct values, first-seen order
+ds.frequency(["country", "city"])  # [{"country": ..., "city": ..., "count": n}, ...]
+ds.schema()                        # inferred schema of the first 1000 records
+report = ds.validate("rules.yml")  # {"records": n, "valid": n, "violations": [...]}
 ```
 
 ### Analysis Methods

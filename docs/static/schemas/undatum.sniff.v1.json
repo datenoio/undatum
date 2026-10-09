@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://datenoio.github.io/undatum/schemas/undatum.sniff.v1.json",
+  "title": "Detected file properties",
+  "description": "Printed by `undatum sniff --json`.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "const": "undatum.sniff/1",
+      "description": "Result layout"
+    },
+    "file": {
+      "type": "string",
+      "description": "Input path"
+    },
+    "filetype": {
+      "type": "string",
+      "description": "Detected format id (csv, jsonl, parquet, ...)"
+    },
+    "compression": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Compression codec (gz, zst, ...), null if none"
+    },
+    "encoding": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Text encoding, null for binary formats"
+    },
+    "delimiter": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Field delimiter of delimited text, else null"
+    },
+    "has_header": {
+      "type": [
+        "boolean",
+        "null"
+      ],
+      "description": "Whether the first line is a header (CSV/TSV)"
+    },
+    "record_count": {
+      "type": "integer",
+      "description": "Number of records"
+    },
+    "sample_size": {
+      "type": "integer",
+      "description": "Records sampled for field types"
+    },
+    "fields": {
+      "type": "object",
+      "description": "Field name -> type and up to 3 examples"
+    }
+  },
+  "required": [
+    "schema",
+    "file",
+    "filetype",
+    "record_count",
+    "fields"
+  ]
+}

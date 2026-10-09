@@ -1,0 +1,52 @@
+# Budgets for scripts/benchmarks.py: median wall time (seconds) and peak resident memory (MB)
+# per command and dataset tier. A command over its budget fails the benchmark job.
+#
+# Calibrated on 2026-10-08 (macOS arm64, Python 3.13): time budget = max(3 x measured,
+# measured + 0.5 s) to absorb slower CI runners; memory budget = 1.3 x measured + 20 MB, tight
+# enough that holding a 100k-row input in memory breaks it. The 100k time budgets were raised on
+# 2026-10-09 to 1.4 x the time measured on the GitHub ubuntu-latest runner (rounded up to 0.1 s),
+# which is 3-5 times slower than the Mac for commands that import iterabledata. Lower a budget
+# when a command gets faster; raise one only with the reason in the commit message.
+
+# Each [command] in "faster" must stay faster than the second one.
+faster = [["count", "sort"], ["count-jsonl", "sort"], ["head", "sort"]]
+
+[tier.100k]
+help = { seconds = 1.0, rss_mb = 90 }
+version = { seconds = 0.7, rss_mb = 80 }
+head = { seconds = 0.9, rss_mb = 140 }
+count = { seconds = 0.9, rss_mb = 130 }
+"count-jsonl" = { seconds = 0.9, rss_mb = 160 }
+headers = { seconds = 3.4, rss_mb = 210 }
+rename = { seconds = 1.0, rss_mb = 140 }
+fill = { seconds = 1.0, rss_mb = 140 }
+dedup = { seconds = 4.0, rss_mb = 240 }
+select = { seconds = 3.3, rss_mb = 240 }
+sort = { seconds = 3.4, rss_mb = 330 }
+frequency = { seconds = 3.3, rss_mb = 250 }
+uniq = { seconds = 3.3, rss_mb = 250 }
+stats = { seconds = 9.3, rss_mb = 370 }
+schema = { seconds = 5.8, rss_mb = 310 }
+sql = { seconds = 1.0, rss_mb = 150 }
+"convert-parquet" = { seconds = 3.5, rss_mb = 310 }
+"convert-jsonl" = { seconds = 4.6, rss_mb = 370 }
+
+[tier.1m]
+help = { seconds = 0.7, rss_mb = 90 }
+version = { seconds = 0.7, rss_mb = 80 }
+head = { seconds = 0.8, rss_mb = 160 }
+count = { seconds = 0.7, rss_mb = 290 }
+"count-jsonl" = { seconds = 0.8, rss_mb = 410 }
+headers = { seconds = 1.6, rss_mb = 210 }
+rename = { seconds = 2.2, rss_mb = 200 }
+fill = { seconds = 2.5, rss_mb = 200 }
+dedup = { seconds = 7.1, rss_mb = 260 }
+select = { seconds = 2.0, rss_mb = 460 }
+sort = { seconds = 2.5, rss_mb = 1230 }
+frequency = { seconds = 1.8, rss_mb = 420 }
+uniq = { seconds = 1.7, rss_mb = 420 }
+stats = { seconds = 10.4, rss_mb = 720 }
+schema = { seconds = 3.1, rss_mb = 330 }
+sql = { seconds = 0.9, rss_mb = 320 }
+"convert-parquet" = { seconds = 2.2, rss_mb = 1070 }
+"convert-jsonl" = { seconds = 16.5, rss_mb = 460 }

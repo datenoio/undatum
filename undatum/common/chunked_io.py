@@ -1,8 +1,10 @@
 """Chunked streaming I/O utilities for constant memory usage."""
 
 import logging
-from collections.abc import Iterator
-from typing import Any, Callable
+from collections.abc import Callable, Iterator
+from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 def chunked_reader(iterable: Iterator[Any], chunk_size: int = 1000) -> Iterator[list[Any]]:
@@ -63,5 +65,5 @@ def process_chunked(
         writer(processed_chunk)
         total_processed += len(chunk)
         if total_processed % (chunk_size * 10) == 0:
-            logging.debug(f"Processed {total_processed} items")
+            logger.debug(f"Processed {total_processed} items")
     return total_processed

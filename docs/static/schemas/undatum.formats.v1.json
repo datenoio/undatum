@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://datenoio.github.io/undatum/schemas/undatum.formats.v1.json",
+  "title": "Supported formats and their capabilities",
+  "description": "Printed by `undatum formats list --json`.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "const": "undatum.formats/1",
+      "description": "Result layout"
+    },
+    "formats": {
+      "type": "array",
+      "description": "Formats: id, readable, writable, ..."
+    }
+  },
+  "required": [
+    "schema",
+    "formats"
+  ]
+}

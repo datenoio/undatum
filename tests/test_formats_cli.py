@@ -21,7 +21,9 @@ class TestFormatsCommand:
     def test_list_json(self):
         result = runner.invoke(app, ["formats", "list", "--json"])
         assert result.exit_code == 0
-        data = json.loads(result.stdout)
+        document = json.loads(result.stdout)
+        assert document["schema"] == "undatum.formats/1"
+        data = document["formats"]
         ids = {row["id"] for row in data}
         assert "csv" in ids
         assert len(data) > 50
@@ -29,13 +31,13 @@ class TestFormatsCommand:
     def test_list_writable_filter(self):
         result = runner.invoke(app, ["formats", "list", "--writable", "--json"])
         assert result.exit_code == 0
-        data = json.loads(result.stdout)
+        data = json.loads(result.stdout)["formats"]
         assert all(row["writable"] for row in data)
 
     def test_list_json_includes_capabilities(self):
         result = runner.invoke(app, ["formats", "list", "--json"])
         assert result.exit_code == 0
-        data = json.loads(result.stdout)
+        data = json.loads(result.stdout)["formats"]
         assert "capabilities" in data[0]
         csv_row = next(row for row in data if row["id"] == "csv")
         assert csv_row["capabilities"].get("readable") is True
@@ -49,7 +51,7 @@ class TestFormatsCommand:
     def test_list_json_includes_maturity(self):
         result = runner.invoke(app, ["formats", "list", "--json"])
         assert result.exit_code == 0
-        data = json.loads(result.stdout)
+        data = json.loads(result.stdout)["formats"]
         parquet = next(row for row in data if row["id"] == "parquet")
         assert parquet.get("maturity") in {"stable", "experimental", "partial"}
         assert "native_bulk_read" in parquet["capabilities"]

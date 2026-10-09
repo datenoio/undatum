@@ -14,7 +14,7 @@
 ## Tech Stack
 
 ### Core Technologies
-- **Python 3.9+** - Primary programming language
+- **Python 3.10+** - Primary programming language
 - **Typer** - CLI framework for command definitions
 - **Rich** - Terminal output formatting and progress bars
 - **Pydantic** - Data validation and settings management
@@ -50,14 +50,12 @@
 
 ### Development Tools
 - **pytest** - Testing framework
-- **black** - Code formatter (100 char line length)
-- **ruff** - Fast linter (replaces flake8)
-- **mypy** - Static type checking
-- **pylint** - Additional linting
+- **ruff** - Linter and formatter (100 char line length; replaces black, flake8, pylint)
+- **mypy** - Static type checking, enforced as a per-file ratchet (`mypy-baseline.json`)
 
 ### Utilities
 - **click** - Legacy CLI support (being phased out)
-- **chardet** - Encoding detection
+- Encoding detection comes from iterabledata (`detect_encoding_raw`)
 - **qddate** - Date field detection
 - **validators** - Common validation rules
 - **tabulate** - Table formatting
@@ -100,9 +98,9 @@
 - Known first-party: `["undatum"]`
 
 **Linting Rules:**
-- **ruff**: E, W, F, I, B, C4, UP rules enabled
-- **pylint**: Disabled rules for complexity (too-many-*)
-- **mypy**: Warns on return types, unused configs, redundant casts
+- **ruff**: E, W, F, I, B, C4, UP and PL rules (complexity limits ignored); D (Google
+  docstrings) for `undatum/cmds/` and `undatum/sdk/`
+- **mypy**: ratchet — errors per file may only go down; `undatum/common/` is strict
 
 ### Architecture Patterns
 
@@ -149,7 +147,7 @@
 **Coverage:**
 - Use `pytest-cov` for coverage reporting
 - Target comprehensive coverage of core functionality
-- Coverage config in `.coveragerc`
+- Coverage config in `pyproject.toml` (`[tool.coverage.*]`)
 
 **Test Organization:**
 - Tests mirror source structure in `tests/` directory
@@ -207,7 +205,7 @@ make test                 # Via Makefile
 ## Important Constraints
 
 **Technical Constraints:**
-- **Python 3.9+** required (no support for older versions)
+- **Python 3.10+** required; versions are dropped in the first minor release after their end of life
 - **Memory efficiency**: Must handle large files without loading entire dataset into memory
 - **Streaming**: All operations should support streaming for scalability
 - **Format compatibility**: Support for legacy formats (XLS, older Excel) via xlrd

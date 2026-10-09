@@ -2,9 +2,13 @@ name: CI
 
 on:
   push:
-    branches: [ main ]
+    branches: [master, main]
   pull_request:
-    branches: [ main ]
+    branches: [master, main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   lint:
@@ -14,15 +18,40 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
-        python-version: "3.11"
+        python-version: "3.12"
     - name: Install linters
+      # Keep in sync with the ruff pin in pyproject.toml (checked below).
       run: |
         python -m pip install --upgrade pip
-        pip install ruff black
-    - name: Ruff
-      run: ruff check undatum/ tests/
-    - name: Black
-      run: black --check undatum/ tests/
+        pip install "ruff==0.14.9" packaging
+    - name: Tool versions are in sync
+      run: python scripts/check_tool_versions.py
+    - name: Runtime dependencies have version bounds
+      run: python scripts/check_dependency_bounds.py
+    - uses: astral-sh/setup-uv@v6
+    - name: uv.lock matches pyproject.toml
+      run: uv lock --check
+    - name: Ruff lint
+      run: ruff check undatum/ tests/ scripts/
+    - name: Ruff format
+      run: ruff format --check undatum/ tests/ scripts/
+
+  audit:
+    name: Dependency vulnerability audit
+    runs-on: ubuntu-latest
+    # Advisory until the first triage; then remove continue-on-error and document ignores
+    # with --ignore-vuln <ID> plus a comment.
+    continue-on-error: true
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+    - name: pip-audit
+      run: |
+        python -m pip install --upgrade pip pip-audit
+        pip install .
+        pip-audit --skip-editable
 
   docs:
     runs-on: ubuntu-latest
@@ -41,52 +70,233 @@ jobs:
       working-directory: ./docs
       run: npm run build
 
+  doc-examples:
+    name: Documentation examples run
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+    - uses: astral-sh/setup-uv@v6
+    - name: Install locked dependencies
+      run: uv sync --frozen --extra api --extra plot --extra dev --python 3.12
+    - name: Run every bash example under docs/docs (blocks marked norun are skipped)
+      run: uv run --frozen --no-sync python scripts/run_doc_examples.py
+    - name: Agent tool parity (informational)
+      run: uv run --frozen --no-sync undatum mcp tools --parity
+
   type-check:
     runs-on: ubuntu-latest
-    # Advisory until the mypy error backlog is paid down (tracked in
-    # dev/docs/IMPROVEMENT_PLAN_2026-06.md, workstream B1)
-    continue-on-error: true
     steps:
     - uses: actions/checkout@v4
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
-        python-version: "3.11"
+        python-version: "3.10"
     - name: Install package and mypy
       run: |
         python -m pip install --upgrade pip
-        pip install -e .
-        pip install mypy
-    - name: Mypy
-      run: mypy undatum/
+        pip install -e ".[dev]"
+    - name: Mypy ratchet (errors per file may only go down; undatum/common is strict)
+      run: python scripts/mypy_ratchet.py
 
   test:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
-
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
     steps:
     - uses: actions/checkout@v4
     - name: Set up Python ${{ matrix.python-version }}
       uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
+    - uses: astral-sh/setup-uv@v6
+    - name: Install locked dependencies
+      run: uv sync --frozen --extra api --extra dev --python ${{ matrix.python-version }}
+    - name: Run tests with coverage
+      # Coverage only ratchets up: 65 (2026-10) -> 70 -> 75 -> 80.
+      run: |
+        uv run --frozen --no-sync pytest --cov=undatum --cov-report=term --cov-report=xml --cov-fail-under=65
+    - name: Diff coverage for pull requests
+      if: github.event_name == 'pull_request' && matrix.python-version == '3.12'
+      # The checkout is shallow; diff-cover needs the merge base with the base branch.
+      run: |
+        git fetch --no-tags --unshallow origin "${{ github.base_ref }}"
+        uvx "diff-cover>=9" coverage.xml --compare-branch="origin/${{ github.base_ref }}" --fail-under=80
+
+  memory-budget:
+    name: Memory budget of streaming commands
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+    - uses: astral-sh/setup-uv@v6
+    - name: Install locked dependencies
+      run: uv sync --frozen --extra api --extra dev --python 3.12
+    - name: Row commands stay under 300 MB and do not grow with the input
+      env:
+        UNDATUM_MEMORY_TESTS: "1"
+      run: uv run --frozen --no-sync pytest -q tests/benchmarks/test_memory_budget.py
+
+  lowest-dependencies:
+    name: Lowest direct dependencies
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: astral-sh/setup-uv@v6
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.10"
+    - name: Install lowest versions allowed by pyproject.toml
+      run: |
+        uv venv .venv-lowest --python 3.10
+        uv pip install --python .venv-lowest/bin/python --resolution lowest-direct -e ".[api,dev]"
+    - name: Run tests
+      run: .venv-lowest/bin/python -m pytest -q
+
+  deprecations:
+    name: No deprecated APIs in undatum code
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.13"
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install -e ".[api]"
-        pip install pytest pytest-benchmark pytest-cov
-    - name: Run tests with coverage
+        pip install -e ".[api,dev]"
+    - name: Deprecation warnings raised by undatum are errors
+      run: pytest -q -W "error::DeprecationWarning:undatum"
+
+  db-integration:
+    name: Database integration
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: undatum
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s
+          --health-retries 10
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: undatum
+        ports: ["3306:3306"]
+        options: >-
+          --health-cmd "mysqladmin ping -proot" --health-interval 5s --health-timeout 5s
+          --health-retries 20
+      mongo:
+        image: mongo:7
+        ports: ["27017:27017"]
+      elasticsearch:
+        image: docker.elastic.co/elasticsearch/elasticsearch:8.15.0
+        env:
+          discovery.type: single-node
+          xpack.security.enabled: "false"
+          ES_JAVA_OPTS: -Xms512m -Xmx512m
+        ports: ["9200:9200"]
+        options: >-
+          --health-cmd "curl -fs http://localhost:9200/_cluster/health" --health-interval 10s
+          --health-timeout 5s --health-retries 30
+      clickhouse:
+        image: clickhouse/clickhouse-server:24.8
+        env:
+          CLICKHOUSE_DB: undatum
+          CLICKHOUSE_USER: undatum
+          CLICKHOUSE_PASSWORD: undatum
+        ports: ["8123:8123"]
+        options: >-
+          --health-cmd "wget -qO- http://localhost:8123/ping" --health-interval 5s
+          --health-timeout 5s --health-retries 20
+      mssql:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env:
+          ACCEPT_EULA: "Y"
+          MSSQL_SA_PASSWORD: Undatum_Pass1
+        ports: ["1433:1433"]
+        options: >-
+          --health-cmd "/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P Undatum_Pass1 -Q 'SELECT 1'"
+          --health-interval 10s --health-timeout 5s --health-retries 20
+    env:
+      UNDATUM_TEST_POSTGRES_URI: postgresql://postgres:postgres@localhost:5432/undatum
+      UNDATUM_TEST_MYSQL_URI: mysql://root:root@127.0.0.1:3306/undatum
+      UNDATUM_TEST_MONGO_URI: mongodb://localhost:27017
+      UNDATUM_TEST_ELASTIC_URI: http://localhost:9200
+      UNDATUM_TEST_CLICKHOUSE_URI: clickhouse://undatum:undatum@localhost:8123/undatum
+      UNDATUM_TEST_MSSQL_URI: mssql://sa:Undatum_Pass1@localhost:1433/master?TrustServerCertificate=yes
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+    - name: Install the Microsoft ODBC Driver 18 for SQL Server
+      # Not part of the ubuntu-latest runner image.
       run: |
-        pytest --cov=undatum --cov-report=term --cov-fail-under=50
+        if ! odbcinst -q -d -n "ODBC Driver 18 for SQL Server" >/dev/null 2>&1; then
+          curl -fsSL -o /tmp/packages-microsoft-prod.deb \
+            "https://packages.microsoft.com/config/ubuntu/$(. /etc/os-release && echo "$VERSION_ID")/packages-microsoft-prod.deb"
+          sudo dpkg -i /tmp/packages-microsoft-prod.deb
+          sudo apt-get update
+          sudo ACCEPT_EULA=Y apt-get install -y msodbcsql18
+        fi
+    - name: Install dependencies
+      # The elasticsearch client must match the server's major version (8.x service above).
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[dev,postgres,mysql,elastic,clickhouse,mssql]" "elasticsearch>=8,<9"
+    - name: Run integration tests
+      run: pytest -q -m integration tests/integration
+
+  base-install:
+    name: Base install without extras
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.13"]
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+    - name: Install the wheel without extras
+      run: |
+        python -m pip install --upgrade pip build
+        python -m build --wheel
+        python -m venv /tmp/undatum-base
+        /tmp/undatum-base/bin/pip install dist/*.whl
+    - name: Base install footprint
+      # Recorded on every run so dependency changes show up in the job summary.
+      run: |
+        packages=$(/tmp/undatum-base/bin/pip list --format=freeze --exclude pip --exclude setuptools | wc -l)
+        size=$(du -sh /tmp/undatum-base/lib/python*/site-packages | cut -f1)
+        echo "Base install on Python ${{ matrix.python-version }}: ${packages} packages, ${size}" | tee -a "$GITHUB_STEP_SUMMARY"
+    - name: Every core module imports and the CLI starts
+      run: |
+        /tmp/undatum-base/bin/pip install pytest
+        /tmp/undatum-base/bin/undatum --version
+        /tmp/undatum-base/bin/python -m pytest -q -p no:cacheprovider tests/test_base_install_imports.py
 
   install-gate:
     name: Clean wheel install smoke
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.9", "3.11", "3.13"]
+        python-version: ["3.10", "3.11", "3.13"]
     steps:
     - uses: actions/checkout@v4
     - name: Set up Python ${{ matrix.python-version }}
@@ -104,11 +314,13 @@ jobs:
         /tmp/undatum-smoke/bin/pip install dist/*.whl
         /tmp/undatum-smoke/bin/python -c "import chardet, xmltodict, pyarrow, undatum"
         /tmp/undatum-smoke/bin/undatum --help
-        # Core format smoke: convert / stats / validate
+        # Core format smoke: convert / stats / validate / transforms to Parquet
         printf 'name,age\nAlice,30\nBob,25\n' > /tmp/sample.csv
         /tmp/undatum-smoke/bin/undatum convert /tmp/sample.csv /tmp/sample.parquet --no-progress
         /tmp/undatum-smoke/bin/undatum convert /tmp/sample.csv /tmp/sample.jsonl --no-progress
-        /tmp/undatum-smoke/bin/undatum stats /tmp/sample.csv --limit 10
-        /tmp/undatum-smoke/bin/undatum validate /tmp/sample.csv || true
+        /tmp/undatum-smoke/bin/undatum stats /tmp/sample.csv
+        /tmp/undatum-smoke/bin/undatum rename /tmp/sample.csv --map name:who --output /tmp/renamed.parquet
+        test -s /tmp/renamed.parquet
+        /tmp/undatum-smoke/bin/undatum validate /tmp/sample.csv --fields name --rule common.email --mode stats
         # gzip codec must be import-routable (engine selector smoke)
         /tmp/undatum-smoke/bin/python -c "from undatum.constants import DUCKABLE_CODECS; assert 'gz' in DUCKABLE_CODECS"

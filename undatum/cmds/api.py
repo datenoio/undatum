@@ -16,9 +16,7 @@ from typing import Any, Optional
 import yaml
 from iterable.helpers.detect import detect_file_type
 from pydantic import BaseModel, Field, create_model
-from starlette.requests import Request
 
-from .. import __version__
 from ..common.errors import FileNotFoundError, PermissionError, find_similar_files
 from ..common.path_utils import (
     cloud_object_suffix,
@@ -38,6 +36,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_ALLOWED_OPS = ["eq", "ne", "lt", "gt", "le", "ge", "like"]
 DEFAULT_ORDER_DIRS = {"asc", "desc"}
 DEFAULT_PAGINATION = {"default_limit": 50, "max_limit": 1000}
+DEFAULT_QUERY_TIMEOUT = 30.0
 RESERVED_QUERY_PARAMS = {
     "limit",
     "offset",
@@ -64,7 +63,7 @@ class PaginationMeta(BaseModel):
     limit: int
     offset: int
     count: int
-    total: Optional[int] = None
+    total: int | None = None
 
 
 def require_api_dependencies() -> None:
@@ -205,9 +204,9 @@ def _create_row_model(resource_name: str, fields: list[dict[str, Any]]) -> type[
         if not name:
             continue
         py_type = _duckdb_type_to_python(str(field.get("type", "varchar")))
-        field_defs[name] = (Optional[py_type], Field(default=None, description=field.get("type")))
+        field_defs[name] = (Optional[py_type], Field(default=None, description=field.get("type")))  # noqa: UP045
     if not field_defs:
-        field_defs["value"] = (Optional[Any], Field(default=None))
+        field_defs["value"] = (Optional[Any], Field(default=None))  # noqa: UP045
     return create_model(_model_name(resource_name, "Row"), **field_defs)  # type: ignore[call-overload]
 
 
@@ -342,6 +341,13 @@ def validate_api_config_schema(config: Any) -> None:
     resources = config.get("resources")
     if not isinstance(resources, list) or not resources:
         raise ValueError("API config must define a non-empty 'resources' array.")
+    query_timeout = config.get("query_timeout")
+    if query_timeout is not None and (
+        isinstance(query_timeout, bool)
+        or not isinstance(query_timeout, (int, float))
+        or query_timeout < 0
+    ):
+        raise ValueError("query_timeout must be a non-negative number of seconds.")
     allowed_formats = {"csv", "json", "jsonl", "parquet"}
     for idx, resource in enumerate(resources, start=1):
         label = f"Resource {idx}"
@@ -472,294 +478,15 @@ def _build_api_app(
     *,
     api_key: str | None = None,
     cors_origins: list[str] | None = None,
+    query_timeout: float | None = None,
 ):
-    try:
-        from fastapi import FastAPI, HTTPException, Query
-        from fastapi.middleware.cors import CORSMiddleware
-        from starlette.middleware.base import BaseHTTPMiddleware
-        from starlette.responses import JSONResponse
-    except Exception as exc:
-        raise ImportError(
-            'Data API requires fastapi. Install with `pip install "undatum[api]"`.'
-        ) from exc
-    import duckdb
+    """Build the FastAPI app; imports the optional ``api`` extra only when called."""
+    require_api_dependencies()
+    from .api_app import build_api_app
 
-    temp_files: list[str] = []
-    _validate_resources_config(config, temp_files)
-
-    app = FastAPI(
-        title="undatum Data API",
-        description="Read-only HTTP API over file-backed datasets (CSV, JSON/JSONL, Parquet).",
-        version=__version__,
+    return build_api_app(
+        config, api_key=api_key, cors_origins=cors_origins, query_timeout=query_timeout
     )
-    app.state.temp_files = temp_files
-
-    if cors_origins:
-        app.add_middleware(
-            CORSMiddleware,
-            allow_origins=cors_origins,
-            allow_credentials=True,
-            allow_methods=["GET", "OPTIONS"],
-            allow_headers=["*"],
-        )
-
-    if api_key:
-        expected = api_key
-
-        class APIKeyMiddleware(BaseHTTPMiddleware):
-            async def dispatch(self, request: Request, call_next):
-                path = request.url.path
-                if path in {"/docs", "/redoc", "/openapi.json"} or path.startswith("/docs"):
-                    return await call_next(request)
-                provided = request.headers.get("x-api-key") or request.query_params.get("api_key")
-                if provided != expected:
-                    return JSONResponse({"detail": "Unauthorized"}, status_code=401)
-                return await call_next(request)
-
-        app.add_middleware(APIKeyMiddleware)
-    conn = duckdb.connect(database=":memory:")
-    resource_index: dict[str, dict[str, Any]] = {}
-    resource_summaries: list[dict[str, Any]] = []
-
-    resources = config.get("resources") or []
-    for idx, resource in enumerate(resources, start=1):
-        name = resource.get("name") or f"resource_{idx}"
-        path = resource.get("path")
-        fmt = resource.get("format")
-        if not path or not fmt:
-            raise ValueError(f"Resource {name} missing path or format.")
-
-        table_name = f"resource_{idx}"
-        safe_path = path.replace("'", "''")
-        if fmt == "csv":
-            read_expr = f"read_csv_auto('{safe_path}')"
-        elif fmt in {"json", "jsonl"}:
-            read_expr = f"read_json_auto('{safe_path}')"
-        elif fmt == "parquet":
-            read_expr = f"read_parquet('{safe_path}')"
-        else:
-            raise ValueError(f"Unsupported API format: {fmt}")
-        conn.execute(f'CREATE OR REPLACE VIEW "{table_name}" AS SELECT * FROM {read_expr}')
-
-        field_defs = resource.get("fields") or []
-        fields = [field.get("name") for field in field_defs if field.get("name")]
-        allowed_ops = resource.get("query", {}).get("allowed_ops") or DEFAULT_ALLOWED_OPS
-        allowed_order_by = resource.get("query", {}).get("allowed_order_by") or fields
-        pagination = resource.get("pagination") or DEFAULT_PAGINATION
-        primary_key = resource.get("primary_key")
-        meta = {
-            "name": name,
-            "table": table_name,
-            "fields": set(fields),
-            "allowed_ops": set(allowed_ops),
-            "allowed_order_by": set(allowed_order_by),
-            "pagination": pagination,
-            "primary_key": primary_key,
-            "row_model": _create_row_model(name, field_defs),
-            "list_model": None,
-        }
-        meta["list_model"] = _create_list_response_model(name, meta["row_model"])
-        resource_index[name] = meta
-        pk_field = _single_primary_key_field(primary_key)
-        resource_summaries.append(
-            {
-                "name": name,
-                "list": f"/{name}",
-                "detail": f"/{name}/{{pk}}" if pk_field else None,
-                "primary_key": pk_field,
-            }
-        )
-
-    def _parse_query(
-        resource_meta: dict[str, Any], params: dict[str, str]
-    ) -> tuple[str, list[Any]]:
-        clauses: list[str] = []
-        values: list[Any] = []
-        for key, value in params.items():
-            if key in RESERVED_QUERY_PARAMS:
-                continue
-            if "__" in key:
-                field, op = key.split("__", 1)
-            else:
-                field, op = key, "eq"
-            if field not in resource_meta["fields"]:
-                raise HTTPException(status_code=400, detail=f"Unknown field: {field}")
-            if op not in resource_meta["allowed_ops"]:
-                raise HTTPException(status_code=400, detail=f"Unsupported operator: {op}")
-            clauses.append(f'"{field}" {OPERATOR_MAP[op]} ?')
-            values.append(value)
-        return " AND ".join(clauses), values
-
-    def _apply_order(
-        sql: str, order_by: str | None, order_dir: str, resource_meta: dict[str, Any]
-    ) -> str:
-        if not order_by:
-            return sql
-        order_fields = [part.strip() for part in order_by.split(",") if part.strip()]
-        if not order_fields:
-            return sql
-        for field in order_fields:
-            if field not in resource_meta["allowed_order_by"]:
-                raise HTTPException(status_code=400, detail=f"Order by not allowed: {field}")
-        dir_lower = order_dir.lower()
-        if dir_lower not in DEFAULT_ORDER_DIRS:
-            raise HTTPException(status_code=400, detail=f"Invalid order_dir: {order_dir}")
-        order_clause = ", ".join(f'"{field}" {dir_lower.upper()}' for field in order_fields)
-        return f"{sql} ORDER BY {order_clause}"
-
-    def _count_rows(resource_meta: dict[str, Any], params: dict[str, str]) -> int:
-        where_clause, values = _parse_query(resource_meta, params)
-        sql = f'SELECT COUNT(*) FROM "{resource_meta["table"]}"'
-        if where_clause:
-            sql = f"{sql} WHERE {where_clause}"
-        result = conn.execute(sql, values).fetchone()
-        return int(result[0]) if result else 0
-
-    def _handle_list(resource_meta: dict[str, Any], params: dict[str, str]) -> dict[str, Any]:
-        params = _apply_sort_alias(params)
-        pagination = resource_meta["pagination"]
-        default_limit = int(pagination.get("default_limit", DEFAULT_PAGINATION["default_limit"]))
-        max_limit = int(pagination.get("max_limit", DEFAULT_PAGINATION["max_limit"]))
-
-        try:
-            limit = int(params.get("limit", default_limit))
-            offset = int(params.get("offset", 0))
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail="limit/offset must be integers") from exc
-
-        include_total = params.get("include_total", "").lower() in {"1", "true", "yes"}
-
-        if limit > max_limit:
-            limit = max_limit
-        if limit < 0 or offset < 0:
-            raise HTTPException(status_code=400, detail="limit/offset must be >= 0")
-
-        sql = f'SELECT * FROM "{resource_meta["table"]}"'
-        where_clause, values = _parse_query(resource_meta, params)
-        if where_clause:
-            sql = f"{sql} WHERE {where_clause}"
-        sql = _apply_order(
-            sql, params.get("order_by"), params.get("order_dir", "asc"), resource_meta
-        )
-        sql = f"{sql} LIMIT ? OFFSET ?"
-        values.extend([limit, offset])
-
-        cursor = conn.execute(sql, values)
-        columns = [col[0] for col in cursor.description]
-        rows = [_json_safe_row(dict(zip(columns, row))) for row in cursor.fetchall()]
-
-        pagination_meta: dict[str, Any] = {
-            "limit": limit,
-            "offset": offset,
-            "count": len(rows),
-        }
-        if include_total:
-            pagination_meta["total"] = _count_rows(resource_meta, params)
-
-        return {"data": rows, "pagination": pagination_meta}
-
-    def _handle_detail(resource_meta: dict[str, Any], pk_value: str) -> dict[str, Any]:
-        field = _single_primary_key_field(resource_meta["primary_key"])
-        if not field:
-            raise HTTPException(status_code=404, detail="Primary key endpoint not available")
-        if field not in resource_meta["fields"]:
-            raise HTTPException(status_code=404, detail="Primary key field not available")
-
-        sql = f'SELECT * FROM "{resource_meta["table"]}" WHERE "{field}" = ? LIMIT 1'
-        cursor = conn.execute(sql, [pk_value])
-        row = cursor.fetchone()
-        if not row:
-            raise HTTPException(status_code=404, detail="Not found")
-        columns = [col[0] for col in cursor.description]
-        return _json_safe_row(dict(zip(columns, row)))
-
-    @app.get("/", tags=["meta"], summary="API discovery")
-    def api_root() -> dict[str, Any]:
-        return {
-            "name": "undatum Data API",
-            "version": __version__,
-            "docs": "/docs",
-            "openapi": "/openapi.json",
-            "resources": resource_summaries,
-        }
-
-    for resource_name, meta in resource_index.items():
-        route_path = f"/{resource_name}"
-        row_model = meta["row_model"]
-        list_model = meta["list_model"]
-        field_list = sorted(meta["fields"])
-        op_list = sorted(meta["allowed_ops"])
-        pagination = meta["pagination"]
-        default_limit = int(pagination.get("default_limit", DEFAULT_PAGINATION["default_limit"]))
-        max_limit = int(pagination.get("max_limit", DEFAULT_PAGINATION["max_limit"]))
-        openapi_extra = _build_filter_openapi_extra(field_list, op_list)
-
-        def _make_list_handler(resource_meta: dict[str, Any]):
-            async def list_handler(
-                request: Request,
-                limit: int | None = Query(
-                    default=None,
-                    ge=0,
-                    le=max_limit,
-                    description=f"Page size (default {default_limit}, max {max_limit}).",
-                ),
-                offset: int = Query(default=0, ge=0, description="Number of rows to skip."),
-                order_by: str | None = Query(
-                    default=None, description="Comma-separated fields to sort by."
-                ),
-                order_dir: str = Query(default="asc", description="Sort direction: asc or desc."),
-                sort: str | None = Query(
-                    default=None,
-                    description="Sort alias: field name, or prefix with - for descending.",
-                ),
-                include_total: bool = Query(
-                    default=False,
-                    description="Include total matching row count (may be slower).",
-                ),
-            ):
-                params = {
-                    key: value
-                    for key, value in request.query_params.items()
-                    if key not in RESERVED_QUERY_PARAMS
-                }
-                params["limit"] = str(limit if limit is not None else default_limit)
-                params["offset"] = str(offset)
-                if order_by is not None:
-                    params["order_by"] = order_by
-                params["order_dir"] = order_dir
-                if sort is not None:
-                    params["sort"] = sort
-                params["include_total"] = "true" if include_total else "false"
-                return _handle_list(resource_meta, params)
-
-            return list_handler
-
-        app.get(
-            route_path,
-            response_model=list_model,
-            tags=[resource_name],
-            summary=f"List {resource_name} records",
-            openapi_extra=openapi_extra,
-        )(_make_list_handler(meta))
-
-        pk_field = _single_primary_key_field(meta.get("primary_key"))
-        if pk_field:
-
-            def _make_detail_handler(resource_meta: dict[str, Any]):
-                async def detail_handler(pk: str):
-                    return _handle_detail(resource_meta, pk)
-
-                return detail_handler
-
-            app.get(
-                f"{route_path}/{{pk}}",
-                response_model=row_model,
-                tags=[resource_name],
-                summary=f"Get a single {resource_name} record by primary key",
-            )(_make_detail_handler(meta))
-
-    app.state.resource_summaries = resource_summaries
-    return app
 
 
 def _print_startup_banner(host: str, port: int, resource_summaries: list[dict[str, Any]]) -> None:
@@ -790,6 +517,19 @@ class DataApi:
     def discover(
         self, input_files: list[str], options: dict[str, Any] | None = None
     ) -> dict[str, Any]:
+        """Build a Data API configuration with one resource per input file.
+
+        Args:
+            input_files: Data files to expose.
+            options: CLI options (``output``, ``emit``, ``format_in``, ``config_format``...).
+
+        Returns:
+            The configuration; it is also written to ``output`` and/or printed when
+            ``emit`` is true.
+
+        Raises:
+            ValueError: If no input files are given.
+        """
         if options is None:
             options = {}
         if not input_files:
@@ -886,6 +626,16 @@ class DataApi:
         options: dict[str, Any] | None = None,
         config: dict[str, Any] | None = None,
     ) -> None:
+        """Serve the Data API with uvicorn until interrupted.
+
+        Args:
+            config_path: YAML/JSON configuration file (ignored when ``config`` is given).
+            options: ``host``, ``port``, ``api_key``, ``cors_origins``, ``query_timeout``.
+            config: Configuration built in memory, e.g. by :meth:`discover`.
+
+        Raises:
+            ValueError: If neither ``config_path`` nor ``config`` is given.
+        """
         if options is None:
             options = {}
         require_api_dependencies()
@@ -901,13 +651,20 @@ class DataApi:
         api_key = get_option(options, "api_key") or os.environ.get("UNDATUM_API_KEY")
         cors_raw = get_option(options, "cors_origins")
         cors_origins = _split_csv(cors_raw) if cors_raw else []
+        query_timeout = get_option(options, "query_timeout")
 
-        app = _build_api_app(config, api_key=api_key, cors_origins=cors_origins or None)
+        app = _build_api_app(
+            config,
+            api_key=api_key,
+            cors_origins=cors_origins or None,
+            query_timeout=float(query_timeout) if query_timeout is not None else None,
+        )
         resource_summaries = getattr(app.state, "resource_summaries", [])
         _print_startup_banner(host, port, resource_summaries)
         uvicorn.run(app, host=host, port=port, log_level="info", access_log=True)
 
     def run(self, input_files: list[str], options: dict[str, Any] | None = None) -> None:
+        """Discover a configuration for ``input_files`` and serve it immediately."""
         if options is None:
             options = {}
         options = dict(options)
@@ -918,6 +675,15 @@ class DataApi:
     def export_openapi(
         self, config_path: str, options: dict[str, Any] | None = None
     ) -> dict[str, Any]:
+        """Return the OpenAPI schema of a configuration, optionally writing it to a file.
+
+        Args:
+            config_path: Data API configuration file.
+            options: ``output`` path and ``format`` (``json`` or ``yaml``).
+
+        Returns:
+            The OpenAPI schema as a dict.
+        """
         if options is None:
             options = {}
         require_api_dependencies()

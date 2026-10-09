@@ -1,20 +1,6 @@
 """Tests for analyze command with semicolon-delimited CSV."""
 
-import pytest
-
 from undatum.cmds.analyzer import Analyzer, analyze
-
-
-@pytest.fixture
-def semicolon_csv(tmp_path):
-    path = tmp_path / "orgs.csv"
-    path.write_text(
-        'id;name;city\n'
-        '1;"Acme, Inc";"New York"\n'
-        '2;"Beta LLC";London\n',
-        encoding="utf8",
-    )
-    return str(path)
 
 
 class TestAnalyzeSemicolonCsv:

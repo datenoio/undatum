@@ -1,10 +1,12 @@
 """Examples command for managing and executing recipe libraries."""
 
 import logging
+import re
+import shlex
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import yaml
 from rich.console import Console
@@ -14,10 +16,50 @@ logger = logging.getLogger(__name__)
 console = Console()
 
 
+_CONDITIONAL = re.compile(r"\$\{(\w+):\+((?:[^{}]|\$\{\w+\})*)\}")
+_PLACEHOLDER = re.compile(r"\$\{(\w+)\}|\$(\w+)")
+
+
+def build_recipe_argv(template: str, variables: dict[str, str]) -> list[str]:
+    """Turn a recipe command template into an argument list without using a shell.
+
+    The template is split into arguments *before* variables are substituted, so a
+    value such as ``data.csv; rm -rf ~`` stays one literal argument. ``${var}`` and
+    ``$var`` are replaced inside arguments, and ``${var:+text}`` keeps ``text`` only
+    when ``var`` is set and non-empty (as in POSIX shells).
+
+    Args:
+        template: Command line from a recipe, e.g. ``undatum convert ${input} ${output}``.
+        variables: Variable values.
+
+    Returns:
+        Argument list; a leading ``undatum`` runs the current interpreter's undatum.
+    """
+
+    def conditional(match: re.Match) -> str:
+        return match.group(2) if variables.get(match.group(1)) else ""
+
+    expanded = _CONDITIONAL.sub(conditional, template)
+
+    def substitute(match: re.Match) -> str:
+        name = match.group(1) or match.group(2)
+        return str(variables.get(name, match.group(0)))
+
+    argv = [_PLACEHOLDER.sub(substitute, token) for token in shlex.split(expanded)]
+    if argv and argv[0] == "undatum":
+        argv = [sys.executable, "-m", "undatum", *argv[1:]]
+    return argv
+
+
+def _display_argv(argv: list[str]) -> str:
+    shown = ["undatum", *argv[3:]] if argv[:3] == [sys.executable, "-m", "undatum"] else argv
+    return shlex.join(shown)
+
+
 class RecipeManager:
     """Manage and execute recipe libraries."""
 
-    def __init__(self, recipes_dir: Optional[str] = None):
+    def __init__(self, recipes_dir: str | None = None):
         """Initialize recipe manager.
 
         Args:
@@ -33,7 +75,7 @@ class RecipeManager:
             self.recipes_dir.mkdir(parents=True, exist_ok=True)
 
     def list_recipes(
-        self, category: Optional[str] = None, tag: Optional[str] = None
+        self, category: str | None = None, tag: str | None = None
     ) -> list[dict[str, Any]]:
         """List available recipes.
 
@@ -66,7 +108,7 @@ class RecipeManager:
         recipes.sort(key=lambda x: x.get("name", ""))
         return recipes
 
-    def get_recipe(self, name: str) -> Optional[dict[str, Any]]:
+    def get_recipe(self, name: str) -> dict[str, Any] | None:
         """Get a specific recipe by name.
 
         Args:
@@ -81,7 +123,7 @@ class RecipeManager:
 
         return self._load_recipe(recipe_file)
 
-    def _load_recipe(self, recipe_file: Path) -> Optional[dict[str, Any]]:
+    def _load_recipe(self, recipe_file: Path) -> dict[str, Any] | None:
         """Load a recipe from file.
 
         Args:
@@ -195,7 +237,7 @@ class RecipeManager:
     def run_recipe(
         self,
         name: str,
-        variables: Optional[dict[str, str]] = None,
+        variables: dict[str, str] | None = None,
         dry_run: bool = False,
         interactive: bool = False,
     ):
@@ -281,7 +323,7 @@ class RecipeManager:
                 cmd_desc = ""
 
             # Substitute variables
-            substituted_cmd = self._substitute_variables(cmd_text, variables)
+            substituted_cmd = _display_argv(build_recipe_argv(cmd_text, variables))
 
             if cmd_desc:
                 console.print(f"\n[bold]{i}. {cmd_desc}[/bold]")
@@ -309,17 +351,14 @@ class RecipeManager:
             else:
                 cmd_text = cmd
 
-            # Substitute variables
-            substituted_cmd = self._substitute_variables(cmd_text, variables)
+            # Build the argument list; no shell ever sees the substituted values.
+            argv = build_recipe_argv(cmd_text, variables)
 
             console.print(f"\n[bold]Executing command {i}/{len(commands)}:[/bold]")
-            console.print(f"[dim]{substituted_cmd}[/dim]")
+            console.print(f"[dim]{_display_argv(argv)}[/dim]")
 
             try:
-                # Execute command
-                result = subprocess.run(
-                    substituted_cmd, shell=True, check=False, capture_output=False
-                )
+                result = subprocess.run(argv, shell=False, check=False, capture_output=False)
 
                 if result.returncode != 0:
                     console.print(f"[red]Command failed with exit code {result.returncode}[/red]")

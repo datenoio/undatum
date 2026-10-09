@@ -4,17 +4,19 @@ import logging
 
 import duckdb
 from iterable.helpers.detect import detect_file_type
-from tqdm import tqdm
 
 from ...common.command_utils import (
     duckdb_read_csv_expr,
     get_iterable_options,
     resolve_csv_delimiter,
 )
+from ...common.progress import progress
 from ...common.s3_iterable import open_iterable_with_s3
 from ...common.schema_utils import duckdb_decompose
 from ...constants import DEFAULT_DICT_SHARE
-from ...utils import dict_generator, get_option, guess_datatype
+from ...utils import dict_generator, get_option
+
+logger = logging.getLogger(__name__)
 
 
 class DuckDBStatsMixin:
@@ -26,6 +28,7 @@ class DuckDBStatsMixin:
         Args:
             fromfile: Path to input file
             filetype: File type ('csv', 'jsonl', 'json', etc.)
+            delimiter: CSV delimiter (auto-detected when omitted)
 
         Returns:
             tuple: (fielddata, fieldtypes, total_count) dictionaries matching iterable format
@@ -52,7 +55,7 @@ class DuckDBStatsMixin:
 
         # Log if columns_raw is empty to help debug
         if not columns_raw:
-            logging.debug("duckdb_decompose returned empty result - no columns found")
+            logger.debug("duckdb_decompose returned empty result - no columns found")
 
         # Process results from duckdb_decompose
         # Format: [field_path, base_type, is_array, unique_count, total_count, uniqueness_percentage]
@@ -80,8 +83,7 @@ class DuckDBStatsMixin:
                 uniqueness_percentage = 0.0
 
             # Track maximum total count (should be same for all fields, but use max)
-            if count > total_count:
-                total_count = count
+            total_count = max(total_count, count)
 
             # Skip fields with empty names, None values, or invalid paths
             if not field_path or not isinstance(field_path, str) or field_path == "None":
@@ -134,6 +136,7 @@ class DuckDBStatsMixin:
         Args:
             fromfile: Path to input file
             filetype: File type ('csv', 'jsonl', 'json', etc.)
+            delimiter: CSV delimiter (auto-detected when omitted)
             field_paths: List of field paths to compute length statistics for
 
         Returns:
@@ -160,7 +163,7 @@ class DuckDBStatsMixin:
                 or field_path.startswith(".")
                 or (field_path and field_path[0].isdigit())
             ):
-                logging.debug(f"Skipping invalid field path: {field_path}")
+                logger.debug(f"Skipping invalid field path: {field_path}")
                 continue
             try:
                 # Handle nested field paths - quote properly for SQL
@@ -171,7 +174,7 @@ class DuckDBStatsMixin:
                 if any(
                     not part or part == "None" or not isinstance(part, str) for part in field_parts
                 ):
-                    logging.debug(f"Skipping field path with invalid parts: {field_path}")
+                    logger.debug(f"Skipping field path with invalid parts: {field_path}")
                     continue
 
                 if len(field_parts) == 1:
@@ -217,7 +220,7 @@ class DuckDBStatsMixin:
                     }
             except Exception as e:
                 # If query fails for this field, log and continue with defaults
-                logging.debug(f"Failed to compute length stats for field {field_path}: {e}")
+                logger.debug(f"Failed to compute length stats for field {field_path}: {e}")
                 length_stats[field_path] = {
                     "minlen": None,
                     "maxlen": 0,
@@ -251,12 +254,15 @@ class DuckDBStatsMixin:
             return None
         return ".".join(f'"{part}"' for part in field_parts)
 
-    def _compute_duckdb_missing_values(self, fromfile, filetype, field_paths, total_count, delimiter=None):
+    def _compute_duckdb_missing_values(
+        self, fromfile, filetype, field_paths, total_count, delimiter=None
+    ):
         """Compute missing value counts and cardinality for each field using DuckDB.
 
         Args:
             fromfile: Path to input file
             filetype: File type ('csv', 'jsonl', 'json', etc.)
+            delimiter: CSV delimiter (auto-detected when omitted)
             field_paths: List of field paths to compute statistics for
             total_count: Total number of records in the dataset
 
@@ -270,7 +276,7 @@ class DuckDBStatsMixin:
         for field_path in field_paths:
             quoted_field = self._quote_field_path(field_path)
             if quoted_field is None:
-                logging.debug(f"Skipping invalid field path: {field_path}")
+                logger.debug(f"Skipping invalid field path: {field_path}")
                 continue
             try:
                 query = f"""
@@ -294,16 +300,19 @@ class DuckDBStatsMixin:
                         ),
                     }
             except Exception as e:
-                logging.debug(f"Failed to compute missing values for field {field_path}: {e}")
+                logger.debug(f"Failed to compute missing values for field {field_path}: {e}")
 
         return missing_stats
 
-    def _compute_duckdb_distributions(self, fromfile, filetype, field_paths, finfields, delimiter=None):
+    def _compute_duckdb_distributions(
+        self, fromfile, filetype, field_paths, finfields, delimiter=None
+    ):
         """Compute distribution statistics (mean, median, min, max, stddev) for numerical fields.
 
         Args:
             fromfile: Path to input file
             filetype: File type ('csv', 'jsonl', 'json', etc.)
+            delimiter: CSV delimiter (auto-detected when omitted)
             field_paths: List of field paths
             finfields: Dictionary mapping field paths to final types
 
@@ -342,7 +351,7 @@ class DuckDBStatsMixin:
                         "stddev": float(stddev_val) if stddev_val is not None else None,
                     }
             except Exception as e:
-                logging.debug(f"Failed to compute distribution stats for field {field_path}: {e}")
+                logger.debug(f"Failed to compute distribution stats for field {field_path}: {e}")
 
         return distribution_stats
 
@@ -408,7 +417,7 @@ class DuckDBStatsMixin:
             # Wrap with progress bar if requested
             iterable_wrapped = iterable
             if show_progress:
-                iterable_wrapped = tqdm(
+                iterable_wrapped = progress(
                     iterable,
                     total=sample_limit,
                     desc="Sampling for type detection",
@@ -441,8 +450,8 @@ class DuckDBStatsMixin:
                         if k not in field_paths:
                             continue
 
-                        # Detect type using guess_datatype (same as iterable engine)
-                        thetype = guess_datatype(v, self.qd)["base"]
+                        # Detect type (same as the iterable engine)
+                        thetype = self.types.base(k, v)
 
                         # Update type distribution
                         if k not in type_distributions:
@@ -450,24 +459,27 @@ class DuckDBStatsMixin:
                         type_distributions[k][thetype] = type_distributions[k].get(thetype, 0) + 1
                 except Exception as e:
                     # If processing this record fails, skip it
-                    logging.debug(f"Failed to process sample record for type detection: {e}")
+                    logger.debug(f"Failed to process sample record for type detection: {e}")
                     continue
 
         except Exception as e:
             # If sampling fails, log warning and continue with empty distributions
-            logging.warning(f"Failed to sample records for type detection: {e}")
+            logger.warning(f"Failed to sample records for type detection: {e}")
         finally:
             iterable.close()
             iterable_context.__exit__(None, None, None)
 
         return type_distributions
 
-    def _compute_duckdb_dictionaries(self, fromfile, filetype, fielddata, finfields, dictshare, delimiter=None):
+    def _compute_duckdb_dictionaries(
+        self, fromfile, filetype, fielddata, finfields, dictshare, delimiter=None
+    ):
         """Compute value frequency dictionaries for low-cardinality fields using DuckDB GROUP BY.
 
         Args:
             fromfile: Path to input file
             filetype: File type ('csv', 'jsonl', 'json', etc.)
+            delimiter: CSV delimiter (auto-detected when omitted)
             fielddata: Dictionary of field statistics (used to identify low-cardinality fields)
             finfields: Dictionary mapping field paths to final types
             dictshare: Threshold percentage for dictionary construction (fields below this get dictionaries)
@@ -498,7 +510,7 @@ class DuckDBStatsMixin:
                 or field_path.startswith(".")
                 or (field_path and field_path[0].isdigit())
             ):
-                logging.debug(f"Skipping invalid field path for dictionary: {field_path}")
+                logger.debug(f"Skipping invalid field path for dictionary: {field_path}")
                 # Create empty dictionary entry
                 field_type = finfields.get(field_path, "str")
                 dictionaries[field_path] = {"items": {}, "count": 0, "type": field_type}
@@ -511,9 +523,7 @@ class DuckDBStatsMixin:
                 if any(
                     not part or part == "None" or not isinstance(part, str) for part in field_parts
                 ):
-                    logging.debug(
-                        f"Skipping dictionary field path with invalid parts: {field_path}"
-                    )
+                    logger.debug(f"Skipping dictionary field path with invalid parts: {field_path}")
                     # Create empty dictionary entry
                     field_type = finfields.get(field_path, "str")
                     dictionaries[field_path] = {"items": {}, "count": 0, "type": field_type}
@@ -561,7 +571,7 @@ class DuckDBStatsMixin:
 
             except Exception as e:
                 # If dictionary construction fails for this field, log and skip
-                logging.debug(f"Failed to build dictionary for field {field_path}: {e}")
+                logger.debug(f"Failed to build dictionary for field {field_path}: {e}")
                 # Create empty dictionary entry
                 field_type = finfields.get(field_path, "str")
                 dictionaries[field_path] = {"items": {}, "count": 0, "type": field_type}
@@ -578,7 +588,6 @@ class DuckDBStatsMixin:
             fromfile: Path to input file
             options: Dictionary of options (same as stats method)
         """
-
         # Get progress control option (default: show progress)
         show_progress = get_option(options, "progress") is not False
         if "no_progress" in options and options["no_progress"]:
@@ -620,16 +629,16 @@ class DuckDBStatsMixin:
                     )
                 else:
                     query_str = f"SELECT COUNT(*) FROM '{fromfile}'"
-                with tqdm(desc="Counting rows", unit="rows", leave=False, total=None) as pbar:
+                with progress(desc="Counting rows", unit="rows", leave=False, total=None) as pbar:
                     total_count = duckdb.sql(query_str).fetchone()[0]
                     pbar.total = total_count
                     pbar.update(total_count)
             except Exception as e:
-                logging.debug(f"Failed to count rows for progress: {e}")
+                logger.debug(f"Failed to count rows for progress: {e}")
 
         # Phase 1: Get basic statistics using duckdb_decompose
         if show_progress and total_count > 0:
-            with tqdm(
+            with progress(
                 desc="Computing statistics",
                 unit="rows",
                 total=total_count,
@@ -654,7 +663,7 @@ class DuckDBStatsMixin:
 
         # Check if we got any fields - if empty, fall back to iterable
         if not fielddata:
-            logging.warning(
+            logger.warning(
                 "DuckDB stats returned no fields from duckdb_decompose, falling back to iterable engine"
             )
             raise ValueError("No fields extracted - DuckDB returned empty result")

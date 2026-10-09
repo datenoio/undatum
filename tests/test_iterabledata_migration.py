@@ -231,8 +231,7 @@ class TestResourceManagement:
             elif isinstance(cmd, TextProcessor):
                 cmd.flatten(sample_jsonl_file, options)
 
-        # If we get here without resource errors, cleanup worked
-        assert True
+        # The commands above raise on resource errors; reaching this point means cleanup worked.
 
 
 class TestWriteBulk:

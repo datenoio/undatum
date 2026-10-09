@@ -195,7 +195,7 @@ class TuiServices:
         headers = ["Field", "Type", "Category", "Missing", "Cardinality", "Distribution"]
         rows = [list(row[:6]) for row in _profile_table_rows(profile)]
         count = profile.get("count", "")
-        cli = f"undatum profile {session.source}"
+        cli = f"undatum stats {session.source}"
         session.last_cli = cli
         return headers, rows, f"{cli}  (rows={count})"
 
@@ -299,7 +299,7 @@ class TuiServices:
                 for item in rule_set.validate_record(record, index):
                     violations.append(
                         [
-                            str(item.get("record_index", index)),
+                            str(item.get("row", index)),
                             str(item.get("field") or ""),
                             str(item.get("severity") or ""),
                             str(item.get("message") or ""),

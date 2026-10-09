@@ -1,7 +1,7 @@
 """CLI commands for plugin management."""
 
 import sys
-from typing import Annotated, Optional
+from typing import Annotated
 
 import typer
 from rich.table import Table
@@ -118,7 +118,7 @@ def info(
 @plugins_app.command()
 def validate(
     name: Annotated[
-        Optional[str],
+        str | None,
         typer.Argument(help="Plugin name to validate. Omit to validate all loaded plugins."),
     ] = None,
     verbose: Annotated[bool, typer.Option(help="Enable verbose logging output.")] = False,

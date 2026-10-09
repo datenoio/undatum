@@ -148,7 +148,7 @@ class TestValidateRulesChunk:
         violations, seen = validate_rules_chunk((chunk, 10, str(rules), None))
         assert seen == 3
         assert len(violations) == 1
-        assert violations[0]["record_index"] == 11
+        assert violations[0]["row"] == 11
 
     def test_filter_skips_validation(self, tmp_path):
         rules = tmp_path / "rules.json"

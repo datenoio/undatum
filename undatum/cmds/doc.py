@@ -7,16 +7,16 @@ import logging
 import os
 import re
 import sys
-from typing import Any, Optional
+from typing import Any
 
 import yaml
 from iterable.helpers.detect import detect_file_type
-from tabulate import tabulate
 
 from ..ai import get_ai_service, get_structured_metadata
 from ..common.command_utils import get_iterable_options, iter_command_rows
 from ..common.s3_iterable import open_path as open_iterable
 from ..common.schema_utils import duckdb_decompose
+from ..common.tables import format_table
 from ..constants import DUCKABLE_CODECS, DUCKABLE_FILE_TYPES, EU_DATA_THEMES
 from ..utils import get_option, normalize_for_json
 from .analyzer import OBJECTS_ANALYZE_LIMIT, analyze
@@ -79,9 +79,7 @@ def _extract_geographic_coverage(samples: list[Any], field_names: list[str]) -> 
     return extract_geographic_coverage(samples, field_names)
 
 
-def _extract_temporal_coverage(
-    samples: list[Any], field_names: list[str]
-) -> Optional[dict[str, Any]]:
+def _extract_temporal_coverage(samples: list[Any], field_names: list[str]) -> dict[str, Any] | None:
     from iterable.ai.metadata import extract_temporal_coverage
 
     return extract_temporal_coverage(samples, field_names)
@@ -93,7 +91,7 @@ def _detect_languages(samples: list[Any], field_names: list[str]) -> list[dict[s
     return detect_languages(samples, field_names)
 
 
-def _guess_data_theme(field_names: list[str], keywords: list[str]) -> Optional[dict[str, str]]:
+def _guess_data_theme(field_names: list[str], keywords: list[str]) -> dict[str, str] | None:
     from iterable.ai.metadata import classify_data_theme
 
     return classify_data_theme(field_names, keywords)
@@ -153,7 +151,7 @@ def _parse_metacrafter_matches(entry: dict[str, Any]) -> list[dict[str, Any]]:
     return _parse(entry)
 
 
-def _run_metacrafter_scan(filename: str) -> Optional[list[dict[str, Any]]]:
+def _run_metacrafter_scan(filename: str) -> list[dict[str, Any]] | None:
     from iterable.ai.semantic import _run_metacrafter_scan as _scan
 
     return _scan(filename)
@@ -209,7 +207,7 @@ def _mask_samples(
 
 def _build_stats(
     fromfile: str, filetype: str, compression: str, options: dict[str, Any]
-) -> Optional[dict[str, Any]]:
+) -> dict[str, Any] | None:
     """Build statistics summary using DuckDB when available."""
     if options.get("flatten_nested"):
         return None
@@ -270,15 +268,15 @@ def _build_samples(fromfile: str, options: dict[str, Any]) -> list[Any]:
         finally:
             iterable.close()
     except Exception as exc:
-        logging.warning("doc: failed to sample records: %s", exc)
+        logger.warning("doc: failed to sample records: %s", exc)
     return samples
 
 
 def _build_doc_report(
     report,
-    stats: Optional[dict[str, Any]],
+    stats: dict[str, Any] | None,
     samples: list[Any],
-    pii_fields: Optional[list[dict[str, Any]]] = None,
+    pii_fields: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Assemble a documentation report from analysis results."""
     metadata = {
@@ -387,7 +385,7 @@ def _render_markdown(doc: dict[str, Any]) -> str:
 
     lines.append("## Summary")
     summary_rows = [[key, value] for key, value in doc["summary"].items()]
-    lines.append(tabulate(summary_rows, headers=["Metric", "Value"], tablefmt="github"))
+    lines.append(format_table(summary_rows, ["Metric", "Value"], "github"))
     lines.append("")
 
     lines.append("## Schema")
@@ -426,7 +424,7 @@ def _render_markdown(doc: dict[str, Any]) -> str:
             field_rows.append(row)
         if field_rows:
             lines.append("")
-            lines.append(tabulate(field_rows, headers=headers, tablefmt="github"))
+            lines.append(format_table(field_rows, headers, "github"))
         lines.append("")
 
     if doc.get("statistics"):
@@ -443,9 +441,7 @@ def _render_markdown(doc: dict[str, Any]) -> str:
             )
         if stat_rows:
             lines.append(
-                tabulate(
-                    stat_rows, headers=["Field", "Unique", "Total", "Unique %"], tablefmt="github"
-                )
+                format_table(stat_rows, ["Field", "Unique", "Total", "Unique %"], "github")
             )
         else:
             lines.append("No statistics available.")
@@ -463,9 +459,7 @@ def _render_markdown(doc: dict[str, Any]) -> str:
                 ]
             )
         if pii_rows:
-            lines.append(
-                tabulate(pii_rows, headers=["Field", "Type", "Confidence"], tablefmt="github")
-            )
+            lines.append(format_table(pii_rows, ["Field", "Type", "Confidence"], "github"))
         else:
             lines.append("No PII fields detected.")
         lines.append("")
@@ -490,13 +484,13 @@ def _render_text(doc: dict[str, Any]) -> str:
     lines.append("Metadata")
     lines.append("-" * 70)
     meta_rows = [[key, value] for key, value in doc["metadata"].items()]
-    lines.append(tabulate(meta_rows, headers=["Attribute", "Value"], tablefmt="grid"))
+    lines.append(format_table(meta_rows, ["Attribute", "Value"], "grid"))
     lines.append("")
 
     lines.append("Summary")
     lines.append("-" * 70)
     summary_rows = [[key, value] for key, value in doc["summary"].items()]
-    lines.append(tabulate(summary_rows, headers=["Metric", "Value"], tablefmt="grid"))
+    lines.append(format_table(summary_rows, ["Metric", "Value"], "grid"))
     lines.append("")
 
     lines.append("Schema")
@@ -534,7 +528,7 @@ def _render_text(doc: dict[str, Any]) -> str:
                 row.append("Yes" if field.get("pii") else "No")
             field_rows.append(row)
         if field_rows:
-            lines.append(tabulate(field_rows, headers=headers, tablefmt="grid"))
+            lines.append(format_table(field_rows, headers, "grid"))
         lines.append("")
 
     if doc.get("statistics"):
@@ -551,11 +545,7 @@ def _render_text(doc: dict[str, Any]) -> str:
                 ]
             )
         if stat_rows:
-            lines.append(
-                tabulate(
-                    stat_rows, headers=["Field", "Unique", "Total", "Unique %"], tablefmt="grid"
-                )
-            )
+            lines.append(format_table(stat_rows, ["Field", "Unique", "Total", "Unique %"], "grid"))
         else:
             lines.append("No statistics available.")
         lines.append("")
@@ -573,9 +563,7 @@ def _render_text(doc: dict[str, Any]) -> str:
                 ]
             )
         if pii_rows:
-            lines.append(
-                tabulate(pii_rows, headers=["Field", "Type", "Confidence"], tablefmt="grid")
-            )
+            lines.append(format_table(pii_rows, ["Field", "Type", "Confidence"], "grid"))
         else:
             lines.append("No PII fields detected.")
         lines.append("")
@@ -610,7 +598,7 @@ class Documenter:
     def __init__(self):
         pass
 
-    def document(self, fromfile: str, options: Optional[dict[str, Any]] = None) -> None:
+    def document(self, fromfile: str, options: dict[str, Any] | None = None) -> None:
         """Generate dataset documentation in multiple formats."""
         if options is None:
             options = {}
@@ -718,7 +706,7 @@ class Documenter:
                 else:
                     logger.debug("doc: AI metadata skipped (no sample CSV)")
             except Exception as exc:
-                logging.warning("doc: failed to generate AI metadata: %s", exc)
+                logger.warning("doc: failed to generate AI metadata: %s", exc)
 
         pii_fields = []
         if options.get("semantic_types") or options.get("pii_detect"):
@@ -730,7 +718,7 @@ class Documenter:
                     "doc: metacrafter entries=%s pii_fields=%s", len(entries), len(pii_fields)
                 )
             else:
-                logging.warning("doc: metacrafter not available or returned no results")
+                logger.warning("doc: metacrafter not available or returned no results")
                 for table in report.tables or []:
                     for field in table.fields or []:
                         field.semantic_types = []

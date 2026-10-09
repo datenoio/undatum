@@ -1,7 +1,6 @@
 """Join command module - relational joins between two files."""
 
 import logging
-import sys
 
 from ..common.command_utils import (
     ITERABLE_OPTIONS_KEYS,  # noqa: F401
@@ -13,16 +12,17 @@ from ..common.duckdb_config import create_duckdb_connection, get_duckdb_config_f
 from ..common.engine_selector import detect_engine
 from ..common.errors import (
     FileNotFoundError,
-    FormatError,
     PermissionError,
     ValidationError,
     find_similar_files,
 )
-from ..common.iterable import DataWriter
 from ..common.path_utils import validate_file_path
 from ..common.progress import wrap_iterable
 from ..common.s3_iterable import open_path as open_iterable
-from ..utils import field_values, get_file_type, get_option, normalize_for_json
+from ..ops import write_query, write_rows
+from ..utils import field_values, get_file_type, get_option
+
+logger = logging.getLogger(__name__)
 
 
 def _get_key_value(item, key_fields):
@@ -41,6 +41,23 @@ def _get_key_value(item, key_fields):
             return values[0]
         return tuple(values)
     return None
+
+
+def _join_fieldnames(file1, file2, key_fields, options):
+    """CSV header of a join: left fields, new right fields, ``<field>_2`` for overlaps."""
+    from ..io import open_source, side_options
+
+    def first_fields(path, side):
+        row = next(iter(open_source(path, side_options(options, side))), None)
+        return list(row) if isinstance(row, dict) else []
+
+    left, right = first_fields(file1, 1), first_fields(file2, 2)
+    keys = set(key_fields or [])
+    return (
+        left
+        + [f for f in right if f not in left]
+        + [f"{f}_2" for f in right if f in left and f not in keys]
+    )
 
 
 class Joiner:
@@ -71,7 +88,7 @@ class Joiner:
         except PermissionError as e:
             raise PermissionError(file2, operation="read") from e
 
-        logging.debug("Joining %s and %s", file1, file2)
+        logger.debug("Joining %s and %s", file1, file2)
 
         on_fields = get_option(options, "on")
         join_type = get_option(options, "type") or "inner"
@@ -140,57 +157,14 @@ class Joiner:
                 """
 
                 to_file = get_option(options, "output")
-                if to_file:
-                    to_type = get_file_type(to_file) or "csv"
-                    # Use COPY for file output
-                    if to_type == "csv":
-                        copy_query = f"COPY ({query}) TO '{to_file}' (FORMAT CSV, HEADER)"
-                    elif to_type in ("json", "jsonl"):
-                        copy_query = f"COPY ({query}) TO '{to_file}' (FORMAT JSON)"
-                    elif to_type == "parquet":
-                        copy_query = f"COPY ({query}) TO '{to_file}' (FORMAT PARQUET)"
-                    else:
-                        # Fallback: read into memory
-                        to_type = "jsonl"
-                        copy_query = None
-                else:
-                    # For stdout, read into memory
-                    to_type = "jsonl"
-                    copy_query = None
-
-                if copy_query:
-                    conn.execute(copy_query)
-                    logging.info("join: completed using DuckDB")
+                try:
+                    write_query(conn, query, to_file)
+                finally:
                     conn.close()
-                    return
-                else:
-                    # Read results into memory for stdout or unsupported output format
-                    relation = conn.execute(query)
-                    column_names = relation.columns
-                    rows = relation.fetchall()
-                    items = [dict(zip(column_names, row)) for row in rows]
-                    conn.close()
-                    logging.info(f"join: completed using DuckDB, {len(items)} joined rows")
-                    # Write items and return
-                    if to_file:
-                        out = open(to_file, "w", encoding="utf8")
-                    else:
-                        out = sys.stdout
-
-                    normalized_items = [normalize_for_json(item) for item in items]
-                    fieldnames = None
-                    if to_type == "csv" and normalized_items:
-                        if isinstance(normalized_items[0], dict):
-                            fieldnames = list(normalized_items[0].keys())
-
-                    writer = DataWriter(out, filetype=to_type, fieldnames=fieldnames)
-                    writer.write_items(normalized_items)
-
-                    if to_file:
-                        out.close()
-                    return
+                logger.info("join: completed using DuckDB")
+                return
             except Exception as e:
-                logging.warning(f"DuckDB join failed, falling back to iterable: {e}")
+                logger.warning(f"DuckDB join failed, falling back to iterable: {e}")
                 detected_engine = "iterable"
 
         # Hash-based join implementation
@@ -221,89 +195,56 @@ class Joiner:
         finally:
             iterable2.close()
 
-        logging.debug("join: indexed %d records from %s", len(file2_index), file2)
+        logger.debug("join: indexed %d records from %s", len(file2_index), file2)
 
-        # Process file1 and join
-        iterable1 = open_iterable(file1, mode="r", iterableargs=iterableargs1)
-        items = []
+        # Process file1 and join; records go to the writer as they are produced.
+        counts = {"left": 0}
 
-        try:
-            count1 = 0
+        def joined():
             matched_keys = set()
-            for item1 in wrap_iterable(
-                iter_command_rows(iterable1, options),
-                desc="Joining",
-                unit="rows",
-                show_progress=show_progress,
-            ):
-                count1 += 1
-                if isinstance(item1, dict):
+            iterable1 = open_iterable(file1, mode="r", iterableargs=iterableargs1)
+            try:
+                for item1 in wrap_iterable(
+                    iter_command_rows(iterable1, options),
+                    desc="Joining",
+                    unit="rows",
+                    show_progress=show_progress,
+                ):
+                    counts["left"] += 1
+                    if not isinstance(item1, dict):
+                        continue
                     key = _get_key_value(item1, key_field_list)
-                    matched = key in file2_index
-
-                    if matched:
+                    if key in file2_index:
                         matched_keys.add(key)
-                        # Join with matching items from file2
                         for item2 in file2_index[key]:
-                            # Merge items, handling field name conflicts
+                            # Merge items; a differing value from file2 goes to "<field>_2".
                             joined_item = item1.copy()
                             for field, value in item2.items():
-                                # Prefix conflicting fields from file2
                                 if field in item1 and item1[field] != value:
                                     joined_item[f"{field}_2"] = value
                                 elif field not in item1:
                                     joined_item[field] = value
-                            items.append(joined_item)
+                            yield joined_item
                     elif join_type in ("left", "full", "outer"):
-                        # Left join: include unmatched items from file1
-                        items.append(item1)
-
-                if count1 % 100000 == 0:
-                    logging.debug(
-                        "join: processed %d records from %s, produced %d joined rows",
-                        count1,
-                        file1,
-                        len(items),
-                    )
-        finally:
-            iterable1.close()
-
-        # For right and full outer joins, include unmatched items from file2
-        if join_type in ("right", "full", "outer"):
-            for key, items2 in file2_index.items():
-                if key not in matched_keys:
-                    for item2 in items2:
-                        items.append(item2)
+                        yield item1
+            finally:
+                iterable1.close()
+            # Right and full outer joins add the unmatched records of file2.
+            if join_type in ("right", "full", "outer"):
+                for key, items2 in file2_index.items():
+                    if key not in matched_keys:
+                        yield from items2
 
         to_file = get_option(options, "output")
-        if to_file:
-            to_type = get_file_type(to_file)
-            if not to_type:
-                raise FormatError(to_file, to_file.rsplit(".", 1)[-1])
-            out = open(to_file, "w", encoding="utf8")
-        else:
-            to_type = "jsonl"
-            out = sys.stdout
-
-        # Normalize items to convert non-JSON-serializable types (e.g., UUID) to strings
-        normalized_items = [normalize_for_json(item) for item in items]
-
-        # Extract fieldnames from items for CSV output
-        fieldnames = None
-        if to_type == "csv" and normalized_items:
-            if isinstance(normalized_items[0], dict):
-                fieldnames = list(normalized_items[0].keys())
-
-        writer = DataWriter(out, filetype=to_type, fieldnames=fieldnames)
-        writer.write_items(normalized_items)
-
-        if to_file:
-            out.close()
-
-        logging.debug(
+        count = write_rows(
+            joined(),
+            to_file,
+            fieldnames=_join_fieldnames(file1, file2, key_field_list, options),
+        )
+        logger.debug(
             "join: %s join completed, %d rows from file1, %d indexed from file2, %d joined rows",
             join_type,
-            count1,
+            counts["left"],
             len(file2_index),
-            len(items),
+            count,
         )

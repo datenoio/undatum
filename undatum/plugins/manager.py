@@ -1,7 +1,7 @@
 """Plugin manager for discovering and loading plugins."""
 
 import logging
-from typing import Any, Optional
+from typing import Any
 
 try:
     from importlib.metadata import entry_points
@@ -46,7 +46,7 @@ class PluginManager:
 
         return plugin_names
 
-    def load_plugin(self, entry_point_name: str, app: Optional[Any] = None) -> Optional[Plugin]:
+    def load_plugin(self, entry_point_name: str, app: Any | None = None) -> Plugin | None:
         """Load a plugin from entry point.
 
         Args:
@@ -89,7 +89,7 @@ class PluginManager:
 
         return None
 
-    def load_all_plugins(self, app: Optional[Any] = None) -> None:
+    def load_all_plugins(self, app: Any | None = None) -> None:
         """Load all discovered plugins.
 
         Args:

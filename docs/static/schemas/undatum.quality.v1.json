@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://datenoio.github.io/undatum/schemas/undatum.quality.v1.json",
+  "title": "Data quality report with a pass/fail verdict",
+  "description": "Printed by `undatum quality --json`.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "const": "undatum.quality/1",
+      "description": "Result layout"
+    },
+    "file": {
+      "type": "string",
+      "description": "Input path"
+    },
+    "summary": {
+      "type": "object",
+      "description": "rows, fields, empty_values, violations per severity (null without --rules)"
+    },
+    "fields": {
+      "type": "array",
+      "description": "Per field: name, type, values, nulls, null_rate, distinct, conformance, top_values"
+    },
+    "schema_check": {
+      "type": "object",
+      "description": "expected, inferred types, changes and renames against --schema"
+    },
+    "violations": {
+      "type": "object",
+      "description": "by_severity, by_rule and a sample of rule violations"
+    },
+    "verdict": {
+      "type": "object",
+      "description": "passed and the threshold checks (name, target, value, limit, passed)"
+    }
+  },
+  "required": [
+    "schema",
+    "file",
+    "summary",
+    "fields",
+    "schema_check",
+    "violations",
+    "verdict"
+  ]
+}

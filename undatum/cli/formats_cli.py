@@ -7,19 +7,20 @@ reflects the formats the underlying engine can actually handle.
 
 import json
 import logging
-from typing import Annotated, Optional
+from typing import Annotated
 
 import typer
 from rich.table import Table
 
 from .common import console, enable_verbose
+from .options import JsonOpt
 
 logger = logging.getLogger(__name__)
 
 formats_app = typer.Typer(help="Inspect supported data formats and their capabilities.")
 
 
-def _bool_mark(value: Optional[bool]) -> str:
+def _bool_mark(value: bool | None) -> str:
     if value is True:
         return "yes"
     if value is False:
@@ -61,7 +62,7 @@ def formats_list(
             "--capabilities", "-c", help="Show the full runtime capability matrix per format."
         ),
     ] = False,
-    as_json: Annotated[bool, typer.Option("--json", help="Output as JSON.")] = False,
+    as_json: JsonOpt = False,
     verbose: Annotated[bool, typer.Option(help="Enable verbose logging output.")] = False,
 ):
     """List all supported data formats and whether they are readable/writable.
@@ -115,7 +116,9 @@ def formats_list(
         )
 
     if as_json:
-        console.print_json(json.dumps(rows))
+        from ..common.results import FORMATS, emit
+
+        emit(FORMATS, {"formats": rows})
         return
 
     table = Table(show_header=True, header_style="bold")

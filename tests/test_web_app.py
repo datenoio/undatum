@@ -11,6 +11,17 @@ from undatum.__main__ import main
 from undatum.core import app
 
 
+def _require_web_extra() -> None:
+    """Skip unless fastapi, jinja2, uvicorn and python-multipart are installed."""
+    from undatum.common.errors import DependencyError
+    from undatum.web.deps import require_web_dependencies
+
+    try:
+        require_web_dependencies()
+    except DependencyError:
+        pytest.skip("undatum[web] is not installed")
+
+
 def _csrf_token(html: str) -> str:
     match = re.search(r'name="csrf_token" value="([^"]+)"', html)
     assert match, html[:500]
@@ -52,8 +63,7 @@ def test_web_not_a_pipeline_command():
 
 
 def test_web_explore_shows_sample(sample_csv_file, tmp_path):
-    pytest.importorskip("fastapi")
-    pytest.importorskip("jinja2")
+    _require_web_extra()
     from fastapi.testclient import TestClient
 
     from undatum.web.app import create_app
@@ -73,8 +83,7 @@ def test_web_explore_shows_sample(sample_csv_file, tmp_path):
 
 
 def test_web_filter_and_sql(sample_csv_file, tmp_path):
-    pytest.importorskip("fastapi")
-    pytest.importorskip("jinja2")
+    _require_web_extra()
     from fastapi.testclient import TestClient
 
     from undatum.web.app import create_app
@@ -103,7 +112,7 @@ def test_web_filter_and_sql(sample_csv_file, tmp_path):
             follow_redirects=True,
         )
         assert profiled.status_code == 200
-        assert "undatum profile" in profiled.text
+        assert "undatum stats" in profiled.text
         assert "Profile" in profiled.text
 
         token = _csrf_token(profiled.text)
@@ -119,8 +128,7 @@ def test_web_filter_and_sql(sample_csv_file, tmp_path):
 
 
 def test_web_export_validate_pipeline(sample_csv_file, tmp_path):
-    pytest.importorskip("fastapi")
-    pytest.importorskip("jinja2")
+    _require_web_extra()
     from fastapi.testclient import TestClient
 
     from undatum.web.app import create_app
@@ -186,8 +194,7 @@ def test_web_export_validate_pipeline(sample_csv_file, tmp_path):
 
 
 def test_web_csrf_rejects_bad_token(sample_csv_file, tmp_path):
-    pytest.importorskip("fastapi")
-    pytest.importorskip("jinja2")
+    _require_web_extra()
     from fastapi.testclient import TestClient
 
     from undatum.web.app import create_app
@@ -200,8 +207,7 @@ def test_web_csrf_rejects_bad_token(sample_csv_file, tmp_path):
 
 
 def test_web_api_key_required(sample_csv_file, tmp_path):
-    pytest.importorskip("fastapi")
-    pytest.importorskip("jinja2")
+    _require_web_extra()
     from fastapi.testclient import TestClient
 
     from undatum.web.app import create_app
@@ -215,8 +221,7 @@ def test_web_api_key_required(sample_csv_file, tmp_path):
 
 
 def test_web_healthz(tmp_path):
-    pytest.importorskip("fastapi")
-    pytest.importorskip("jinja2")
+    _require_web_extra()
     from fastapi.testclient import TestClient
 
     from undatum.web.app import create_app
@@ -229,8 +234,7 @@ def test_web_healthz(tmp_path):
 
 
 def test_web_actions_list_cli_templates(sample_csv_file, tmp_path):
-    pytest.importorskip("fastapi")
-    pytest.importorskip("jinja2")
+    _require_web_extra()
     from fastapi.testclient import TestClient
 
     from undatum.web.app import create_app
@@ -238,7 +242,7 @@ def test_web_actions_list_cli_templates(sample_csv_file, tmp_path):
     web_app = create_app(path=sample_csv_file, work_dir=tmp_path)
     with TestClient(web_app) as client:
         text = client.get("/").text
-        assert "undatum profile" in text
+        assert "undatum stats" in text
         assert "Equivalent CLI" in text
         assert "htmx.min.js" in text
         assert 'hx-boost="true"' in text
@@ -247,8 +251,7 @@ def test_web_actions_list_cli_templates(sample_csv_file, tmp_path):
 
 
 def test_web_upload_and_frequency(sample_csv_file, tmp_path):
-    pytest.importorskip("fastapi")
-    pytest.importorskip("jinja2")
+    _require_web_extra()
     from fastapi.testclient import TestClient
 
     from undatum.web.app import create_app
@@ -278,8 +281,7 @@ def test_web_upload_and_frequency(sample_csv_file, tmp_path):
 
 
 def test_web_rejects_overlapping_job(sample_csv_file, tmp_path):
-    pytest.importorskip("fastapi")
-    pytest.importorskip("jinja2")
+    _require_web_extra()
     from fastapi.testclient import TestClient
 
     from undatum.web.app import create_app
@@ -305,8 +307,7 @@ def test_web_rejects_overlapping_job(sample_csv_file, tmp_path):
 
 
 def test_web_remote_bind_warning():
-    pytest.importorskip("fastapi")
-    pytest.importorskip("jinja2")
+    _require_web_extra()
     from undatum.web.app import remote_bind_warning
 
     assert remote_bind_warning("127.0.0.1") is None

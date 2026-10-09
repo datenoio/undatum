@@ -134,7 +134,9 @@ class TestParallelConvert:
     def test_threads_gt_one_uses_parallel_path(self, sample_csv: Path, tmp_path: Path):
         out = tmp_path / "out.jsonl"
         conv = Converter()
-        with patch.object(conv, "_convert_python_parallel", return_value=_FakeConversionResult()) as mock_par:
+        with patch.object(
+            conv, "_convert_python_parallel", return_value=_FakeConversionResult()
+        ) as mock_par:
             result = conv.convert(
                 str(sample_csv),
                 str(out),
@@ -151,7 +153,9 @@ class TestParallelConvert:
     def test_low_memory_passes_smaller_window(self, sample_csv: Path, tmp_path: Path):
         out = tmp_path / "out.jsonl"
         conv = Converter()
-        with patch.object(conv, "_convert_python_parallel", return_value=_FakeConversionResult()) as mock_par:
+        with patch.object(
+            conv, "_convert_python_parallel", return_value=_FakeConversionResult()
+        ) as mock_par:
             conv.convert(
                 str(sample_csv),
                 str(out),
@@ -246,3 +250,23 @@ class TestParallelConvert:
         assert not (tmp_path / "atomic.jsonl.tmp").exists()
         assert result.rows_out == 3
         assert len(_read_jsonl(out)) == 3
+
+
+def test_parallel_path_runs_without_fallback(larger_csv: Path, tmp_path: Path, caplog):
+    """The process-pool path must not silently fall back to the sequential path."""
+    out = tmp_path / "par.jsonl"
+    with caplog.at_level("DEBUG"):
+        Converter(batch_size=10).convert(
+            str(larger_csv),
+            str(out),
+            options={
+                "engine": "python",
+                "threads": 2,
+                "progress": False,
+                "summary": False,
+                "batch_size": 10,
+            },
+        )
+    assert "Parallel convert failed" not in caplog.text
+    assert "parallel Python path" in caplog.text
+    assert len(_read_jsonl(out)) == 50

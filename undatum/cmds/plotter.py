@@ -1,7 +1,7 @@
 """Data plotting module for generating visualizations."""
 
 import logging
-from typing import Any, Optional
+from typing import Any
 
 try:
     import matplotlib
@@ -14,10 +14,9 @@ except ImportError:
     MATPLOTLIB_AVAILABLE = False
     plt = None
 
-from tqdm import tqdm
-
 from ..common.command_utils import get_iterable_options, iter_command_rows
 from ..common.filter import match_filter
+from ..common.progress import progress
 from ..common.s3_iterable import open_iterable_with_s3
 
 logger = logging.getLogger(__name__)
@@ -37,15 +36,15 @@ class Plotter:
         fromfile: str,
         field: str,
         plot_type: str = "auto",
-        output: Optional[str] = None,
-        output_format: Optional[str] = None,
-        title: Optional[str] = None,
-        xlabel: Optional[str] = None,
-        ylabel: Optional[str] = None,
+        output: str | None = None,
+        output_format: str | None = None,
+        title: str | None = None,
+        xlabel: str | None = None,
+        ylabel: str | None = None,
         width: float = 10,
         height: float = 6,
         dpi: int = 100,
-        color: Optional[str] = None,
+        color: str | None = None,
         **options,
     ):
         """Generate a plot from data file.
@@ -178,7 +177,10 @@ class Plotter:
                 iterable.close()
                 iterable_context.__exit__(None, None, None)
         except Exception:
-            pass
+            # Best effort: never fail the command because of this step.
+            logging.getLogger(__name__).debug(
+                "plot type detection failed; defaulting to histogram", exc_info=True
+            )
 
         # Default to histogram
         return "histogram"
@@ -211,19 +213,18 @@ class Plotter:
         iterable = iterable_context.__enter__()
 
         try:
-            for record in tqdm(iter_command_rows(iterable, options), desc="Reading data"):
+            for record in progress(iter_command_rows(iterable, options), desc="Reading data"):
                 if isinstance(record, dict):
                     if keep_all:
                         data.append(record)
                     else:
                         keys = list(fields) + extra_fields
                         data.append({f: record.get(f) for f in keys})
-                else:
-                    # Handle non-dict records
-                    if len(fields) == 1 and len(record) > 0:
-                        data.append(
-                            {fields[0]: record[0] if isinstance(record, (list, tuple)) else record}
-                        )
+                # Handle non-dict records
+                elif len(fields) == 1 and len(record) > 0:
+                    data.append(
+                        {fields[0]: record[0] if isinstance(record, (list, tuple)) else record}
+                    )
         finally:
             iterable.close()
             iterable_context.__exit__(None, None, None)
@@ -231,7 +232,7 @@ class Plotter:
         return data
 
     def _filter_data(
-        self, data: list[dict[str, Any]], filter_expr: Optional[str]
+        self, data: list[dict[str, Any]], filter_expr: str | None
     ) -> list[dict[str, Any]]:
         """Apply an optional filter expression before plotting."""
         if not filter_expr:
@@ -298,15 +299,15 @@ class Plotter:
         self,
         data: list[dict[str, Any]],
         fields: list[str],
-        output: Optional[str],
+        output: str | None,
         output_format: str,
-        title: Optional[str],
-        xlabel: Optional[str],
-        ylabel: Optional[str],
+        title: str | None,
+        xlabel: str | None,
+        ylabel: str | None,
         width: float,
         height: float,
         dpi: int,
-        color: Optional[str],
+        color: str | None,
     ):
         """Generate histogram plot."""
         fig, axes = plt.subplots(1, len(fields), figsize=(width, height), squeeze=False)
@@ -338,15 +339,15 @@ class Plotter:
         self,
         data: list[dict[str, Any]],
         fields: list[str],
-        output: Optional[str],
+        output: str | None,
         output_format: str,
-        title: Optional[str],
-        xlabel: Optional[str],
-        ylabel: Optional[str],
+        title: str | None,
+        xlabel: str | None,
+        ylabel: str | None,
         width: float,
         height: float,
         dpi: int,
-        color: Optional[str],
+        color: str | None,
     ):
         """Generate bar chart plot."""
         fig, axes = plt.subplots(1, len(fields), figsize=(width, height), squeeze=False)
@@ -367,8 +368,10 @@ class Plotter:
                 frequencies = list(counts.values())
 
             # Sort by frequency (descending)
-            sorted_pairs = sorted(zip(categories, frequencies), key=lambda x: x[1], reverse=True)
-            categories, frequencies = zip(*sorted_pairs) if sorted_pairs else ([], [])
+            sorted_pairs = sorted(
+                zip(categories, frequencies, strict=False), key=lambda x: x[1], reverse=True
+            )
+            categories, frequencies = zip(*sorted_pairs, strict=False) if sorted_pairs else ([], [])
 
             ax.bar(range(len(categories)), frequencies, color=color)
             ax.set_xticks(range(len(categories)))
@@ -389,15 +392,15 @@ class Plotter:
         self,
         data: list[dict[str, Any]],
         fields: list[str],
-        output: Optional[str],
+        output: str | None,
         output_format: str,
-        title: Optional[str],
-        xlabel: Optional[str],
-        ylabel: Optional[str],
+        title: str | None,
+        xlabel: str | None,
+        ylabel: str | None,
         width: float,
         height: float,
         dpi: int,
-        color: Optional[str],
+        color: str | None,
     ):
         """Generate scatter plot."""
         if len(fields) < 2:
@@ -414,11 +417,11 @@ class Plotter:
         # Filter to numeric pairs
         pairs = [
             (x, y)
-            for x, y in zip(x_values, y_values)
+            for x, y in zip(x_values, y_values, strict=False)
             if isinstance(x, (int, float)) and isinstance(y, (int, float))
         ]
         if pairs:
-            x_vals, y_vals = zip(*pairs)
+            x_vals, y_vals = zip(*pairs, strict=False)
             ax.scatter(x_vals, y_vals, color=color, alpha=0.6)
 
         ax.set_xlabel(xlabel or x_field)
@@ -433,15 +436,15 @@ class Plotter:
         self,
         data: list[dict[str, Any]],
         fields: list[str],
-        output: Optional[str],
+        output: str | None,
         output_format: str,
-        title: Optional[str],
-        xlabel: Optional[str],
-        ylabel: Optional[str],
+        title: str | None,
+        xlabel: str | None,
+        ylabel: str | None,
         width: float,
         height: float,
         dpi: int,
-        color: Optional[str],
+        color: str | None,
     ):
         """Generate line plot."""
         fig, ax = plt.subplots(1, 1, figsize=(width, height))
@@ -462,7 +465,7 @@ class Plotter:
         plt.tight_layout()
         self._save_or_show(output, output_format, dpi)
 
-    def _save_or_show(self, output: Optional[str], output_format: str, dpi: int):
+    def _save_or_show(self, output: str | None, output_format: str, dpi: int):
         """Save plot to file or display it."""
         if output:
             plt.savefig(output, format=output_format, dpi=dpi, bbox_inches="tight")

@@ -4,6 +4,14 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+# Contents of the sample_csv_file / sample_jsonl_file fixtures (tests/conftest.py).
+SAMPLE_JSONL = (
+    '{"id": "1", "name": "Alice", "age": 30}\n'
+    '{"id": "2", "name": "Bob", "age": 25}\n'
+    '{"id": "3", "name": "Charlie", "age": 35}\n'
+)
+SAMPLE_CSV = "id,name,age\n1,Alice,30\n2,Bob,25\n3,Charlie,35\n"
+
 # Mock dependencies that may not be installed
 try:
     from undatum.cmds.ingester import (
@@ -44,27 +52,6 @@ try:
         SQLiteIngester = None
 except ImportError as e:
     pytest.skip(f"Required dependencies not available: {e}", allow_module_level=True)
-
-
-@pytest.fixture
-def sample_jsonl_file(tmp_path):
-    """Create a sample JSONL file for testing."""
-    jsonl_file = tmp_path / "sample.jsonl"
-    content = (
-        '{"id": "1", "name": "Alice", "age": 30}\n'
-        '{"id": "2", "name": "Bob", "age": 25}\n'
-        '{"id": "3", "name": "Charlie", "age": 35}\n'
-    )
-    jsonl_file.write_text(content)
-    return str(jsonl_file)
-
-
-@pytest.fixture
-def sample_csv_file(tmp_path):
-    """Create a sample CSV file for testing."""
-    csv_file = tmp_path / "sample.csv"
-    csv_file.write_text("id,name,age\n1,Alice,30\n2,Bob,25\n3,Charlie,35\n")
-    return str(csv_file)
 
 
 class TestBasicIngester:
@@ -495,10 +482,13 @@ class TestIngester:
         ingester = Ingester(batch_size=2)
         options = {"dbtype": "mongodb", "drop": False, "skip": None, "totals": False}
 
-        # Should not raise exception, should continue processing
-        ingester.ingest_single(
-            sample_jsonl_file, "mongodb://localhost:27017", "testdb", "testcoll", options
-        )
+        # Later batches are still loaded; the failure is reported at the end (exit code 3).
+        from undatum.common.errors import DatabaseError
+
+        with pytest.raises(DatabaseError, match="rows were not loaded"):
+            ingester.ingest_single(
+                sample_jsonl_file, "mongodb://localhost:27017", "testdb", "testcoll", options
+            )
 
         # Should have attempted both batches
         assert mock_processor.ingest.call_count == 2
@@ -768,13 +758,13 @@ class TestIngesterDuckDB:
             "totals": False,
         }
 
-        # Use in-memory database for testing
-        ingester.ingest_single(
-            sample_jsonl_file, "duckdb:///:memory:", "testdb", "testtable", options
-        )
+        # The table does not exist and create_table is off: every row fails, which is an error.
+        from undatum.common.errors import DatabaseError
 
-        # Verify processor was created (we can't easily verify without real connection)
-        # But we can verify no exceptions were raised
+        with pytest.raises(DatabaseError, match="rows were not loaded"):
+            ingester.ingest_single(
+                sample_jsonl_file, "duckdb:///:memory:", "testdb", "testtable", options
+            )
 
     def test_ingest_single_duckdb_with_create_table(self, sample_jsonl_file):
         """Test DuckDB ingestion with auto-create table."""
@@ -1397,9 +1387,10 @@ class TestIngesterSQLite:
             "totals": False,
         }
 
-        # Use in-memory database for testing
-        ingester.ingest_single(
-            sample_jsonl_file, "sqlite:///:memory:", "testdb", "testtable", options
-        )
+        # The table does not exist and create_table is off: every row fails, which is an error.
+        from undatum.common.errors import DatabaseError
 
-        # Verify no exceptions
+        with pytest.raises(DatabaseError, match="rows were not loaded"):
+            ingester.ingest_single(
+                sample_jsonl_file, "sqlite:///:memory:", "testdb", "testtable", options
+            )

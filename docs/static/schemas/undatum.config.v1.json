@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://datenoio.github.io/undatum/schemas/undatum.config.v1.json",
+  "title": "Effective CLI configuration",
+  "description": "Printed by `undatum config show --json`.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "const": "undatum.config/1",
+      "description": "Result layout"
+    },
+    "files": {
+      "type": "object",
+      "description": "Config files read: home, project"
+    },
+    "defaults": {
+      "type": "object",
+      "description": "Merged command defaults"
+    }
+  },
+  "required": [
+    "schema",
+    "files",
+    "defaults"
+  ]
+}

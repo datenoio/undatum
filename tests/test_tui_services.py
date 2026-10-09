@@ -108,8 +108,8 @@ def test_profile_uses_stats_processor(sample_csv_file):
     assert headers[0] == "Field"
     field_names = {row[0] for row in rows}
     assert "name" in field_names
-    assert "undatum profile" in cli
-    assert "undatum profile" in (session.last_cli or "")
+    assert "undatum stats" in cli
+    assert "undatum stats" in (session.last_cli or "")
 
 
 def test_ensure_sql_limit_injects_when_missing():
@@ -152,7 +152,7 @@ def test_palette_filter_and_cli_template(sample_csv_file):
     profile = get_action("profile")
     assert profile is not None
     cli = render_cli(profile, session)
-    assert "undatum profile" in cli
+    assert "undatum stats" in cli
     assert session.source in cli
 
 

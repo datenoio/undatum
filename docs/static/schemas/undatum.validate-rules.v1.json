@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://datenoio.github.io/undatum/schemas/undatum.validate-rules.v1.json",
+  "title": "Built-in validation rules",
+  "description": "Printed by `undatum validate --list-rules --json`.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "const": "undatum.validate-rules/1",
+      "description": "Result layout"
+    },
+    "rules": {
+      "type": "array",
+      "description": "Rules: name, description, params, extra"
+    },
+    "keys": {
+      "type": "object",
+      "description": "Rule-file keys that are checks (required, unique, ...)"
+    }
+  },
+  "required": [
+    "schema",
+    "rules",
+    "keys"
+  ]
+}

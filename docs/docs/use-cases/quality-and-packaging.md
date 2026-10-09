@@ -9,11 +9,27 @@ Assess quality, encode reusable rules, and produce evidence before data is relea
 ## Gate a dataset release
 
 ```bash
-undatum validate data.csv --rules rules.yml --output-format json \
+undatum validate data.csv --rules rules.yml --format-out json \
   --violation-report violations.json --fail-on-warnings
 ```
 
-Example rule files live in the [examples/validation-rules](https://github.com/datenoio/undatum/tree/master/examples/validation-rules) directory.
+Example rule files live in the [examples/validation-rules](https://github.com/datenoio/undatum/tree/master/examples/validation-rules) directory; the [rule library](/commands/validate-rules) lists the built-in formats (dates, phone numbers, ISO codes, IBAN, ...), `unique` and `references`.
+
+## Report quality against thresholds
+
+```bash
+undatum quality data.csv --rules rules.yml -o report.html
+```
+
+`--thresholds` turns the report into a data contract: the command exits with 1 when a
+threshold fails. See [`quality`](/commands/quality).
+
+## Catch schema drift
+
+```bash
+undatum diff --schema data.csv data.jsonl
+undatum schema-drift data.csv data.jsonl --fail-on removed,type
+```
 
 ## Detect unintended changes
 
@@ -36,4 +52,4 @@ undatum mask source.csv --fields email,phone --method hash --salt "$SALT" --outp
 undatum doc public.csv --pii-detect --pii-mask-samples --output DATASET.md
 ```
 
-See [`validate`](/commands/validate), [`package`](/commands/package), [`mask`](/commands/mask), and [`doc`](/commands/doc).
+See [`quality`](/commands/quality), [`validate`](/commands/validate), [`schema-drift`](/commands/schema-drift), [`package`](/commands/package), [`mask`](/commands/mask), and [`doc`](/commands/doc).

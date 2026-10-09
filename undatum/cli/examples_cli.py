@@ -8,7 +8,6 @@ from typing import Annotated
 import typer
 from rich.table import Table
 
-from ..cmds.examples import RecipeManager
 from .common import console, enable_verbose
 
 logger = logging.getLogger(__name__)
@@ -37,6 +36,8 @@ def examples_list(
         # List recipes by tag
         undatum examples list --tag database
     """
+    from ..cmds.examples import RecipeManager
+
     if verbose:
         enable_verbose()
 
@@ -86,6 +87,8 @@ def show(
         # Show recipe details
         undatum examples show csv-to-jsonl
     """
+    from ..cmds.examples import RecipeManager
+
     if verbose:
         enable_verbose()
 
@@ -121,6 +124,8 @@ def examples_run(
         # Interactive mode
         undatum examples run csv-to-jsonl --interactive
     """
+    from ..cmds.examples import RecipeManager
+
     if verbose:
         enable_verbose()
 

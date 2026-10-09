@@ -1,107 +1,45 @@
-"""Fixlengths command module - ensure all rows have same number of fields."""
+"""Fixlengths command: give every record the same fields."""
 
 import logging
-import sys
 
-from ..common.command_utils import (
-    ITERABLE_OPTIONS_KEYS,  # noqa: F401
-    get_iterable_options,
-    iter_command_rows,
-)  # noqa: F401
-from ..common.errors import FormatError
-from ..common.iterable import DataWriter
-from ..common.s3_iterable import open_path as open_iterable
-from ..utils import get_file_type, get_option, normalize_for_json
+from ..common.errors import ValidationError
+from ..common.path_utils import validate_file_path
+from ..io import open_source
+from ..ops import FixLengthsConfig, run
+from ..ops.structure import FixLengths as FixLengthsOperation
+from ..utils import get_option
+
+logger = logging.getLogger(__name__)
 
 
 class FixLengths:
-    """FixLengths command handler - normalize row field counts."""
-
-    def __init__(self):
-        pass
+    """Fixlengths command handler."""
 
     def fixlengths(self, fromfile, options=None):
-        """Ensure all rows have the same number of fields."""
-        if options is None:
-            options = {}
-        logging.debug("Processing %s", fromfile)
-        iterableargs = get_iterable_options(options)
+        """Pad (or truncate) records to a common, alphabetically ordered field set.
+
+        Args:
+            fromfile: Input path.
+            options: ``strategy`` (``pad`` or ``truncate``), ``value`` for missing fields,
+                ``output`` and reader options.
+
+        Raises:
+            ValidationError: If the strategy is unknown.
+        """
+        options = options or {}
+        validate_file_path(fromfile, check_read=True)
         strategy = get_option(options, "strategy") or "pad"
-        value = get_option(options, "value") or ""
-        to_file = get_option(options, "output")
-
-        # First pass: determine max/min field count
-        iterable = open_iterable(fromfile, mode="r", iterableargs=iterableargs)
-        max_fields = 0
-        min_fields = float("inf")
-        all_headers = set()
-        sample_items = []
-
-        try:
-            count = 0
-            for item in iter_command_rows(iterable, options):
-                if isinstance(item, dict):
-                    field_count = len(item)
-                    max_fields = max(max_fields, field_count)
-                    min_fields = min(min_fields, field_count)
-                    # Filter out None keys
-                    all_headers.update(k for k in item.keys() if k is not None)
-                    sample_items.append(item)
-                    count += 1
-                    if count >= 1000:  # Sample first 1000 to determine structure
-                        break
-        finally:
-            iterable.close()
-
-        # Determine target field count
-        if strategy == "pad":
-            target_count = max_fields
-        else:  # truncate
-            target_count = min_fields
-
-        # Get all headers in consistent order, filter out None
-        all_headers = sorted([h for h in all_headers if h is not None])
-
-        # Second pass: process all items
-        iterable = open_iterable(fromfile, mode="r", iterableargs=iterableargs)
-        items = []
-        try:
-            count = 0
-            for item in iter_command_rows(iterable, options):
-                if isinstance(item, dict):
-                    # Normalize item
-                    normalized = {}
-                    for header in all_headers[:target_count]:
-                        if header in item and item[header] is not None:
-                            normalized[header] = item[header]
-                        else:
-                            # Field missing or None, pad with value
-                            normalized[header] = value
-                    items.append(normalized)
-                    count += 1
-                    if count % 10000 == 0:
-                        logging.debug("fixlengths: processed %d records", count)
-        finally:
-            iterable.close()
-
-        if to_file:
-            to_type = get_file_type(to_file)
-            if not to_type:
-                raise FormatError(to_file, to_file.rsplit(".", 1)[-1])
-            out = open(to_file, "w", encoding="utf8")
-        else:
-            to_type = "jsonl"
-            out = sys.stdout
-
-        # Normalize items to convert non-JSON-serializable types (e.g., UUID) to strings
-        normalized_items = [normalize_for_json(item) for item in items]
-
-        writer = DataWriter(out, filetype=to_type, fieldnames=all_headers[:target_count])
-        writer.write_items(normalized_items)
-
-        if to_file:
-            out.close()
-
-        logging.debug(
-            "fixlengths: processed %d records, normalized to %d fields", count, target_count
+        if strategy not in ("pad", "truncate"):
+            raise ValidationError(
+                f"Unknown strategy '{strategy}'", field="strategy", suggestions=["pad", "truncate"]
+            )
+        cfg = FixLengthsConfig(strategy=strategy, value=get_option(options, "value") or "")
+        source = open_source(fromfile, options)
+        count = run(
+            "fixlengths",
+            cfg,
+            source,
+            get_option(options, "output"),
+            fieldnames=FixLengthsOperation().fieldnames(source, cfg),
         )
+        logger.debug("fixlengths: wrote %d records", count)

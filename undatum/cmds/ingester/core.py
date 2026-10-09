@@ -2,11 +2,12 @@
 
 import logging
 import time
+from typing import Any
 
 import duckdb
-from tqdm import tqdm
 
 from ...common.command_utils import get_iterable_options, iter_command_rows
+from ...common.progress import progress
 from ...common.s3_iterable import open_iterable_with_s3
 from .base import (
     DEFAULT_BATCH_SIZE,
@@ -21,6 +22,8 @@ from .mongo import MongoIngester
 from .mysql_backend import MySQLIngester
 from .postgres import PostgresIngester
 from .sqlite_backend import SQLiteIngester
+
+logger = logging.getLogger(__name__)
 
 
 class Ingester:
@@ -79,7 +82,7 @@ class Ingester:
         if options is None:
             options = {}
         dbtype = options["dbtype"]
-        processor = None
+        processor: Any = None
         totals = -1
         skip = options.get("skip")
         use_totals = options.get("totals", False)
@@ -109,7 +112,7 @@ class Ingester:
         except PermissionError as e:
             raise PermissionError(fromfile, operation="read") from e
 
-        logging.info(f"Ingesting {fromfile} to {uri} with db {db} table {table}")
+        logger.info(f"Ingesting {fromfile} to {uri} with db {db} table {table}")
 
         # Calculate total records for progress bar
         if use_totals:
@@ -119,7 +122,7 @@ class Ingester:
                     try:
                         totals = duckdb.sql(f"select count(*) from '{fromfile}'").fetchone()[0]
                     except Exception as e:
-                        logging.warning(f"Could not count records in {fromfile}: {e}")
+                        logger.warning(f"Could not count records in {fromfile}: {e}")
             elif len(parts) == 3:
                 if (
                     parts[-2].lower() in DUCKABLE_FILE_TYPES
@@ -128,22 +131,25 @@ class Ingester:
                     try:
                         totals = duckdb.sql(f"select count(*) from '{fromfile}'").fetchone()[0]
                     except Exception as e:
-                        logging.warning(f"Could not count records in {fromfile}: {e}")
+                        logger.warning(f"Could not count records in {fromfile}: {e}")
 
         # Initialize processor with timeout support
         if dbtype == "mongodb":
             processor = MongoIngester(uri, db, table, do_drop=do_drop, timeout=timeout_seconds)
-        elif dbtype == "elastic" or dbtype == "elasticsearch":
+        elif dbtype in {"elastic", "elasticsearch"}:
             api_key = options.get("api_key")
-            id_key = options.get("doc_id", "id")
+            id_key = options.get("doc_id") or "id"
             processor = ElasticIngester(
                 uri=uri,
                 api_key=api_key,
                 search_index=table,
                 document_id=id_key,
                 timeout=timeout_seconds or 60,
+                verify_certs=not options.get("insecure", False),
+                ca_certs=options.get("ca_cert"),
+                pipeline=options.get("es_pipeline"),
             )
-        elif dbtype == "postgresql" or dbtype == "postgres":
+        elif dbtype in {"postgresql", "postgres"}:
             mode = options.get("mode", "append")
             create_table = options.get("create_table", False)
             upsert_key = options.get("upsert_key")
@@ -196,6 +202,26 @@ class Ingester:
             processor = SQLiteIngester(
                 uri=uri, table=table, mode=mode, create_table=create_table, upsert_key=upsert_key
             )
+        elif dbtype == "clickhouse":
+            from .clickhouse_backend import ClickHouseIngester
+
+            processor = ClickHouseIngester(
+                uri=uri,
+                table=table,
+                mode=options.get("mode", "append"),
+                create_table=options.get("create_table", False),
+                table_engine=options.get("table_engine"),
+            )
+        elif dbtype == "mssql":
+            from .mssql_backend import MSSQLIngester
+
+            processor = MSSQLIngester(
+                uri=uri,
+                table=table,
+                mode=options.get("mode", "append"),
+                create_table=options.get("create_table", False),
+                upsert_key=options.get("upsert_key"),
+            )
         else:
             from ...common.errors import ValidationError
 
@@ -208,6 +234,8 @@ class Ingester:
                 "duckdb",
                 "mysql",
                 "sqlite",
+                "clickhouse",
+                "mssql",
             ]
             raise ValidationError(
                 f"Unsupported database type: '{dbtype}'",
@@ -224,10 +252,10 @@ class Ingester:
             if dbtype == "mongodb":
                 # Test MongoDB connection
                 processor.client.server_info()
-            elif dbtype == "elastic" or dbtype == "elasticsearch":
+            elif dbtype in {"elastic", "elasticsearch"}:
                 # Test Elasticsearch connection
                 processor.client.info()
-            elif dbtype == "postgresql" or dbtype == "postgres":
+            elif dbtype in {"postgresql", "postgres"}:
                 # Test PostgreSQL connection
                 conn = processor._get_connection()
                 try:
@@ -251,6 +279,8 @@ class Ingester:
             elif dbtype == "sqlite":
                 # Test SQLite connection (simple query)
                 processor.conn.execute("SELECT 1").fetchone()
+            elif dbtype in ("clickhouse", "mssql"):
+                processor.check_connection()
         except Exception as e:
             from ...common.errors import DatabaseError
 
@@ -271,12 +301,12 @@ class Ingester:
         errors = []
 
         try:
-            logging.info(f"Ingesting data: filename {fromfile}, uri: {uri}, db {db}, table {table}")
+            logger.info(f"Ingesting data: filename {fromfile}, uri: {uri}, db {db}, table {table}")
             n = 0
             batch = []
 
             # Enhanced progress bar with throughput
-            with tqdm(
+            with progress(
                 iter_command_rows(it_in, options),
                 total=totals,
                 desc=f"Ingesting to {dbtype}",
@@ -305,7 +335,7 @@ class Ingester:
                             failed_rows += len(batch)
                             error_msg = f"Batch {batch_count} failed: {e}"
                             errors.append(error_msg)
-                            logging.error(error_msg)
+                            logger.error(error_msg)
                             # Continue with next batch
                         batch = []
 
@@ -319,20 +349,26 @@ class Ingester:
                         failed_rows += len(batch)
                         error_msg = f"Final batch {batch_count} failed: {e}"
                         errors.append(error_msg)
-                        logging.error(error_msg)
+                        logger.error(error_msg)
 
         finally:
             it_in.close()
             iterable_context.__exit__(None, None, None)
 
             # Close database connections if needed
-            if dbtype in ("postgresql", "postgres", "duckdb", "mysql", "sqlite") and hasattr(
-                processor, "close"
-            ):
+            if dbtype in (
+                "postgresql",
+                "postgres",
+                "duckdb",
+                "mysql",
+                "sqlite",
+                "clickhouse",
+                "mssql",
+            ) and hasattr(processor, "close"):
                 try:
                     processor.close()
                 except Exception as e:
-                    logging.warning(f"Error closing database connection: {e}")
+                    logger.warning(f"Error closing database connection: {e}")
 
             # Print summary statistics
             elapsed_time = time.time() - start_time
@@ -349,3 +385,11 @@ class Ingester:
                 if logging.getLogger().level <= logging.DEBUG:
                     for error in errors:
                         print(f"    - {error}")
+
+        if failed_rows:
+            from ...common.errors import DatabaseError
+
+            raise DatabaseError(
+                f"{failed_rows} of {total_rows} rows were not loaded: {errors[0]}",
+                db_type=dbtype,
+            )

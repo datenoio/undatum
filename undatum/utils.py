@@ -5,11 +5,10 @@ file type identification, dictionary manipulation, and data type guessing.
 """
 
 from collections import OrderedDict
-from typing import Any, Optional, Union
+from typing import Any
 
-import chardet
-
-from .constants import DEFAULT_OPTIONS, SUPPORTED_FILE_TYPES
+from . import constants
+from .constants import DEFAULT_OPTIONS
 
 
 def detect_encoding(filename: str, limit: int = 1000000) -> dict[str, Any]:
@@ -20,12 +19,55 @@ def detect_encoding(filename: str, limit: int = 1000000) -> dict[str, Any]:
         limit: Maximum number of bytes to read for detection (default: 1000000).
 
     Returns:
-        Dictionary with encoding detection results from chardet.
+        Dictionary with ``encoding``, ``confidence`` and ``language`` keys, as returned
+        by iterabledata's encoding detection.
     """
-    with open(filename, "rb") as f:
-        chunk = f.read(limit)
-    detected = chardet.detect(chunk)
-    return detected
+    from iterable.helpers.utils import detect_encoding_raw
+
+    return detect_encoding_raw(filename=filename, limit=limit)
+
+
+def open_text_sample(filename: str, encoding: str = "utf8") -> Any:
+    """Open a text file for reading, decompressing ``.gz``, ``.bz2``, ``.xz``, ``.zst``
+    and ``.zip`` (first member) on the fly.
+
+    Args:
+        filename: Path to the file.
+        encoding: Text encoding; undecodable bytes are replaced.
+
+    Returns:
+        A text stream (use it as a context manager).
+    """
+    import io
+
+    lower = filename.lower()
+    if lower.endswith(".gz"):
+        import gzip
+
+        return gzip.open(filename, "rt", encoding=encoding, errors="replace")
+    if lower.endswith(".bz2"):
+        import bz2
+
+        return bz2.open(filename, "rt", encoding=encoding, errors="replace")
+    if lower.endswith(".xz"):
+        import lzma
+
+        return lzma.open(filename, "rt", encoding=encoding, errors="replace")
+    if lower.endswith((".zst", ".zstd")):
+        import zstandard
+
+        raw = zstandard.ZstdDecompressor().stream_reader(open(filename, "rb"), closefd=True)
+        return io.TextIOWrapper(raw, encoding=encoding, errors="replace")
+    if lower.endswith(".zip"):
+        import zipfile
+
+        archive = zipfile.ZipFile(filename)
+        names = [n for n in archive.namelist() if not n.endswith("/")]
+        if not names:
+            archive.close()
+            raise ValueError(f"{filename} is an empty ZIP archive")
+        return io.TextIOWrapper(archive.open(names[0]), encoding=encoding, errors="replace")
+    return open(filename, encoding=encoding, errors="replace")
 
 
 def detect_delimiter(filename: str, encoding: str = "utf8", sample_lines: int = 20) -> str:
@@ -45,7 +87,7 @@ def detect_delimiter(filename: str, encoding: str = "utf8", sample_lines: int = 
     import csv
 
     try:
-        with open(filename, encoding=encoding, errors="replace") as handle:
+        with open_text_sample(filename, encoding) as handle:
             sample_parts = []
             for _ in range(max(sample_lines, 1)):
                 line = handle.readline()
@@ -53,7 +95,7 @@ def detect_delimiter(filename: str, encoding: str = "utf8", sample_lines: int = 
                     break
                 sample_parts.append(line)
             sample = "".join(sample_parts)
-    except OSError:
+    except (OSError, EOFError, ValueError):
         return ","
 
     if not sample.strip():
@@ -77,7 +119,7 @@ def detect_delimiter(filename: str, encoding: str = "utf8", sample_lines: int = 
     return max(counts, key=counts.get)
 
 
-def get_file_type(filename: str) -> Optional[str]:
+def get_file_type(filename: str) -> str | None:
     """Get file type based on extension.
 
     Args:
@@ -87,7 +129,7 @@ def get_file_type(filename: str) -> Optional[str]:
         File extension if supported, None otherwise.
     """
     ext = filename.rsplit(".", 1)[-1].lower()
-    if ext in SUPPORTED_FILE_TYPES:
+    if ext in constants.SUPPORTED_FILE_TYPES:
         return ext
     return None
 
@@ -107,6 +149,15 @@ def get_option(options: dict[str, Any], name: str) -> Any:
     Returns:
         Option value if found, None otherwise.
     """
+    value = _raw_option(options, name)
+    if name == "engine" and value is not None:
+        from .common.engine_selector import validate_engine
+
+        return validate_engine(value)
+    return value
+
+
+def _raw_option(options: dict[str, Any], name: str) -> Any:
     if name in options and options[name] is not None:
         return options[name]
     from .common.app_config import get_cli_defaults
@@ -119,9 +170,7 @@ def get_option(options: dict[str, Any], name: str) -> Any:
     return None
 
 
-def get_dict_value(
-    d: Union[dict[str, Any], list[dict[str, Any]], None], keys: list[str]
-) -> list[Any]:
+def get_dict_value(d: dict[str, Any] | list[dict[str, Any]] | None, keys: list[str]) -> list[Any]:
     """Get dictionary value by nested keys.
 
     Args:
@@ -142,14 +191,13 @@ def get_dict_value(
             for r in d:
                 if r and keys[0] in r:
                     out.append(r[keys[0]])
+    elif isinstance(d, (dict, OrderedDict)):
+        if keys[0] in d:
+            out.extend(get_dict_value(d[keys[0]], keys[1:]))
     else:
-        if isinstance(d, (dict, OrderedDict)):
-            if keys[0] in d:
-                out.extend(get_dict_value(d[keys[0]], keys[1:]))
-        else:
-            for r in d:
-                if keys[0] in r:
-                    out.extend(get_dict_value(r[keys[0]], keys[1:]))
+        for r in d:
+            if keys[0] in r:
+                out.extend(get_dict_value(r[keys[0]], keys[1:]))
     return out
 
 
@@ -219,13 +267,13 @@ def strip_dict_fields(
         if k not in localf:
             del record[k]
 
-    for k in record:
-        if isinstance(record[k], dict):
-            record[k] = strip_dict_fields(record[k], fields, startkey + 1)
+    for k, value in record.items():
+        if isinstance(value, dict):
+            record[k] = strip_dict_fields(value, fields, startkey + 1)
     return record
 
 
-def dict_generator(indict: Union[dict[str, Any], Any], pre: Optional[list[str]] = None):
+def dict_generator(indict: dict[str, Any] | Any, pre: list[str] | None = None):
     """Process dictionary and yield flattened key-value pairs.
 
     Recursively traverses nested dictionaries and lists, yielding
@@ -271,7 +319,7 @@ def guess_int_size(i: int) -> str:
     return "uint32"
 
 
-def guess_datatype(s: Union[str, int, float, None], qd: Any) -> dict[str, Any]:
+def guess_datatype(s: str | int | float | None, qd: Any) -> dict[str, Any]:
     """Guess data type of a string value.
 
     Analyzes a string to determine if it represents an integer, float,
@@ -316,6 +364,55 @@ def guess_datatype(s: Union[str, int, float, None], qd: Any) -> dict[str, Any]:
                 if len(s.strip()) == 0:
                     attrs = {"base": "empty"}
     return attrs
+
+
+class TypeGuesser:
+    """:func:`guess_datatype` for many values, with cheaper date detection.
+
+    Date matching (qddate) costs up to 0.5 ms per value, which dominated ``stats`` on text
+    columns. Results are cached per field and value; values without digits skip the date
+    check (every qddate pattern has a day or a year); and after ``date_probe`` checked values
+    of a field, dates are only looked for while at least half of them were dates. (Codes
+    such as hashes match a date pattern now and then.)
+
+    Args:
+        qd: qddate ``DateParser`` (``None`` disables date detection).
+        date_probe: Values checked per field before giving up on dates.
+        cache_size: Maximum number of cached ``(field, value)`` results.
+    """
+
+    def __init__(self, qd: Any, date_probe: int = 1000, cache_size: int = 100_000) -> None:
+        self.qd = qd
+        self.date_probe = date_probe
+        self.cache_size = cache_size
+        self._cache: dict[tuple[str, str], str] = {}
+        self._probes: dict[str, int] = {}
+        self._dates: dict[str, int] = {}
+
+    def base(self, field: str, value: Any) -> str:
+        """The base type (``int``, ``float``, ``date``, ``str``, ...) of ``value``."""
+        if not isinstance(value, str):
+            return str(guess_datatype(value, None)["base"])
+        key = (field, value)
+        cached = self._cache.get(key)
+        if cached is not None:
+            return cached
+        probes = self._probes.get(field, 0)
+        check_date = (
+            self.qd is not None
+            and any(c.isdigit() for c in value)
+            and (probes < self.date_probe or self._dates.get(field, 0) * 2 >= probes)
+        )
+        result = str(guess_datatype(value, self.qd if check_date else None)["base"])
+        if check_date and result in ("date", "str", "empty"):
+            self._probes[field] = probes + 1
+            if result == "date":
+                self._dates[field] = self._dates.get(field, 0) + 1
+        elif self.qd is not None and result == "str" and not value.strip():
+            result = "empty"  # what guess_datatype reports when it checks dates
+        if len(self._cache) < self.cache_size:
+            self._cache[key] = result
+        return result
 
 
 def buf_count_newlines_gen(fname: str) -> int:

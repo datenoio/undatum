@@ -262,6 +262,80 @@ def test_api_key_auth(sample_csv):
     assert client.get("/docs").status_code == 200
 
 
+def test_api_key_rejected_in_query_string(sample_csv):
+    _skip_without_api()
+    from fastapi.testclient import TestClient
+
+    app = _build_api_app(_sample_config(sample_csv), api_key="secret")
+    client = TestClient(app)
+    assert client.get("/data?api_key=secret").status_code == 401
+    assert client.get("/data", headers={"X-API-Key": "wrong"}).status_code == 401
+
+
+def test_api_pagination_limits_are_per_resource(tmp_path):
+    _skip_without_api()
+    from fastapi.testclient import TestClient
+
+    small = tmp_path / "small.csv"
+    big = tmp_path / "big.csv"
+    rows = "".join(f"{i},n{i}\n" for i in range(100))
+    small.write_text("id,name\n" + rows, encoding="utf8")
+    big.write_text("id,name\n" + rows, encoding="utf8")
+    fields = [{"name": "id", "type": "integer"}, {"name": "name", "type": "varchar"}]
+    config = {
+        "resources": [
+            {
+                "name": "small",
+                "path": str(small),
+                "format": "csv",
+                "fields": fields,
+                "pagination": {"default_limit": 5, "max_limit": 10},
+            },
+            {
+                "name": "big",
+                "path": str(big),
+                "format": "csv",
+                "fields": fields,
+                "pagination": {"default_limit": 5, "max_limit": 1000},
+            },
+        ]
+    }
+    client = TestClient(_build_api_app(config))
+    assert client.get("/small?limit=50").status_code == 422
+    response = client.get("/big?limit=50")
+    assert response.status_code == 200
+    assert response.json()["pagination"]["count"] == 50
+
+
+def test_api_query_timeout_returns_504(sample_csv):
+    _skip_without_api()
+    import duckdb
+    from fastapi.testclient import TestClient
+
+    app = _build_api_app(_sample_config(sample_csv), query_timeout=0.5)
+    client = TestClient(app)
+
+    original_execute = duckdb.DuckDBPyConnection.execute
+
+    def slow_execute(self, sql, *args, **kwargs):
+        if sql.startswith("SELECT * FROM"):
+            raise duckdb.InterruptException("interrupted")
+        return original_execute(self, sql, *args, **kwargs)
+
+    with patch.object(duckdb.DuckDBPyConnection, "execute", slow_execute):
+        response = client.get("/data")
+    assert response.status_code == 504
+
+
+def test_api_config_rejects_negative_timeout(sample_csv):
+    from undatum.cmds.api import validate_api_config_schema
+
+    config = _sample_config(sample_csv)
+    config["query_timeout"] = -1
+    with pytest.raises(ValueError, match="query_timeout"):
+        validate_api_config_schema(config)
+
+
 def test_api_cors(sample_csv):
     _skip_without_api()
     from fastapi.testclient import TestClient

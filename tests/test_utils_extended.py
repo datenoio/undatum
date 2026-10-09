@@ -6,6 +6,7 @@ import tempfile
 import pytest
 
 from undatum.utils import (
+    TypeGuesser,
     buf_count_newlines_gen,
     detect_delimiter,
     detect_encoding,
@@ -351,3 +352,78 @@ class TestNormalizeForJson:
         assert normalize_for_json(123) == 123
         assert normalize_for_json("string") == "string"
         assert normalize_for_json(True) is True
+
+
+class _CountingDates:
+    """qddate stand-in: ISO dates (and anything starting with one) are dates."""
+
+    def __init__(self):
+        self.calls = 0
+
+    def match(self, value):
+        self.calls += 1
+        head = value[:10]
+        if (
+            len(head) == 10
+            and head[4] == "-"
+            and head[7] == "-"
+            and head.replace("-", "").isdigit()
+        ):
+            return {"pattern": {"key": "iso"}}
+        return None
+
+
+class TestTypeGuesser:
+    """TypeGuesser gives guess_datatype results with fewer date checks."""
+
+    VALUES = [
+        "",
+        "   ",
+        "12",
+        "012",
+        "1.5",
+        "2020-01-02",
+        "2020-01-02 note",
+        "abc",
+        "a1",
+        None,
+        7,
+        2.5,
+    ]
+
+    def test_same_results_as_guess_datatype(self):
+        qd = _CountingDates()
+        guesser = TypeGuesser(qd)
+        for value in self.VALUES:
+            assert guesser.base("f", value) == guess_datatype(value, qd)["base"], value
+
+    def test_same_results_without_date_parser(self):
+        guesser = TypeGuesser(None)
+        for value in self.VALUES:
+            assert guesser.base("f", value) == guess_datatype(value, None)["base"], value
+
+    def test_values_without_digits_skip_the_date_check(self):
+        qd = _CountingDates()
+        guesser = TypeGuesser(qd)
+        for value in ["lorem ipsum", "", "plain"] * 100:
+            guesser.base("notes", value)
+        assert qd.calls == 0
+
+    def test_repeated_values_are_cached(self):
+        qd = _CountingDates()
+        guesser = TypeGuesser(qd)
+        for _ in range(50):
+            assert guesser.base("day", "2020-01-02") == "date"
+        assert qd.calls == 1
+
+    def test_date_checks_stop_for_non_date_fields(self):
+        qd = _CountingDates()
+        guesser = TypeGuesser(qd, date_probe=100)
+        for i in range(1000):
+            guesser.base("code", f"x{i}")
+        assert qd.calls == 100
+        # A real date column keeps being checked.
+        for i in range(1000):
+            day = f"2020-01-{i % 28 + 1:02d} {i}"
+            assert guesser.base("day", day) == "date"
+        assert qd.calls == 1100

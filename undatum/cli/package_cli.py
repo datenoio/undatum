@@ -1,57 +1,53 @@
 """CLI commands for Frictionless Data Package generation."""
 
-from typing import Annotated, Optional
+from typing import Annotated
 
 import typer
 
-from ..cmds.packager import Packager
-from .common import enable_verbose
+from .common import AI_PROVIDER_HELP, AIMaskSamplesOpt, build_ai_config, enable_verbose
 
 package_app = typer.Typer(help="Frictionless Data Package commands.")
 
 
 def _build_package_options(
     *,
-    output: Optional[str] = None,
-    package_dir: Optional[str] = None,
-    name: Optional[str] = None,
-    title: Optional[str] = None,
-    description: Optional[str] = None,
-    keywords: Optional[str] = None,
-    licenses: Optional[str] = None,
-    sources: Optional[str] = None,
-    contributors: Optional[str] = None,
-    version: Optional[str] = None,
+    output: str | None = None,
+    package_dir: str | None = None,
+    name: str | None = None,
+    title: str | None = None,
+    description: str | None = None,
+    keywords: str | None = None,
+    licenses: str | None = None,
+    sources: str | None = None,
+    contributors: str | None = None,
+    version: str | None = None,
     sample_size: int = 10,
     objects_limit: int = 10000,
-    engine: Optional[str] = None,
-    delimiter: str = ",",
-    quotechar: Optional[str] = None,
-    encoding: Optional[str] = None,
-    tagname: Optional[str] = None,
+    engine: str | None = None,
+    delimiter: str | None = None,
+    quotechar: str | None = None,
+    encoding: str | None = None,
+    tagname: str | None = None,
     start_line: int = 0,
     start_page: int = 0,
-    format_in: Optional[str] = None,
+    format_in: str | None = None,
     autodoc: bool = False,
     lang: str = "English",
-    ai_provider: Optional[str] = None,
-    ai_model: Optional[str] = None,
-    ai_base_url: Optional[str] = None,
-    zip_output: Optional[str] = None,
+    ai_provider: str | None = None,
+    ai_model: str | None = None,
+    ai_base_url: str | None = None,
+    pii_mask_samples: bool | None = None,
+    zip_output: str | None = None,
     quiet: bool = False,
-    table: Optional[str] = None,
+    table: str | None = None,
     trust: bool = False,
-    on_error: Optional[str] = None,
-    error_log: Optional[str] = None,
+    on_error: str | None = None,
+    error_log: str | None = None,
     flatten_nested: bool = False,
-    max_nested_depth: Optional[int] = None,
+    max_nested_depth: int | None = None,
     keep_nested_parents: bool = True,
 ) -> dict:
-    ai_config = {}
-    if ai_model:
-        ai_config["model"] = ai_model
-    if ai_base_url:
-        ai_config["base_url"] = ai_base_url
+    ai_config = build_ai_config(ai_model, ai_base_url, pii_mask_samples)
 
     return {
         "output": output,
@@ -77,7 +73,7 @@ def _build_package_options(
         "autodoc": autodoc,
         "lang": lang,
         "ai_provider": ai_provider,
-        "ai_config": ai_config if ai_config else None,
+        "ai_config": ai_config,
         "zip": zip_output,
         "quiet": quiet,
         "table": table,
@@ -93,33 +89,33 @@ def _build_package_options(
 @package_app.command("create")
 def package_create(
     input_files: Annotated[list[str], typer.Argument(help="Input file(s) to package.")],
-    output: Annotated[Optional[str], typer.Option(help="Output datapackage.json path.")] = None,
+    output: Annotated[str | None, typer.Option(help="Output datapackage.json path.")] = None,
     package_dir: Annotated[
-        Optional[str], typer.Option(help="Package directory to materialize.")
+        str | None, typer.Option(help="Package directory to materialize.")
     ] = None,
-    name: Annotated[Optional[str], typer.Option(help="Package name (slug).")] = None,
-    title: Annotated[Optional[str], typer.Option(help="Package title.")] = None,
-    description: Annotated[Optional[str], typer.Option(help="Package description.")] = None,
-    keywords: Annotated[Optional[str], typer.Option(help="Comma-separated keywords.")] = None,
+    name: Annotated[str | None, typer.Option(help="Package name (slug).")] = None,
+    title: Annotated[str | None, typer.Option(help="Package title.")] = None,
+    description: Annotated[str | None, typer.Option(help="Package description.")] = None,
+    keywords: Annotated[str | None, typer.Option(help="Comma-separated keywords.")] = None,
     licenses: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(
             help="Licenses (semicolon-separated entries, e.g. 'name=MIT;name=ODC-PDDL-1.0')."
         ),
     ] = None,
     sources: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(
             help="Sources (semicolon-separated entries, e.g. 'title=World Bank,path=https://...')."
         ),
     ] = None,
     contributors: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(
             help="Contributors (semicolon-separated entries, e.g. 'title=Jane Doe,email=jane@example.com')."
         ),
     ] = None,
-    version: Annotated[Optional[str], typer.Option(help="Package version string.")] = None,
+    version: Annotated[str | None, typer.Option(help="Package version string.")] = None,
     sample_size: Annotated[
         int, typer.Option(help="Number of sample records to include in metadata inference.")
     ] = 10,
@@ -127,22 +123,24 @@ def package_create(
         int, typer.Option(help="Maximum number of objects to analyze for schema inference.")
     ] = 10000,
     engine: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(help="Processing engine: 'auto' (default) or 'duckdb'."),
     ] = None,
-    delimiter: Annotated[str, typer.Option(help="CSV delimiter character.")] = ",",
+    delimiter: Annotated[
+        str | None, typer.Option(help="CSV delimiter character (auto-detected when omitted).")
+    ] = None,
     quotechar: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(
             "--quotechar",
             help="CSV quote character (iterabledata default '\"' when omitted).",
         ),
     ] = None,
     encoding: Annotated[
-        Optional[str], typer.Option(help="File encoding (e.g., 'utf8', 'latin1').")
+        str | None, typer.Option(help="File encoding (e.g., 'utf8', 'latin1').")
     ] = None,
     tagname: Annotated[
-        Optional[str], typer.Option(help="XML tag name that contains individual records.")
+        str | None, typer.Option(help="XML tag name that contains individual records.")
     ] = None,
     start_line: Annotated[
         int, typer.Option(help="Line number (0-based) to start reading from.")
@@ -151,7 +149,7 @@ def package_create(
         int, typer.Option(help="Page number (0-based) to start from for Excel files.")
     ] = 0,
     format_in: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(help="Override input file format detection (e.g., 'csv', 'jsonl', 'xml')."),
     ] = None,
     autodoc: Annotated[bool, typer.Option(help="Enable AI-powered metadata generation.")] = False,
@@ -159,26 +157,23 @@ def package_create(
         str, typer.Option(help="Language for AI-generated metadata (default: 'English').")
     ] = "English",
     ai_provider: Annotated[
-        Optional[str],
-        typer.Option(
-            help="AI provider to use: 'openai', 'openrouter', 'ollama', 'lmstudio', or 'perplexity'."
-        ),
+        str | None,
+        typer.Option(help=AI_PROVIDER_HELP),
     ] = None,
     ai_model: Annotated[
-        Optional[str], typer.Option(help="Model name to use (provider-specific).")
+        str | None, typer.Option(help="Model name to use (provider-specific).")
     ] = None,
-    ai_base_url: Annotated[
-        Optional[str], typer.Option(help="Base URL for AI API (optional).")
-    ] = None,
+    ai_base_url: Annotated[str | None, typer.Option(help="Base URL for AI API (optional).")] = None,
+    pii_mask_samples: AIMaskSamplesOpt = None,
     zip_output: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(
             "--zip",
             help="Create a ZIP archive of the package directory (requires --package-dir).",
         ),
     ] = None,
     table: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(
             "--table",
             "--sheet",
@@ -193,14 +188,14 @@ def package_create(
         ),
     ] = False,
     on_error: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(
             "--on-error",
             help="Parse-error policy: raise (default), skip, or warn.",
         ),
     ] = None,
     error_log: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(
             "--error-log",
             help="Append parse errors as JSONL (use with --on-error skip or warn).",
@@ -214,7 +209,7 @@ def package_create(
         ),
     ] = False,
     max_nested_depth: Annotated[
-        Optional[int],
+        int | None,
         typer.Option(
             "--max-nested-depth",
             help="With --flatten-nested, maximum nest depth to unfold (engine default 5).",
@@ -230,6 +225,8 @@ def package_create(
     verbose: Annotated[bool, typer.Option(help="Enable verbose logging output.")] = False,
 ):
     """Generate a Frictionless Data Package descriptor."""
+    from ..cmds.packager import Packager
+
     if verbose:
         enable_verbose()
 
@@ -259,6 +256,7 @@ def package_create(
         ai_provider=ai_provider,
         ai_model=ai_model,
         ai_base_url=ai_base_url,
+        pii_mask_samples=pii_mask_samples,
         zip_output=zip_output,
         table=table,
         trust=trust,
@@ -276,34 +274,37 @@ def package_add_resource(
     package_file: Annotated[str, typer.Argument(help="Existing datapackage.json to extend.")],
     input_files: Annotated[list[str], typer.Argument(help="Input file(s) to add.")],
     package_dir: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(help="Package directory containing data files (defaults to descriptor dir)."),
     ] = None,
     sample_size: Annotated[int, typer.Option(help="Sample size for metadata inference.")] = 10,
     objects_limit: Annotated[int, typer.Option(help="Maximum objects to analyze.")] = 10000,
-    engine: Annotated[Optional[str], typer.Option(help="Processing engine.")] = None,
-    delimiter: Annotated[str, typer.Option(help="CSV delimiter character.")] = ",",
+    engine: Annotated[str | None, typer.Option(help="Processing engine.")] = None,
+    delimiter: Annotated[
+        str | None, typer.Option(help="CSV delimiter character (auto-detected when omitted).")
+    ] = None,
     quotechar: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(
             "--quotechar",
             help="CSV quote character (iterabledata default '\"' when omitted).",
         ),
     ] = None,
-    encoding: Annotated[Optional[str], typer.Option(help="File encoding.")] = None,
-    tagname: Annotated[Optional[str], typer.Option(help="XML record tag name.")] = None,
+    encoding: Annotated[str | None, typer.Option(help="File encoding.")] = None,
+    tagname: Annotated[str | None, typer.Option(help="XML record tag name.")] = None,
     start_line: Annotated[
         int, typer.Option(help="Line number (0-based) to start reading from.")
     ] = 0,
     start_page: Annotated[int, typer.Option(help="Excel start page (0-based).")] = 0,
-    format_in: Annotated[Optional[str], typer.Option(help="Override input format.")] = None,
+    format_in: Annotated[str | None, typer.Option(help="Override input format.")] = None,
     autodoc: Annotated[bool, typer.Option(help="Enable AI-powered metadata generation.")] = False,
     lang: Annotated[str, typer.Option(help="Language for AI metadata.")] = "English",
-    ai_provider: Annotated[Optional[str], typer.Option(help="AI provider name.")] = None,
-    ai_model: Annotated[Optional[str], typer.Option(help="AI model name.")] = None,
-    ai_base_url: Annotated[Optional[str], typer.Option(help="AI API base URL.")] = None,
+    ai_provider: Annotated[str | None, typer.Option(help=AI_PROVIDER_HELP)] = None,
+    ai_model: Annotated[str | None, typer.Option(help="AI model name.")] = None,
+    ai_base_url: Annotated[str | None, typer.Option(help="AI API base URL.")] = None,
+    pii_mask_samples: AIMaskSamplesOpt = None,
     table: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(
             "--table",
             "--sheet",
@@ -318,14 +319,14 @@ def package_add_resource(
         ),
     ] = False,
     on_error: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(
             "--on-error",
             help="Parse-error policy: raise (default), skip, or warn.",
         ),
     ] = None,
     error_log: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(
             "--error-log",
             help="Append parse errors as JSONL (use with --on-error skip or warn).",
@@ -339,7 +340,7 @@ def package_add_resource(
         ),
     ] = False,
     max_nested_depth: Annotated[
-        Optional[int],
+        int | None,
         typer.Option(
             "--max-nested-depth",
             help="With --flatten-nested, maximum nest depth to unfold (engine default 5).",
@@ -355,6 +356,8 @@ def package_add_resource(
     verbose: Annotated[bool, typer.Option(help="Enable verbose logging output.")] = False,
 ):
     """Add resources to an existing Frictionless Data Package descriptor."""
+    from ..cmds.packager import Packager
+
     if verbose:
         enable_verbose()
 
@@ -375,6 +378,7 @@ def package_add_resource(
         ai_provider=ai_provider,
         ai_model=ai_model,
         ai_base_url=ai_base_url,
+        pii_mask_samples=pii_mask_samples,
         table=table,
         trust=trust,
         on_error=on_error,
@@ -390,7 +394,7 @@ def package_add_resource(
 def package_validate(
     package_file: Annotated[str, typer.Argument(help="Path to datapackage.json.")],
     limit_rows: Annotated[
-        Optional[int], typer.Option(help="Limit rows validated per resource.")
+        int | None, typer.Option(help="Limit rows validated per resource.")
     ] = None,
     check_data: Annotated[
         bool, typer.Option(help="Validate resource data in addition to metadata.")
@@ -398,6 +402,8 @@ def package_validate(
     verbose: Annotated[bool, typer.Option(help="Enable verbose logging output.")] = False,
 ):
     """Validate a Frictionless Data Package descriptor."""
+    from ..cmds.packager import Packager
+
     if verbose:
         enable_verbose()
 

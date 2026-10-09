@@ -4,12 +4,12 @@ This module provides common functions used by both schema extraction
 and data analysis commands to eliminate code duplication.
 """
 
-from typing import Any, Optional, Union
+from typing import Any
 
 import duckdb
 import pandas as pd
 
-from .command_utils import duckdb_read_csv_expr, duckdb_read_csv_options
+from .command_utils import duckdb_read_csv_expr
 
 # DuckDB type → Frictionless Table Schema type (shared by packager and schemer).
 DUCKDB_FRICTIONLESS_TYPE_MAP = {
@@ -79,7 +79,7 @@ def duckdb_to_frictionless_type(duckdb_type: str, is_array: bool) -> dict[str, A
     return {"type": base_type}
 
 
-def duckdb_to_json_schema_type(duckdb_type: str, is_array: bool) -> Union[str, dict[str, Any]]:
+def duckdb_to_json_schema_type(duckdb_type: str, is_array: bool) -> str | dict[str, Any]:
     """Convert DuckDB type to JSON Schema type.
 
     Args:
@@ -117,17 +117,17 @@ def field_to_frictionless_schema(field: Any) -> dict[str, Any]:
 
 
 def duckdb_decompose(
-    filename: Optional[str] = None,
-    frame: Optional[pd.DataFrame] = None,
-    filetype: Optional[str] = None,
+    filename: str | None = None,
+    frame: pd.DataFrame | None = None,
+    filetype: str | None = None,
     path: str = "*",
     limit: int = 10000000,
     recursive: bool = True,
     root: str = "",
     ignore_errors: bool = True,
     use_summarize: bool = False,
-    delimiter: Optional[str] = None,
-):
+    delimiter: str | None = None,
+) -> list[Any]:
     """Decompose file or DataFrame structure using DuckDB.
 
     This function uses DuckDB's describe or summarize functions to extract
@@ -159,13 +159,12 @@ def duckdb_decompose(
         raise ValueError("Either filename or frame must be provided")
 
     json_ignore = ", ignore_errors=true" if ignore_errors else ""
+    data: list = []
     if filetype in ["csv", "tsv"]:
         if filename is not None:
             # For schemer (describe), use sample_size; for analyzer (summarize), don't
             if use_summarize:
-                read_func = duckdb_read_csv_expr(
-                    filename, delimiter, ignore_errors=ignore_errors
-                )
+                read_func = duckdb_read_csv_expr(filename, delimiter, ignore_errors=ignore_errors)
             else:
                 read_func = duckdb_read_csv_expr(
                     filename,
@@ -180,11 +179,10 @@ def duckdb_decompose(
             read_func = f"read_json('{filename}'{json_ignore})"
         else:
             read_func = "frame"
+    elif filename is not None:
+        read_func = f"'{filename}'"
     else:
-        if filename is not None:
-            read_func = f"'{filename}'"
-        else:
-            read_func = "frame"
+        read_func = "frame"
 
     # Choose query command based on use_summarize flag
     query_cmd = "summarize" if use_summarize else "describe"
@@ -220,7 +218,7 @@ def duckdb_decompose(
                 return []
     else:
         # Validate path before using it in SQL queries
-        if not path or not isinstance(path, str) or path == "None" or path == "":
+        if not path or not isinstance(path, str) or path in {"None", ""}:
             # Return empty result if path is invalid
             return []
 
@@ -288,6 +286,9 @@ def duckdb_decompose(
                     f'recursive:=true) from (select unnest("{path_parts[0]}", '
                     f"recursive:=true) from {read_func}{limit_clause}))"
                 )
+        if query is None:
+            # Nesting deeper than four levels is not decomposed with DuckDB.
+            return []
         # Execute query with error handling for None column references
         try:
             data = duckdb.sql(query).fetchall()
@@ -329,7 +330,7 @@ def duckdb_decompose(
             continue
 
         # Skip empty string, "None" string, or invalid field names
-        if not field_name_str or field_name_str == "None" or field_name_str == "":
+        if not field_name_str or field_name_str in {"None", ""}:
             continue
 
         # Additional check: ensure field_name_str doesn't contain "None" as a segment
@@ -346,12 +347,11 @@ def duckdb_decompose(
         # Build item path - ensure root is valid
         if len(root) == 0:
             item = [field_name]
+        # Validate root before concatenation
+        elif root and isinstance(root, str) and root != "None":
+            item = [root + "." + field_name]
         else:
-            # Validate root before concatenation
-            if root and isinstance(root, str) and root != "None":
-                item = [root + "." + field_name]
-            else:
-                item = [field_name]
+            item = [field_name]
 
         # Parse column type - validate row[1] exists and is a string
         if len(row) < 2 or row[1] is None:
@@ -429,8 +429,7 @@ def duckdb_decompose(
             if (
                 sub_path
                 and isinstance(sub_path, str)
-                and sub_path != "None"
-                and sub_path != ""
+                and sub_path not in {"None", ""}
                 and ".None." not in sub_path
                 and not sub_path.startswith("None.")
                 and not sub_path.endswith(".None")

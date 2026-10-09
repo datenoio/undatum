@@ -4,27 +4,30 @@ import csv
 import datetime
 import logging
 from copy import copy
+from typing import Any
 
 import bson
 import orjson
 
 from .functions import get_dict_value_deep
 
-OTYPES_MAP = [
-    [str, "string"],
-    [str, "string"],
-    [datetime.datetime, "datetime"],
-    [int, "integer"],
-    [bool, "boolean"],
-    [float, "float"],
-    [str, "string"],
-    [bson.int64.Int64, "integer"],
-    [bson.objectid.ObjectId, "string"],
-    [type([]), "array"],
+logger = logging.getLogger(__name__)
+
+OTYPES_MAP: list[tuple[type, str]] = [
+    (str, "string"),
+    (str, "string"),
+    (datetime.datetime, "datetime"),
+    (int, "integer"),
+    (bool, "boolean"),
+    (float, "float"),
+    (str, "string"),
+    (bson.int64.Int64, "integer"),
+    (bson.objectid.ObjectId, "string"),
+    (type([]), "array"),
 ]
 
 
-def merge_schemes(alist, novalue=True):
+def merge_schemes(alist: list[Any], novalue: bool = True) -> Any:
     """Merges schemes of list of objects and generates final data schema"""
     if len(alist) == 0:
         return None
@@ -45,19 +48,18 @@ def merge_schemes(alist, novalue=True):
                     obj[k]["schema"] = merge_schemes([obj[k]["schema"], item[k]["schema"]])
             elif obj[k]["type"] == "array":
                 #                if 'subtype' not in obj[k].keys():
-                #                   logging.info(str(obj[k]))
+                #                   logger.info(str(obj[k]))
                 if "subtype" in obj[k].keys() and obj[k]["subtype"] == "dict":
                     if not novalue:
                         obj[k]["value"] += item[k]["value"]
                     if "schema" in item[k].keys():
                         obj[k]["schema"] = merge_schemes([obj[k]["schema"], item[k]["schema"]])
-                else:
-                    if not novalue:
-                        obj[k]["value"] += item["value"]
+                elif not novalue:
+                    obj[k]["value"] += item["value"]
     return obj
 
 
-def get_schemes(alist):
+def get_schemes(alist: list[Any]) -> list[Any]:
     """Generates schemas for each object"""
     results = []
     for o in alist:
@@ -65,14 +67,14 @@ def get_schemes(alist):
     return results
 
 
-def get_schema(obj, novalue=True):
+def get_schema(obj: dict[str, Any], novalue: bool = True) -> dict[str, Any]:
     """Generates schema from object"""
     result = {}
-    for k in obj.keys():
-        tt = type(obj[k])
-        if obj[k] is None:
+    for k, value in obj.items():
+        tt = type(value)
+        if value is None:
             result[k] = {"type": "string", "value": 1}
-        elif isinstance(obj[k], str):
+        elif isinstance(value, str):
             result[k] = {"type": "string", "value": 1}
         elif tt is datetime.datetime:
             result[k] = {"type": "datetime", "value": 1}
@@ -87,32 +89,34 @@ def get_schema(obj, novalue=True):
         elif tt is bson.objectid.ObjectId:
             result[k] = {"type": "string", "value": 1}
         elif tt is dict:
-            result[k] = {"type": "dict", "value": 1, "schema": get_schema(obj[k])}
+            result[k] = {"type": "dict", "value": 1, "schema": get_schema(value)}
         elif tt is list:
             result[k] = {"type": "array", "value": 1}
-            if len(obj[k]) == 0:
+            if len(value) == 0:
                 result[k]["subtype"] = "string"
             else:
                 found = False
                 for otype, oname in OTYPES_MAP:
-                    if isinstance(obj[k][0], otype):
+                    if isinstance(value[0], otype):
                         result[k]["subtype"] = oname
                         found = True
                 if not found:
-                    if isinstance(obj[k][0], dict):
+                    if isinstance(value[0], dict):
                         result[k]["subtype"] = "dict"
-                        result[k]["schema"] = merge_schemes(get_schemes(obj[k]))
+                        result[k]["schema"] = merge_schemes(get_schemes(value))
                     else:
-                        logging.info(f"Unknown object {k} type {str(type(obj[k][0]))}")
+                        logger.info(f"Unknown object {k} type {str(type(value[0]))}")
         else:
-            logging.info(f"Unknown object {k} type {str(type(obj[k]))}")
+            logger.info(f"Unknown object {k} type {str(type(value))}")
             result[k] = {"type": "string", "value": 1}
         if novalue:
             del result[k]["value"]
     return result
 
 
-def extract_keys(obj, parent=None, text=None, level=1):
+def extract_keys(
+    obj: Any, parent: str | None = None, text: str | None = None, level: int = 1
+) -> str:
     """Extracts keys"""
     text = ""
     if not parent:
@@ -135,14 +139,14 @@ def extract_keys(obj, parent=None, text=None, level=1):
                     text += "\t" * level + f"'{k}' : {{'type' : 'string'}},\n"
             text += "\t" * level + "}}},\n"
         else:
-            logging.info(str(type(obj[k])))
+            logger.info(str(type(obj[k])))
             text += "\t" * level + f"'{k}' : {{'type' : 'string'}},\n"
     if not parent:
         text += "}"
     return text
 
 
-def __get_filetype_by_ext(filename):
+def __get_filetype_by_ext(filename: str) -> str | None:
     ext = filename.rsplit(".", 1)[-1].lower()
     if ext in ["bson", "json", "csv", "jsonl"]:
         return ext
@@ -150,30 +154,31 @@ def __get_filetype_by_ext(filename):
 
 
 def generate_scheme_from_file(
-    filename=None,
-    fileobj=None,
-    filetype="bson",
-    alimit=1000,
-    verbose=0,
-    encoding="utf8",
-    delimiter=",",
-    quotechar='"',
-):
+    filename: str | None = None,
+    fileobj: Any = None,
+    filetype: str | None = "bson",
+    alimit: int = 1000,
+    verbose: int = 0,
+    encoding: str = "utf8",
+    delimiter: str = ",",
+    quotechar: str = '"',
+) -> Any:
     """Generates schema of the data BSON file"""
     if not filetype and filename is not None:
         filetype = __get_filetype_by_ext(filename)
-    datacache = []
+    datacache: list[Any] = []
+    source: Any
     if filetype == "bson":
         if filename:
             source = open(filename, "rb")
         else:
             source = fileobj
         n = 0
-        for r in bson.decode_file_iter(source):
+        for document in bson.decode_file_iter(source):
             n += 1
             if n > alimit:
                 break
-            datacache.append(r)
+            datacache.append(document)
         if filename:
             source.close()
     elif filetype == "jsonl":
@@ -182,11 +187,11 @@ def generate_scheme_from_file(
         else:
             source = fileobj
         n = 0
-        for r in source:
+        for line in source:
             n += 1
             if n > alimit:
                 break
-            datacache.append(orjson.loads(r))
+            datacache.append(orjson.loads(line))
         if filename:
             source.close()
     elif filetype == "csv":
@@ -216,10 +221,15 @@ def generate_scheme_from_file(
     return scheme
 
 
-def schema2fieldslist(schema, prefix=None, predefined=None, sample=None):
+def schema2fieldslist(
+    schema: dict[str, Any],
+    prefix: str | None = None,
+    predefined: Any = None,
+    sample: Any = None,
+) -> list[dict[str, Any]]:
     """Converts data schema to the fields list"""
     fieldslist = []
-    for k in schema.keys():
+    for k, entry in schema.items():
         if prefix is None:
             name = k
         else:
@@ -228,11 +238,11 @@ def schema2fieldslist(schema, prefix=None, predefined=None, sample=None):
             sampledata = get_dict_value_deep(sample, name) if sample else ""
         except Exception:
             sampledata = ""
-        if "schema" not in schema[k].keys():
-            if schema[k]["type"] != "array":
+        if "schema" not in entry.keys():
+            if entry["type"] != "array":
                 field = {
                     "name": name,
-                    "type": schema[k]["type"],
+                    "type": entry["type"],
                     "description": "",
                     "sample": sampledata,
                     "class": "",
@@ -240,7 +250,7 @@ def schema2fieldslist(schema, prefix=None, predefined=None, sample=None):
             else:
                 field = {
                     "name": name,
-                    "type": "list of [{}]".format(schema[k]["type"]),
+                    "type": "list of [{}]".format(entry["type"]),
                     "description": "",
                     "sample": sampledata,
                     "class": "",
@@ -263,10 +273,10 @@ def schema2fieldslist(schema, prefix=None, predefined=None, sample=None):
             #                subprefix.append(k)
             else:
                 subprefix = k
-            if schema[k]["type"] == "dict":
+            if entry["type"] == "dict":
                 field = {
                     "name": name,
-                    "type": schema[k]["type"],
+                    "type": entry["type"],
                     "description": "",
                     "sample": "",
                     "class": "",
@@ -283,13 +293,13 @@ def schema2fieldslist(schema, prefix=None, predefined=None, sample=None):
                 fieldslist.append(field)
                 fieldslist.extend(
                     schema2fieldslist(
-                        schema[k]["schema"], prefix=subprefix, predefined=predefined, sample=sample
+                        entry["schema"], prefix=subprefix, predefined=predefined, sample=sample
                     )
                 )
-            elif schema[k]["type"] == "array":
+            elif entry["type"] == "array":
                 field = {
                     "name": name,
-                    "type": "list of [{}]".format(schema[k]["type"]),
+                    "type": "list of [{}]".format(entry["type"]),
                     "description": "",
                     "sample": "",
                     "class": "",
@@ -305,6 +315,6 @@ def schema2fieldslist(schema, prefix=None, predefined=None, sample=None):
                             field["class"] = predefined[k]["class"]
                 fieldslist.append(field)
                 fieldslist.extend(
-                    schema2fieldslist(schema[k]["schema"], prefix=subprefix, sample=sample)
+                    schema2fieldslist(entry["schema"], prefix=subprefix, sample=sample)
                 )
     return fieldslist

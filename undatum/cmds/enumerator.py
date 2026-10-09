@@ -1,79 +1,44 @@
-"""Enum command module - add row numbers, UUIDs, or constants."""
+"""Enum command: add row numbers, UUIDs or a constant field."""
 
 import logging
-import sys
-import uuid
 
-from ..common.command_utils import (
-    ITERABLE_OPTIONS_KEYS,  # noqa: F401
-    get_iterable_options,
-    iter_command_rows,
-)  # noqa: F401
-from ..common.errors import FormatError
-from ..common.iterable import DataWriter
-from ..common.s3_iterable import open_path as open_iterable
-from ..utils import get_file_type, get_option, normalize_for_json
+from ..common.errors import ValidationError
+from ..common.path_utils import validate_file_path
+from ..io import open_source
+from ..ops import EnumConfig, run
+from ..utils import get_option
+
+logger = logging.getLogger(__name__)
+
+KINDS = ("number", "uuid", "constant")
 
 
 class Enumerator:
-    """Enumerator command handler - add row numbers, UUIDs, or constants."""
-
-    def __init__(self):
-        pass
+    """Enum command handler."""
 
     def enum(self, fromfile, options=None):
-        """Add row numbers, UUIDs, or constant values to records."""
-        if options is None:
-            options = {}
-        logging.debug("Processing %s", fromfile)
-        iterableargs = get_iterable_options(options)
-        field_name = get_option(options, "field") or "row_id"
-        enum_type = get_option(options, "type") or "number"
-        start = get_option(options, "start") or 1
-        value = get_option(options, "value")
-        to_file = get_option(options, "output")
+        """Add a generated field to every record.
 
-        iterable = open_iterable(fromfile, mode="r", iterableargs=iterableargs)
-        try:
-            count = start
-            items = []
-            for item in iter_command_rows(iterable, options):
-                if isinstance(item, dict):
-                    if enum_type == "uuid":
-                        item[field_name] = str(uuid.uuid4())
-                    elif enum_type == "constant" and value is not None:
-                        item[field_name] = value
-                    else:  # number
-                        item[field_name] = count
-                        count += 1
-                items.append(item)
-                if len(items) % 10000 == 0:
-                    logging.debug("enum: processed %d records", len(items))
-        finally:
-            iterable.close()
+        Args:
+            fromfile: Input path.
+            options: ``field`` (default ``row_id``), ``type`` (``number``, ``uuid``,
+                ``constant``), ``start``, ``value``, ``output`` and reader options.
 
-        if to_file:
-            to_type = get_file_type(to_file)
-            if not to_type:
-                raise FormatError(to_file, to_file.rsplit(".", 1)[-1])
-            out = open(to_file, "w", encoding="utf8")
-        else:
-            to_type = "jsonl"
-            out = sys.stdout
-
-        # Normalize items to convert non-JSON-serializable types (e.g., UUID) to strings
-        normalized_items = [normalize_for_json(item) for item in items]
-
-        # Extract fieldnames from items for CSV output
-        fieldnames = None
-        if to_type == "csv" and normalized_items:
-            if isinstance(normalized_items[0], dict):
-                fieldnames = list(normalized_items[0].keys())
-
-        writer = DataWriter(out, filetype=to_type, fieldnames=fieldnames)
-        writer.write_items(normalized_items)
-
-        if to_file:
-            out.close()
-
-        logging.debug("enum: processed %d records", len(items))
+        Raises:
+            ValidationError: If the type is unknown.
+        """
+        options = options or {}
+        validate_file_path(fromfile, check_read=True)
+        kind = get_option(options, "type") or "number"
+        if kind not in KINDS:
+            raise ValidationError(
+                f"Unknown enum type '{kind}'", field="type", suggestions=list(KINDS)
+            )
+        cfg = EnumConfig(
+            field=get_option(options, "field") or "row_id",
+            kind=kind,
+            start=int(get_option(options, "start") or 1),
+            value=get_option(options, "value"),
+        )
+        count = run("enum", cfg, open_source(fromfile, options), get_option(options, "output"))
+        logger.debug("enum: wrote %d records", count)

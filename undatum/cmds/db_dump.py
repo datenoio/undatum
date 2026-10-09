@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 from ..common.errors import ValidationError
 from .db_query import DatabaseQueryExecutor
@@ -18,8 +17,8 @@ class DatabaseDumper:
         self,
         db_uri: str,
         output: str,
-        table: Optional[str] = None,
-        query: Optional[str] = None,
+        table: str | None = None,
+        query: str | None = None,
         output_format: str = "parquet",
         batch_size: int = 10000,
     ) -> None:
