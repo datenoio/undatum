@@ -130,7 +130,7 @@ class Fill(Operation[FillConfig]):
                         out[field] = cfg.value
                     elif field in neighbour:
                         out[field] = neighbour[field]
-                    elif cfg.value:
+                    elif not _is_empty(cfg.value):
                         out[field] = cfg.value
                 else:
                     neighbour[field] = out[field]

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased](https://github.com/datenoio/undatum/compare/v1.8.0...HEAD)
 
+### Fixed
+
+- Forward and backward fill now accept `0`, `0.0` and `False` as fallback values when no neighbour value exists.
+
 ### Changed
 
 - **Benchmarks** — the 1M-row benchmark no longer runs every night; start it from the Actions tab (Benchmarks → Run workflow) when needed. Pull requests still compare 100k-row runs with the base branch

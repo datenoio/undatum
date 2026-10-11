@@ -94,6 +94,31 @@ def test_fill_strategies(strategy, expected):
     assert [r["v"] for r in out] == expected
 
 
+@pytest.mark.parametrize("strategy", ["forward", "backward"])
+@pytest.mark.parametrize("fallback", [0, 0.0, False])
+def test_fill_zero_and_false_fallbacks(strategy, fallback):
+    rows = [{"v": None}, {"v": ""}, {}]
+    out = apply("fill", FillConfig(fields=("v",), strategy=strategy, value=fallback), rows)
+    assert [r["v"] for r in out] == [fallback] * len(rows)
+    assert all(type(r["v"]) is type(fallback) for r in out)
+
+
+@pytest.mark.parametrize("strategy", ["forward", "backward"])
+@pytest.mark.parametrize("fallback", [0, 0.0, False])
+def test_fill_prefers_neighbour_to_zero_and_false_fallbacks(strategy, fallback):
+    rows = [{"v": None}, {"v": 7}, {"v": ""}, {}]
+    out = apply("fill", FillConfig(fields=("v",), strategy=strategy, value=fallback), rows)
+    expected = [fallback, 7, 7, 7] if strategy == "forward" else [7, 7, fallback, fallback]
+    assert [r["v"] for r in out] == expected
+
+
+@pytest.mark.parametrize("strategy", ["forward", "backward"])
+@pytest.mark.parametrize("fallback", [None, ""])
+def test_fill_leaves_empty_values_without_a_fallback(strategy, fallback):
+    rows = [{"v": None}, {"v": ""}, {}]
+    assert apply("fill", FillConfig(fields=("v",), strategy=strategy, value=fallback), rows) == rows
+
+
 DUPES = [
     {"k": 1, "v": "a"},
     {"k": 2, "v": "b"},
