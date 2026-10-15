@@ -103,7 +103,7 @@ The current local margins are max(3 × median time, median + 1 s), 1.3 × RSS + 
 3% + 16 bytes for output and 20% + 4 KiB for scratch. These are local regression
 budgets; Linux CI calibration and automatic CI wiring remain separate work.
 
-Evidence is saved in `openspec/changes/improve-repack-preservation/benchmarks*.json`.
+Evidence is saved in `openspec/changes/archive/2026-10-15-improve-repack-preservation/benchmarks*.json`.
 Each report records Python/library versions, Git revisions and implementation hashes;
 the filerepack comparison uses its local modified checkout, not a released package.
 The new command is measured through the CLI, while both baselines use their APIs in
