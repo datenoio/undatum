@@ -179,7 +179,7 @@ all = [
 # scripts/check_tool_versions.py fails CI when they drift.
 dev = [
     "ruff==0.14.9",
-    "mypy==1.19.1",
+    "mypy==2.4.0",
     "types-PyYAML",
     "types-requests",
     "types-PyMySQL",
