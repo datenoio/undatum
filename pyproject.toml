@@ -178,7 +178,7 @@ all = [
 # Tool versions are pinned here and mirrored in .pre-commit-config.yaml and CI;
 # scripts/check_tool_versions.py fails CI when they drift.
 dev = [
-    "ruff==0.14.9",
+    "ruff==0.17.0",
     "mypy==1.19.1",
     "types-PyYAML",
     "types-requests",
