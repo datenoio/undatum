@@ -199,7 +199,7 @@ def duckdb_decompose(
                 query_str = f"{query_cmd} select {path} from {read_func}{limit_clause}"
             # Execute query with error handling for None column references
             try:
-                data = duckdb.sql(query_str).fetchall()
+                data = duckdb.execute(query_str).fetchall()
             except (duckdb.Error, Exception) as e:
                 error_msg = str(e)
                 # Only catch specific "Referenced column 'None' not found" errors
@@ -291,7 +291,7 @@ def duckdb_decompose(
             return []
         # Execute query with error handling for None column references
         try:
-            data = duckdb.sql(query).fetchall()
+            data = duckdb.execute(query).fetchall()
         except (duckdb.Error, Exception) as e:
             # If query fails due to None column reference, return empty result
             error_msg = str(e)

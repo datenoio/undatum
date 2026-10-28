@@ -78,7 +78,7 @@ def check_expression(conn: Any, expression: str, option: str) -> None:
     Raises:
         ValidationError: If the expression does not parse or is not allowed.
     """
-    raw = conn.sql("SELECT json_serialize_sql(?)", params=[f"SELECT {expression}"]).fetchone()[0]
+    raw = conn.execute("SELECT json_serialize_sql(?)", [f"SELECT {expression}"]).fetchall()[0][0]
     tree = json.loads(raw)
     if tree.get("error") or len(tree.get("statements") or []) != 1:
         message = tree.get("error_message") or "not a single expression"
@@ -138,7 +138,7 @@ def infer_types(
             f"count_if(regexp_matches({value}, '^[+-]?0[0-9]'))",
         ]
     sample = f"(SELECT * FROM {relation} LIMIT {SAMPLE_ROWS})"
-    counts = conn.sql(f"SELECT {', '.join(parts)} FROM {sample}").fetchone()
+    counts = conn.execute(f"SELECT {', '.join(parts)} FROM {sample}").fetchall()[0]
     for index, name in enumerate(text):
         total, *typed, leading_zero = counts[index * 7 : index * 7 + 7]
         if not total or leading_zero:

@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased](https://github.com/datenoio/undatum/compare/v1.9.1...HEAD)
 
+Upgrading: Python 3.11 or newer is required, and undatum now uses DuckDB 2.0. On Python 3.10 pip keeps installing 1.9.x.
+
+### Breaking
+
+- **Python 3.11 is the minimum version.** Python 3.10 reached end of life in October 2026; the current DuckDB, pandas, pyarrow and Polars releases need 3.11 as well.
+- **DuckDB 2.0** — `duckdb>=2.0,<3` (the 2.0 LTS line, supported until October 2027; the 1.5 line ends on 2027-03-01). Queries that return one row now read their result to the end, as DuckDB 2.0 requires before the next query on a connection, and streamed results use `execute()` instead of relations, which no longer have `fetchone()`/`fetchmany()`. The `lakehouse` extra still installs, but pyducklake has no release for DuckDB 2.0 yet, so pip picks pyducklake 1.0.12, the newest one that accepts it.
+
+### Added
+
+- **Offline DuckDB extensions** — `UNDATUM_DUCKDB_EXTENSION_DIR` points DuckDB at preinstalled extensions on machines without network access; a command that needs a missing extension stops with exit code 2 and names it.
+
 ### Fixed
 
 - Forward and backward fill now accept `0`, `0.0` and `False` as fallback values when no neighbour value exists.

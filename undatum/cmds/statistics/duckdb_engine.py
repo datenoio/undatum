@@ -200,7 +200,7 @@ class DuckDBStatsMixin:
                 """
 
                 # Execute query
-                result = duckdb.sql(query).fetchone()
+                result = duckdb.execute(query).fetchall()[0]
 
                 if result:
                     minlen, maxlen, avglen, total_count = result
@@ -286,7 +286,7 @@ class DuckDBStatsMixin:
                     COUNT(*) as total
                 FROM {read_func}
                 """
-                result = duckdb.sql(query).fetchone()
+                result = duckdb.execute(query).fetchall()[0]
                 if result:
                     missing_count, n_uniq, total = result
                     total = total or total_count or 0
@@ -340,7 +340,7 @@ class DuckDBStatsMixin:
                     STDDEV({numeric_expr}) as stddev_val
                 FROM {read_func}
                 """
-                result = duckdb.sql(query).fetchone()
+                result = duckdb.execute(query).fetchall()[0]
                 if result and result[2] is not None:
                     min_val, max_val, mean_val, median_val, stddev_val = result
                     distribution_stats[field_path] = {
@@ -630,7 +630,7 @@ class DuckDBStatsMixin:
                 else:
                     query_str = f"SELECT COUNT(*) FROM '{fromfile}'"
                 with progress(desc="Counting rows", unit="rows", leave=False, total=None) as pbar:
-                    total_count = duckdb.sql(query_str).fetchone()[0]
+                    total_count = duckdb.execute(query_str).fetchall()[0][0]
                     pbar.total = total_count
                     pbar.update(total_count)
             except Exception as e:

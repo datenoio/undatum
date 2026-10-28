@@ -10,7 +10,7 @@ import time
 from collections.abc import Iterator
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Any, cast
+from typing import Any
 
 from .errors import DependencyError, ValidationError
 from .file_snapshot import FileSnapshot
@@ -304,7 +304,7 @@ def repack_orc(
     expected, rows = _TypedDigest(), 0
     with open(plan.source, "rb") as raw:
         source = pyorc.Reader(raw, converters=converters)
-        schema = cast(pyorc.TypeDescription, source.schema)
+        schema = source.schema
         attributes, metadata = _orc_attributes(source.schema), dict(source.user_metadata)
         if source.format_version != (0, 12):
             raise ValidationError(

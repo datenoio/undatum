@@ -21,7 +21,7 @@ Keep this managed block so 'openspec update' can refresh the instructions.
 
 undatum is a Python CLI (and SDK) for converting, inspecting, validating and transforming
 data files. It reads and writes through [iterabledata](https://github.com/datenoio/iterabledata)
-and uses DuckDB for SQL and accelerated statistics. Python 3.10+, MIT, repository
+and uses DuckDB for SQL and accelerated statistics. Python 3.11+, MIT, repository
 https://github.com/datenoio/undatum (default branch `master`).
 
 ## Where things are
@@ -47,7 +47,7 @@ python scripts/generate_result_schemas.py  # after changing JSON result layouts
 python scripts/run_doc_examples.py docs/docs/commands/head.md
 ```
 
-Run mypy (`make type-check`) with Python 3.10.
+Run mypy (`make type-check`) with Python 3.11.
 
 ## Conventions
 

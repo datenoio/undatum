@@ -8,6 +8,10 @@ import duckdb
 
 logger = logging.getLogger(__name__)
 
+# Directory with preinstalled DuckDB extensions (DuckDB's extension_directory), so commands
+# that need an extension work without network access.
+EXTENSION_DIR_ENV = "UNDATUM_DUCKDB_EXTENSION_DIR"
+
 
 def parse_memory_size(memory_str: str) -> int:
     """Parse memory size string to bytes.
@@ -66,6 +70,11 @@ def create_duckdb_connection(
 
     conn = duckdb.connect(database=database)
 
+    extension_dir = os.environ.get(EXTENSION_DIR_ENV)
+    if extension_dir:
+        escaped = extension_dir.replace("'", "''")
+        conn.execute(f"SET extension_directory='{escaped}'")
+
     # Configure threads
     if threads is not None:
         if threads < 1:
@@ -100,6 +109,40 @@ def create_duckdb_connection(
             logger.warning(f"Temp directory does not exist or is not a directory: {temp_dir}")
 
     return conn
+
+
+def load_extension(conn: duckdb.DuckDBPyConnection, name: str) -> None:
+    """Load the DuckDB extension ``name``, downloading it first when it is not installed.
+
+    Args:
+        conn: Connection made by :func:`create_duckdb_connection`.
+        name: Extension name, such as ``excel``.
+
+    Raises:
+        ConfigurationError: The extension is not installed and cannot be downloaded (exit
+            code 2); the message says how to install it for offline use.
+    """
+    try:
+        conn.load_extension(name)
+        return
+    except duckdb.Error:
+        pass
+    try:
+        conn.install_extension(name)
+        conn.load_extension(name)
+    except duckdb.Error as exc:
+        from .errors import ConfigurationError
+
+        raise ConfigurationError(
+            f"DuckDB extension '{name}' is not installed and could not be downloaded: {exc}",
+            config_key=EXTENSION_DIR_ENV,
+            fix_hint=(
+                "On a machine with network access run "
+                f"python -c \"import duckdb; duckdb.install_extension('{name}')\", copy "
+                f"~/.duckdb/extensions to this machine and set {EXTENSION_DIR_ENV} to that "
+                "directory."
+            ),
+        ) from exc
 
 
 def get_duckdb_config_from_options(options: dict) -> dict:

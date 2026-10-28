@@ -30,7 +30,7 @@ make test-cov
 |---------|----------------|
 | `make format-check` | `ruff format --check` |
 | `make lint` | `ruff check` (incl. pylint and docstring rules) and dependency version bounds |
-| `make type-check` | mypy ratchet — run it with Python 3.10 |
+| `make type-check` | mypy ratchet — run it with Python 3.11 |
 | `make type-baseline` | lock in fixed type errors (`mypy-baseline.json` may only shrink) |
 | `python scripts/mypy_ratchet.py --update --allow-moves` | record the baseline after moving code between files (the total may not grow) |
 | `python scripts/generate_cli_reference.py` | regenerate the option tables on command pages |
@@ -63,8 +63,8 @@ undatum db query "SELECT 1" --db postgresql://user:pass@host/db
 | Job | What it does |
 |-----|--------------|
 | lint | ruff lint and format, tool versions in sync, dependency bounds, `uv.lock` up to date |
-| type-check | mypy ratchet on Python 3.10 |
-| test | pytest on Python 3.10–3.13 from `uv.lock`, coverage at least 65% (80% on changed lines) |
+| type-check | mypy ratchet on Python 3.11 |
+| test | pytest on Python 3.11–3.13 from `uv.lock`, coverage at least 65% (80% on changed lines) |
 | lowest-dependencies | tests with every direct dependency at its lower bound |
 | memory-budget | row commands stay under 300 MB for 1M rows and do not grow with the input |
 | base-install | wheel without extras: every core module imports; install footprint |

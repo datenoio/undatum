@@ -150,7 +150,20 @@ undatum --show-completion
 
 ### Requirements
 
-- Python 3.10 or greater (CI tests 3.10–3.13)
+- Python 3.11 or greater (CI tests 3.11–3.13)
+- DuckDB 2.0 (installed with undatum)
+
+### Machines without network access
+
+DuckDB downloads an extension the first time a command needs it. On an offline machine, install
+the extensions on a connected one and point undatum at the copy:
+
+```bash norun
+python -c "import duckdb; duckdb.install_extension('excel')"   # on a connected machine
+export UNDATUM_DUCKDB_EXTENSION_DIR=/path/to/copied/.duckdb/extensions
+```
+
+A command that needs a missing extension stops with exit code 2 and names the extension.
 
 ### Install from source
 

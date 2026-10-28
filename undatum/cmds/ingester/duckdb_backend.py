@@ -137,7 +137,7 @@ class DuckDBIngester(BasicIngester):
         """Create table from inferred schema."""
         # Check if table exists
         try:
-            self.conn.execute(f"SELECT COUNT(*) FROM {self.table}").fetchone()
+            self.conn.execute(f"SELECT COUNT(*) FROM {self.table}").fetchall()
             table_exists = True
         except Exception:
             table_exists = False
@@ -301,10 +301,8 @@ class DuckDBIngester(BasicIngester):
             self._appender = self.conn.appender(self.table)
 
         if self._appender is not None:
-            # Append each row
-            for row in batch:
-                values = [row.get(col) for col in columns]
-                self._appender.append_row(values)
+            # DuckDB 2.0 appender: one tuple per row, one value per column.
+            self._appender.append_rows([tuple(row.get(col) for col in columns) for row in batch])
             return
 
         # Fallback: use DuckDB append(DataFrame) if available, otherwise batch insert
@@ -366,12 +364,18 @@ class DuckDBIngester(BasicIngester):
         if last_exception:
             raise last_exception
 
+    def _finish_appender(self):
+        """Write the appender's buffered rows to the table and release it."""
+        if self._appender is not None:
+            appender, self._appender = self._appender, None
+            finish = getattr(appender, "close", None) or appender.flush
+            finish()
+
     def close(self):
         """Close DuckDB connection and appender."""
         if self._appender:
             try:
-                self._appender.close()
-                self._appender = None
+                self._finish_appender()
             except Exception:
                 # Best effort: never fail the command because of this step.
                 logging.getLogger(__name__).debug(

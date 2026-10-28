@@ -36,7 +36,7 @@ def test_spill_keeps_typed_nested_values_and_literal_tags():
 
     value = {
         "day": datetime.date(2026, 1, 2),
-        "stamp": datetime.datetime(2026, 1, 2, 3, tzinfo=datetime.timezone.utc, fold=1),
+        "stamp": datetime.datetime(2026, 1, 2, 3, tzinfo=datetime.UTC, fold=1),
         "time": datetime.time(3, 4, 5, fold=1),
         "duration": datetime.timedelta(days=2, microseconds=3),
         "amount": Decimal("123.4500"),

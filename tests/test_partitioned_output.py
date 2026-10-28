@@ -142,8 +142,8 @@ def test_high_cardinality_keys(tmp_path, monkeypatch, engine):
     assert len(os.listdir("out")) == 300
     total = duckdb.sql(
         "SELECT count(*), count(DISTINCT key) FROM read_csv('out/**/*.csv', hive_partitioning=true)"
-    ).fetchone()
-    assert total == (3000, 300)
+    ).fetchall()
+    assert total == [(3000, 300)]
 
 
 def test_writer_bounds_open_files(tmp_path):
@@ -164,7 +164,7 @@ def test_split_hive_flat_and_chunks(data):
     _invoke("split", "s.csv", "--chunksize", "3", "--dirname", "chunks")
     assert _files(data / "chunks") == ["s_1.csv", "s_2.csv"]
     _invoke("split", "s.csv", "--fields", "year", "--hive", "--dirname", "pq", "-O", "parquet")
-    assert duckdb.sql("SELECT count(*) FROM read_parquet('pq/**/*.parquet')").fetchone() == (4,)
+    assert duckdb.sql("SELECT count(*) FROM read_parquet('pq/**/*.parquet')").fetchall() == [(4,)]
 
 
 def test_split_hive_needs_fields(data):

@@ -13,7 +13,7 @@ tightened with ``--update``; ``--update`` refuses to record an increase, unless
 file to others).
 
 mypy reads its configuration from ``pyproject.toml``; run this with the minimum
-supported Python version (3.10), as CI does.
+supported Python version (3.11), as CI does.
 """
 
 from __future__ import annotations

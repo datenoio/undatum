@@ -287,7 +287,7 @@ def build_schema(
                     query_str = f"select count(*) from read_csv('{filename}'{text_ignore})"
                 else:
                     query_str = f"select count(*) from '{filename}'"
-                num_records = duckdb.sql(query_str).fetchall()[0][0]
+                num_records = duckdb.execute(query_str).fetchall()[0][0]
                 table.num_records = num_records
             except Exception as e:
                 logger.warning(f"Could not count records: {e}")

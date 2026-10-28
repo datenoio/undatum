@@ -102,7 +102,7 @@ class TestSqlExecutor:
             )
             import duckdb
 
-            count = duckdb.sql(f"SELECT COUNT(*) FROM '{out_path}'").fetchone()[0]
+            count = duckdb.sql(f"SELECT COUNT(*) FROM '{out_path}'").fetchall()[0][0]
             assert count == 3
         finally:
             if os.path.exists(out_path):

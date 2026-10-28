@@ -10,7 +10,7 @@ undatum supports **140+ formats** via [iterabledata](https://github.com/datenoio
 Capabilities differ by format: many are **read-only**, some require extras, and streaming
 support varies.
 
-undatum requires **Python 3.10+** and **iterabledata ≥ 1.0.21** (installed with undatum), which
+undatum requires **Python 3.11+** and **iterabledata ≥ 1.0.21** (installed with undatum), which
 provides the open-data pack, lakehouse writes, codec profiles and Avro writes. Run
 `undatum formats list` to see what your install actually exposes.
 
@@ -92,8 +92,8 @@ Parquet/ORC/AVRO with format-native compression. See [`repack`](/commands/repack
 3. **Large files.** Prefer `--low-memory` on `convert` / `sort` / `dedup`, and Parquet or
    JSONL over in-memory JSON arrays. Parquet/Arrow writers buffer bounded batches
    (iterabledata 1.0.17+).
-4. **Python version.** undatum and iterabledata require **Python ≥ 3.10**; on Python 3.9 pip
-   resolves to undatum 1.6.0.
+4. **Python version.** undatum requires **Python ≥ 3.11**; on Python 3.10 pip resolves to
+   undatum 1.9.x, and on Python 3.9 to 1.6.0.
 5. **Security / error policy** (iterabledata 1.0.16+): XML parsers disable external entities;
    pickle reads warn unless `trust=True` (`undatum convert --trust`, and the same flag on
    other read commands); malformed rows raise `FormatParseError` unless you pass

@@ -6,7 +6,7 @@ Thank you for your interest in contributing to undatum! This document provides g
 
 ### Prerequisites
 
-- Python 3.10 or higher (we support CPython versions that have not reached end of life)
+- Python 3.11 or higher (we support CPython versions that have not reached end of life)
 - Git
 - pip
 
@@ -33,7 +33,7 @@ pip install -e ".[dev]"
 ```
 
 The `dev` extra pins the tool versions used by CI (ruff, mypy) and installs pytest and
-pre-commit. Python 3.10 is the minimum supported version; use it for type checking.
+pre-commit. Python 3.11 is the minimum supported version; use it for type checking.
 
 ## Code Style
 

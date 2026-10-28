@@ -239,7 +239,7 @@ def profile(
         described = conn.sql("DESCRIBE SELECT * FROM data").fetchall()
         schema = {str(r[0]): str(r[1]).upper() for r in described if str(r[0]) != "__empty"}
         dominant = infer_types(conn, "data", schema)
-        rows = int(conn.sql("SELECT count(*) FROM data").fetchone()[0])  # type: ignore[index]
+        rows = int(conn.execute("SELECT count(*) FROM data").fetchall()[0][0])
         fields: list[FieldQuality] = []
         sql_types = {
             "integer": "BIGINT",
@@ -277,9 +277,9 @@ def profile(
                 fits = f"count({value})"
             else:
                 fits = "0"
-            present, conforming, distinct = conn.sql(
+            present, conforming, distinct = conn.execute(
                 f"SELECT count({value}), {fits}, count(DISTINCT {value}) FROM data"
-            ).fetchone()  # type: ignore[misc]
+            ).fetchall()[0]
             top = conn.sql(
                 f"SELECT {text} AS v, count(*) AS n FROM data WHERE ({value}) IS NOT NULL "
                 f"GROUP BY 1 ORDER BY n DESC, v LIMIT {TOP_VALUES}"

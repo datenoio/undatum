@@ -45,7 +45,7 @@ def count_records(fromfile: str, options: dict[str, Any] | None = None) -> int:
     def _count_duckdb() -> int:
         import duckdb
 
-        row = duckdb.sql(f"SELECT count(*) FROM {expr}").fetchone()
+        row = duckdb.execute(f"SELECT count(*) FROM {expr}").fetchall()[0]
         return int(row[0]) if row else 0
 
     return int(
@@ -71,7 +71,7 @@ def _count_where(source: RowSource, steps: list[Any], engine: str) -> int:
         try:
             query = compose_sql(conn, relation, resolved)
             if query is not None:
-                row = conn.sql(f"SELECT count(*) FROM ({query})").fetchone()
+                row = conn.execute(f"SELECT count(*) FROM ({query})").fetchall()[0]
                 return int(row[0]) if row else 0
         finally:
             conn.close()

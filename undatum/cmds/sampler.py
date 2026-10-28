@@ -112,7 +112,7 @@ class Sampler:
                     # Percentage-based sampling
                     # First count total rows
                     count_query = f"SELECT COUNT(*) FROM {read_expr}"
-                    total_count = conn.execute(count_query).fetchone()[0]
+                    total_count = conn.execute(count_query).fetchall()[0][0]
                     limit_value = max(1, int(total_count * float(percent) / 100))
                     query = f"SELECT * FROM {read_expr} ORDER BY RANDOM() LIMIT {limit_value}"
 

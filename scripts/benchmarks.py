@@ -179,7 +179,7 @@ def run(
         "tier": tier,
         "rows": TIERS[tier],
         "repeat": repeat,
-        "created": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
+        "created": dt.datetime.now(dt.UTC).isoformat(timespec="seconds"),
         "platform": platform.platform(),
         "commit": os.environ.get("GITHUB_SHA") or _git_commit(),
         "runs": results,
@@ -203,10 +203,8 @@ def _git_commit() -> str:
 
 
 def load_budgets(path: Path = BUDGETS) -> dict[str, Any]:
-    try:
-        import tomllib
-    except ModuleNotFoundError:  # Python 3.10 (tomli comes with pytest)
-        import tomli as tomllib  # type: ignore[no-redef]
+    import tomllib
+
     with open(path, "rb") as handle:
         return tomllib.load(handle)
 

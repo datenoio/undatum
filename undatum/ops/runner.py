@@ -215,12 +215,13 @@ def write_query(conn: Any, query: str, output: str | None, format_out: str | Non
         # text is the same on both engines (DuckDB writes compact JSON).
         if fmt == native and fmt in _COPY_FORMATS and duckdb_copy_to_file(conn, query, output):
             return -1
-    relation = conn.sql(query)
-    names = relation.columns
+    # execute() streams its result; relations lost fetchmany() in DuckDB 2.0.
+    result = conn.execute(query)
+    names = [column[0] for column in result.description]
 
     def rows() -> Iterator[dict[str, Any]]:
         while True:
-            chunk = relation.fetchmany(BATCH_ROWS)
+            chunk = result.fetchmany(BATCH_ROWS)
             if not chunk:
                 return
             for values in chunk:

@@ -3,13 +3,17 @@
 import os
 import tempfile
 
+import duckdb
 import pytest
 
 from undatum.common.duckdb_config import (
+    EXTENSION_DIR_ENV,
     create_duckdb_connection,
     get_duckdb_config_from_options,
+    load_extension,
     parse_memory_size,
 )
+from undatum.common.errors import ConfigurationError
 
 
 class TestParseMemorySize:
@@ -190,3 +194,30 @@ class TestGetDuckdbConfigFromOptions:
         """None values for thread options should not produce config entries."""
         config = get_duckdb_config_from_options({"threads": None, "duckdb_threads": None})
         assert config == {}
+
+
+class TestOfflineExtensions:
+    """Preinstalled extensions and the error for a missing one."""
+
+    def test_extension_directory_from_environment(self, tmp_path, monkeypatch):
+        monkeypatch.setenv(EXTENSION_DIR_ENV, str(tmp_path))
+        conn = create_duckdb_connection()
+        setting = conn.execute("SELECT current_setting('extension_directory')").fetchall()
+        assert setting == [(str(tmp_path),)]
+
+    def test_installed_extension_loads(self):
+        load_extension(create_duckdb_connection(), "json")  # statically linked
+
+    def test_missing_extension_offline_is_a_configuration_error(self):
+        class Offline:
+            def load_extension(self, name):
+                raise duckdb.IOException(f"Extension {name} not found")
+
+            def install_extension(self, name):
+                raise duckdb.HTTPException("Could not reach extensions.duckdb.org")
+
+        with pytest.raises(ConfigurationError) as info:
+            load_extension(Offline(), "excel")
+        assert info.value.exit_code == 2
+        assert "'excel'" in info.value.message
+        assert EXTENSION_DIR_ENV in info.value.message

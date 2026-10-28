@@ -234,7 +234,7 @@ def _field_from_column(column: list, include_stats: bool = True) -> FieldSchema:
 
 def _duckdb_sample_as_csv(query_str: str, limit: int = MAX_SAMPLE_SIZE) -> str:
     """Run a DuckDB query and return sample rows as CSV text with column headers."""
-    df = duckdb.sql(query_str).fetchdf()
+    df = duckdb.execute(query_str).fetchdf()
     if len(df) > limit:
         df = df.head(limit)
     return df.to_csv(index=False)
@@ -490,17 +490,17 @@ def analyze(
                 if filetype in ["json", "jsonl"]:
                     escaped = filename.replace("'", "''")
                     query_str = f"select count(*) from read_json('{escaped}'{text_ignore})"
-                    num_records = duckdb.sql(query_str).fetchall()[0][0]
+                    num_records = duckdb.execute(query_str).fetchall()[0][0]
                 elif filetype in ["csv", "tsv"]:
                     read_func = duckdb_read_csv_expr(
                         filename, csv_delimiter, ignore_errors=ignore_errors
                     )
                     query_str = f"select count(*) from {read_func}"
-                    num_records = duckdb.sql(query_str).fetchall()[0][0]
+                    num_records = duckdb.execute(query_str).fetchall()[0][0]
                 else:
                     escaped = filename.replace("'", "''")
                     query_str = f"select count(*) from '{escaped}'"
-                    num_records = duckdb.sql(query_str).fetchall()[0][0]
+                    num_records = duckdb.execute(query_str).fetchall()[0][0]
                 table = TableSchema(id=os.path.basename(filename))
                 table.num_records = num_records
                 report.tables = [table]

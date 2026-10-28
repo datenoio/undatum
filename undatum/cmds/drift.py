@@ -150,10 +150,10 @@ def profile_file(path: str, options: dict[str, Any] | None = None) -> dict[str, 
             column = '"' + name.replace('"', '""') + '"'
             # Missing: NULL, empty, or a placeholder such as n/a (as in type inference).
             empty = f"count_if(({_value_sql(f'CAST({column} AS VARCHAR)')}) IS NULL)"
-            row = conn.sql(
+            row = conn.execute(
                 f"SELECT {empty}, list(DISTINCT CAST({column} AS VARCHAR)) "
                 f"FILTER (WHERE {column} IS NOT NULL) FROM {relation}"
-            ).fetchone()
+            ).fetchall()[0]
             missing, values = row if row else (0, [])
             sample = frozenset(str(v) for v in (values or [])[:SAMPLE_VALUES])
             seen_type = normalize_type(kind) if sample else "null"
