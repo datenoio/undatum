@@ -138,6 +138,7 @@ def get_iterable_fields_uniq(iterable, fields, dolog=False, dq_instance=None, fi
     # dq_instance parameter kept for backward compatibility (no longer used)
     n = 0
     uniqval = []
+    seen: set[tuple[str, ...]] = set()  # uniqval keeps the first-seen order
     for row in iterable:
         n += 1
         if dolog and n % 1000 == 0:
@@ -154,7 +155,9 @@ def get_iterable_fields_uniq(iterable, fields, dolog=False, dq_instance=None, fi
                 k = []
                 for n2, _ in enumerate(allvals):
                     k.append(str(allvals[n2][n1]))
-                if k not in uniqval:
+                key = tuple(k)
+                if key not in seen:
+                    seen.add(key)
                     uniqval.append(k)
         except KeyError:
             pass

@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Forward and backward fill now accept `0`, `0.0` and `False` as fallback values when no neighbour value exists.
 - `undatum mcp tools --parity` (and `undatum.tools.generated.parity_report()`) no longer fails with `No module named 'click'` on an install without the `api` extra. typer 0.26 and later vendor click, so `click` is not a dependency of undatum.
+- **No silent row loss on the DuckDB engine** — CSV files that are not UTF-8 (for example Windows-1251) are read by the Python engine with their detected encoding; `head`, `sort`, `select` and other commands printed nothing or only the header, and `stats` reported `count: 0`, all with exit code 0. DuckDB no longer skips rows it cannot read (`ignore_errors`): the command falls back to the Python engine, or, when records have already gone to standard output, stops with an error that suggests `--engine python`.
+- **`stats` on text columns** — date detection skips values that cannot be dates (hashes, e-mail addresses, codes, text over 50 characters) and gives up on a field after 20 non-date values instead of 1,000. Columns of hashes, addresses or sentences with numbers took about 100 seconds regardless of file size; a 2-million-row file now takes about 7 seconds.
+- **`uniq` with the Python engine** runs in linear time; 200,000 distinct values took 99 seconds and now take about a second.
 
 ## [1.9.1](https://github.com/datenoio/undatum/compare/v1.9.0...v1.9.1) - 2026-10-15
 

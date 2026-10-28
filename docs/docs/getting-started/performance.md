@@ -36,6 +36,11 @@ On CSV, TSV, JSON, JSON Lines and Parquet inputs (plain or `.gz`/`.zst`) the def
 - `--where` conditions and `--add` columns. Inputs DuckDB cannot read are evaluated in batches
   with the same results.
 
+DuckDB reads UTF-8 text only: CSV in another encoding (for example Windows-1251) goes to the
+Python engine, which detects the encoding. A row DuckDB cannot read makes the command fall back
+to the Python engine; if records were already printed to standard output, the command stops
+with an error instead, and `--engine python` reads the file.
+
 Commands that read and write these formats through DuckDB do not import iterabledata at all,
 which saves about a second per run (`undatum head data.csv` takes 0.7 s). `--engine python`
 forces the streaming Python path, for example to compare results.

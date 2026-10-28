@@ -106,10 +106,67 @@ def apply_iterable_csv_delimiter(
         iterable.reset()
 
 
+_UTF8_ENCODINGS = ("utf-8", "utf-8-sig", "ascii")
+_UTF8_SAMPLE_BYTES = 1 << 20
+
+
+def duckdb_can_decode(path: str, codec: str | None = None, encoding: str | None = None) -> bool:
+    """Whether DuckDB's CSV reader can decode ``path`` (it reads UTF-8 only).
+
+    The first megabyte (decompressed for gzip and zstd) must be valid UTF-8, and an
+    explicit ``encoding`` must be a UTF-8 one. Other files are read by iterabledata, which
+    handles their encoding; files that cannot be opened count as decodable so the reader
+    reports the real error.
+
+    Args:
+        path: Local file path.
+        codec: Compression codec id (``gz``, ``gzip``, ``zst``; anything else is read raw).
+        encoding: Encoding given with ``--encoding``, if any.
+
+    Returns:
+        True when the DuckDB engine can read the file's text.
+    """
+    import codecs
+
+    if encoding:
+        try:
+            if codecs.lookup(encoding).name not in _UTF8_ENCODINGS:
+                return False
+        except LookupError:
+            return False
+    try:
+        if codec in ("gz", "gzip"):
+            import gzip
+
+            with gzip.open(path, "rb") as fh:
+                data = fh.read(_UTF8_SAMPLE_BYTES)
+        elif codec == "zst":
+            import zstandard
+
+            with open(path, "rb") as raw, zstandard.ZstdDecompressor().stream_reader(raw) as fh:
+                data = fh.read(_UTF8_SAMPLE_BYTES)
+        else:
+            with open(path, "rb") as fh:
+                data = fh.read(_UTF8_SAMPLE_BYTES)
+    except Exception:  # noqa: BLE001 - the reader reports unreadable files
+        return True
+    try:
+        # A multi-byte character may be cut at the end of a full sample.
+        codecs.getincrementaldecoder("utf-8")().decode(data, final=len(data) < _UTF8_SAMPLE_BYTES)
+    except UnicodeDecodeError:
+        return False
+    return True
+
+
 def duckdb_read_csv_options(
-    delimiter: str | None = None, *, ignore_errors: bool = True, all_varchar: bool = False
+    delimiter: str | None = None, *, ignore_errors: bool = False, all_varchar: bool = False
 ) -> str:
-    """Build DuckDB ``read_csv`` option suffix (leading comma included)."""
+    """Build DuckDB ``read_csv`` option suffix (leading comma included).
+
+    ``ignore_errors`` makes DuckDB skip rows it cannot read without reporting them; it is
+    off by default so a bad row fails the query (and commands fall back to the Python
+    reader) instead of silently disappearing from the output.
+    """
     parts: list[str] = []
     if ignore_errors:
         parts.append("ignore_errors=true")
@@ -131,7 +188,7 @@ def duckdb_read_csv_expr(
     filename: str,
     delimiter: str | None = None,
     *,
-    ignore_errors: bool = True,
+    ignore_errors: bool = False,
     sample_size: int | None = None,
     all_varchar: bool = False,
 ) -> str:
