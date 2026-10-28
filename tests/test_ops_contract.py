@@ -10,10 +10,12 @@ import pytest
 
 from undatum.io import open_source
 from undatum.ops import (
+    DedupConfig,
     FillConfig,
     HeadConfig,
     RenameConfig,
     ReplaceConfig,
+    ReverseConfig,
     SearchConfig,
     SelectConfig,
     SliceConfig,
@@ -27,6 +29,9 @@ ROWS = [
     {"id": "2", "name": "", "note": "", "city name": "Paris", "q": "a,b"},
     {"id": "3", "name": "Écrit", "note": "Foo FOO foo", "city name": "", "q": ""},
     {"id": "4", "name": "Dave", "note": "x.y*z", "city name": "Rome", "q": "naïve"},
+    # Duplicates for dedup: a repeated record and repeated keys.
+    {"id": "2", "name": "", "note": "", "city name": "Paris", "q": "a,b"},
+    {"id": "5", "name": "Alice", "note": "", "city name": "", "q": "x"},
 ]
 
 CASES = [
@@ -54,6 +59,11 @@ CASES = [
     ("where", WhereConfig(add=("double = id * 2", "label = upper(name)"))),
     ("where", WhereConfig(where="id >= 2", add=("id = id + 100",))),
     ("where", WhereConfig(where="q LIKE '%,%' OR q LIKE '%\"%'")),
+    ("dedup", DedupConfig()),
+    ("dedup", DedupConfig(keys=("name",))),
+    ("dedup", DedupConfig(keys=("name", "city name"), keep="last")),
+    ("dedup", DedupConfig(keys=("city name",), keep="last")),
+    ("reverse", ReverseConfig()),
 ]
 
 
@@ -104,6 +114,18 @@ def test_duckdb_engine_is_used_for_readable_inputs(tmp_path, caplog):
     with caplog.at_level("DEBUG", logger="undatum.ops.runner"):
         run("rename", CASES[0][1], open_source(str(source)), str(tmp_path / "o.parquet"))
     assert any("DuckDB engine" in message for message in caplog.messages)
+
+
+@pytest.mark.parametrize(("engine", "expected"), [("auto", "Python engine"), ("duckdb", "DuckDB")])
+@pytest.mark.parametrize("name,cfg", [("dedup", DedupConfig()), ("reverse", ReverseConfig())])
+def test_queries_holding_every_record_need_the_duckdb_engine(
+    tmp_path, caplog, name, cfg, engine, expected
+):
+    # DuckDB's memory would grow with the input; the Python forms stay bounded.
+    source = _write_input(tmp_path, "csv")
+    with caplog.at_level("DEBUG", logger="undatum.ops.runner"):
+        run(name, cfg, open_source(str(source)), str(tmp_path / "o.csv"), engine=engine)
+    assert any(f"{name}: {expected}" in message for message in caplog.messages)
 
 
 def test_python_engine_for_options_duckdb_cannot_honour(tmp_path, caplog):

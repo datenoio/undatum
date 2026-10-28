@@ -196,9 +196,12 @@ class Dataset:
             return None
         query = f"SELECT * FROM {relation}"
         for call in self._steps:
+            operation = get_operation(call.name)
+            if operation.sql_holds_all_rows:
+                return None  # the Python form keeps memory bounded
             described = conn.sql(f"DESCRIBE {query}").fetchall()
             schema = {row[0]: str(row[1]).upper() for row in described}
-            sql = get_operation(call.name).to_sql(f"({query})", schema, call.config)
+            sql = operation.to_sql(f"({query})", schema, call.config)
             if sql is None:
                 return None
             query = sql

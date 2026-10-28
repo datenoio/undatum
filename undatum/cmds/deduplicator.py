@@ -44,5 +44,11 @@ class Deduplicator:
             low_memory=bool(get_option(options, "low_memory")),
             temp_dir=get_option(options, "temp_dir") or get_option(options, "duckdb_temp_dir"),
         )
-        count = run("dedup", cfg, open_source(fromfile, options), get_option(options, "output"))
+        count = run(
+            "dedup",
+            cfg,
+            open_source(fromfile, options),
+            get_option(options, "output"),
+            engine=get_option(options, "engine"),
+        )
         logger.debug("dedup: wrote %d records", count)

@@ -4,6 +4,7 @@ import logging
 from typing import Any
 
 from ..constants import DUCKABLE_CODECS, DUCKABLE_FILE_TYPES
+from .command_utils import duckdb_can_decode
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +51,7 @@ def detect_engine(
     engine: str | None = None,
     filetype: str | None = None,
     operation: str | None = None,
+    encoding: str | None = None,
 ) -> str:
     """Detect the appropriate engine for processing.
 
@@ -58,6 +60,8 @@ def detect_engine(
         engine: Requested engine ('auto', 'duckdb', 'python', or None for auto)
         filetype: File type if already known (optional)
         operation: Operation name for compatibility checking (optional)
+        encoding: Encoding given with ``--encoding`` (optional); with ``auto``, CSV that
+            DuckDB cannot decode as UTF-8 uses the Python engine
 
     Returns:
         Selected engine: 'duckdb' or 'iterable' (Python engine)
@@ -79,6 +83,9 @@ def detect_engine(
             # Check if operation is SQL-expressible (for future use)
             if operation and not _is_sql_expressible(operation):
                 logger.debug("Operation %s not SQL-expressible, using iterable engine", operation)
+                return "iterable"
+            if filetype == "csv" and not duckdb_can_decode(fromfile, compression, encoding):
+                logger.debug("%s is not UTF-8 text, using iterable engine", fromfile)
                 return "iterable"
             return "duckdb"
         return "iterable"

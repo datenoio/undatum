@@ -21,7 +21,7 @@ from pyzstd import ZstdFile
 from qddate import DateParser
 
 from ..ai import get_ai_service, get_description, get_fields_info
-from ..common.command_utils import resolve_csv_delimiter
+from ..common.command_utils import duckdb_can_decode, resolve_csv_delimiter
 from ..common.progress import progress
 from ..common.schema_utils import duckdb_decompose, duckdb_to_json_schema_type
 from ..common.scheme import generate_scheme_from_file
@@ -272,7 +272,14 @@ def build_schema(
 
         # Determine engine
         if engine == "auto":
-            if filetype in DUCKABLE_FILE_TYPES and compression in DUCKABLE_CODECS:
+            if (
+                filetype in DUCKABLE_FILE_TYPES
+                and compression in DUCKABLE_CODECS
+                and (
+                    filetype not in ("csv", "tsv")
+                    or duckdb_can_decode(filename, compression, options.get("encoding"))
+                )
+            ):
                 engine = "duckdb"
             else:
                 engine = "iterable"

@@ -451,9 +451,9 @@ def error_document(error: BaseException, exit_code: int) -> dict[str, Any]:
 
     ``{"error": {"code": "file_not_found", "message": "...", "exit_code": 1, "details": {...}}}``
     """
-    from .errors import error_code
+    from .errors import cli_guidance, error_code
 
-    message = getattr(error, "message", None) or str(error) or type(error).__name__
+    message = getattr(error, "message", None) or cli_guidance(str(error)) or type(error).__name__
     info: dict[str, Any] = {"code": error_code(error), "message": message, "exit_code": exit_code}
     context = getattr(error, "context", None)
     if isinstance(context, Mapping):
