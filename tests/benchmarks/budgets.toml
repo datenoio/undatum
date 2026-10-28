@@ -45,7 +45,7 @@ select = { seconds = 2.0, rss_mb = 460 }
 sort = { seconds = 2.5, rss_mb = 1230 }
 frequency = { seconds = 1.8, rss_mb = 420 }
 uniq = { seconds = 1.7, rss_mb = 420 }
-stats = { seconds = 10.4, rss_mb = 720 }
+stats = { seconds = 6.5, rss_mb = 720 }
 schema = { seconds = 3.1, rss_mb = 330 }
 sql = { seconds = 0.9, rss_mb = 320 }
 "convert-parquet" = { seconds = 2.2, rss_mb = 410 }

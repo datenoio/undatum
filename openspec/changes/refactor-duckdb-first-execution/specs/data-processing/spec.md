@@ -35,13 +35,22 @@ use all CPU cores and DuckDB's default memory limit. `--duckdb-threads`, `--duck
 - **WHEN** a user passes `--duckdb-memory 2GB` to `stats`, `quality` or `schema-drift`
 - **THEN** the DuckDB connection of that command uses a 2 GB memory limit
 
-### Requirement: Profiling Cost Independent of Field Count
-`stats` SHALL compute its statistics for DuckDB-readable inputs in at most two scans of the input,
-whatever the number of fields.
+### Requirement: Profiling in a Few Scans
+For DuckDB-readable inputs, `stats` SHALL compute the counts, missing values, lengths and numeric
+distributions of all fields in one scan of the input, and exact distinct values and value
+dictionaries in scans that each group several fields within a bound on the distinct values they
+hold. It SHALL NOT run one query per field and statistic, and its results SHALL equal the
+per-field computation.
 
-#### Scenario: Wide file
-- **WHEN** a user runs `undatum stats` on a CSV with 200 columns
-- **THEN** the input is scanned at most twice
+#### Scenario: Wide file of low-cardinality fields
+- **WHEN** a user runs `undatum stats` on a CSV with 24 columns of three values each
+- **THEN** the input is scanned once for the per-field statistics and once per four dictionary
+  fields (7 scans instead of about 100)
+
+#### Scenario: High-cardinality fields
+- **WHEN** several fields have about as many distinct values as there are records
+- **THEN** their exact distinct counts are computed in scans of at most 2,000,000 estimated
+  distinct values, so DuckDB's memory does not hold every field's values at once
 
 ### Requirement: Consistent Type Inference
 `schema`, `stats`, `quality`, `schema-drift` and `db load` SHALL infer field types with one shared

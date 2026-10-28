@@ -292,3 +292,65 @@ def test_malformed_jsonl_is_an_error_not_a_smaller_count(tmp_path):
     source.write_text('{"a": 1}\n{"a": 2\n{"a": 3}\n', encoding="utf8")
     result = CliRunner().invoke(app, ["stats", str(source), "-O", "json"])
     assert result.exit_code != 0
+
+
+class _CountingConnection:
+    """DuckDB connection that counts the SELECT queries (each reads the input once)."""
+
+    def __init__(self, conn):
+        self.conn = conn
+        self.scans = 0
+
+    def execute(self, query, *args):
+        if query.lstrip().startswith("SELECT"):
+            self.scans += 1
+        return self.conn.execute(query, *args)
+
+    def __getattr__(self, name):
+        return getattr(self.conn, name)
+
+
+def test_stats_reads_the_input_a_few_times_not_per_field(tmp_path, monkeypatch):
+    """Statistics of all fields come from one scan plus grouped scans, not 4 queries per field."""
+    from undatum.cmds.statistics import duckdb_engine
+
+    fields = [f"f{i}" for i in range(24)]
+    rows = [",".join(f"v{(r + i) % 3}" for i in range(24)) for r in range(50)]
+    source = tmp_path / "wide.csv"
+    source.write_text(",".join(fields) + "\n" + "\n".join(rows) + "\n", encoding="utf8")
+    connections = []
+
+    def counting(options=None, workload="aggregate"):
+        connections.append(
+            _CountingConnection(duckdb_engine.duckdb_connection.__wrapped__(options, workload))
+        )
+        return connections[-1]
+
+    counting.__wrapped__ = duckdb_engine.duckdb_connection
+    monkeypatch.setattr(duckdb_engine, "duckdb_connection", counting)
+    profile = StatProcessor().stats(
+        str(source), {"engine": "duckdb", "format_out": "json", "output": str(tmp_path / "s.json")}
+    )
+    assert profile["count"] == 50
+    # One profile scan and dictionaries of four fields per scan (all fields have 3 values).
+    assert connections[0].scans == 1 + 24 // StatProcessor.DICTIONARY_FIELDS_PER_SCAN
+
+
+def test_stats_values_match_direct_counts(tmp_path):
+    """Missing values, exact distinct shares, lengths and dictionaries of a small file."""
+    source = tmp_path / "people.csv"
+    source.write_text(
+        "id,city,score\n1,Berlin,10\n2,,20\n3,Paris,25\n4,Berlin,10\n5,Rome,30\n", encoding="utf8"
+    )
+    profile = StatProcessor().stats(
+        str(source),
+        {"engine": "duckdb", "format_out": "json", "output": str(tmp_path / "s.json")},
+    )
+    data = profile["debug"]["fielddata"]
+    assert data["city"]["missing_count"] == 1
+    assert data["city"]["cardinality_pct"] == 60.0  # Berlin, Paris, Rome of 5 records
+    assert (data["city"]["minlen"], data["city"]["maxlen"]) == (4, 6)
+    assert data["id"]["cardinality_pct"] == 100.0
+    assert data["score"]["missing_count"] == 0
+    assert (data["score"]["min"], data["score"]["median"], data["score"]["max"]) == (10, 20, 30)
+    assert profile["dicts"]["city"]["items"] == {"Berlin": 2, "Paris": 1, "Rome": 1}

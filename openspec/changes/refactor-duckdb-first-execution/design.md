@@ -89,10 +89,21 @@ Polars stays an optional extra for SDK interchange through Arrow.
   need with an out-of-memory error.
 
 ### `stats` query plan
-1. **One aggregate query over all columns:** `count`, `count(col)`, `min`/`max`,
-   `approx_count_distinct`, `min/avg/max(length(col))`, and `TRY_CAST` shares for type candidates.
-2. **One grouped query for dictionaries:** `GROUP BY GROUPING SETS ((c1), (c2), ...)` over the
-   columns whose distinct estimate is under `dictshare`, limited to the top-k per column.
+1. **One aggregate query over all columns:** `count(*)`, `count(col)`, `approx_count_distinct`
+   (what `SUMMARIZE` reported), `min/max/avg(length(col))`, and `min/max/avg/median/stddev` of the
+   numeric columns.
+2. **Dictionaries:** `GROUP BY GROUPING SETS ((c1), ..., (c4))` over the columns whose distinct
+   share is under `dictshare`, four columns per scan. The dictionaries also give these columns'
+   exact distinct counts.
+3. **Exact distinct counts of the other columns:** `COUNT(DISTINCT ...)`, packed into scans of at
+   most 2,000,000 estimated distinct values.
+
+Measured, not assumed: one query with `COUNT(DISTINCT)` over every column was fastest but held
+every column's values at once (big.csv, 2M rows: 1.99 GB against 1.15 GB per field). DuckDB does
+not spill ungrouped distinct aggregates, so a memory limit made it fail rather than spill, and a
+`GROUPING SETS` over 61 columns failed even with 1 GB. Four dictionary columns per scan gave the
+best balance (2M rows: 5.7 s / 1.29 GB; 100k x 61 columns: 4.0 s / 830 MB against 10.2 s /
+690 MB per field).
 
 ## Risks / Trade-offs
 - **Semantic drift between engines.** The contract suite (`tests/test_ops_contract.py`) is
@@ -109,7 +120,7 @@ Polars stays an optional extra for SDK interchange through Arrow.
 1. Connection factory with workload classes. Move `stats`, `count`, `analyze`, `schema`,
    `quality`, `drift` and `Where` onto it.
 2. `convert` through `COPY`, with the contract suite extended to conversions.
-3. Shared type-inference module, then `stats` single-pass.
+3. `stats` in a few grouped scans, then the shared type-inference module.
 4. Output without dicts (`COPY` / Arrow batches), then remove the `_TEMPORAL` exclusion.
 5. Arrow bridge for non-native formats, then remove the per-command DuckDB paths.
 6. SDK SQL compilation for the remaining methods, and `to_arrow()`.

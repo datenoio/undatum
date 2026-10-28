@@ -21,6 +21,7 @@ Upgrading: Python 3.11 or newer is required, and undatum now uses DuckDB 2.0. On
 
 ### Changed
 
+- **`stats` reads the input a few times instead of four times per field** — counts, missing values, lengths and numeric distributions of all fields come from one DuckDB query; value dictionaries are grouped four fields per scan, and exact distinct counts of the other fields are packed into scans of bounded memory. The statistics are unchanged. On 100,000 rows of 61 columns `stats` takes 4 s instead of 10 s; on 2M rows of 9 columns 5.7 s instead of 7.6 s.
 - **`convert` between CSV/TSV, JSON, JSON Lines and Parquet runs in DuckDB** — one `COPY` on one thread writes the output (plain, gzip or zstd) with the records of the Python engine, checked by contract tests: CSV values stay text and empty CSV fields stay empty strings. On 2M CSV rows conversion to JSON Lines takes 2 s instead of 7.5 s; Parquet output needs 300 MB instead of 800 MB on 1M rows. JSON Lines written by DuckDB are compact (no space after `:` and `,`), and `.json` output is a JSON array. Inputs with timestamps, intervals, decimals, 32-bit floats, UUIDs or binary values (and booleans or nested values for CSV output) keep the Python engine; `--engine duckdb` converts them in DuckDB anyway. The DuckDB path returns the same conversion summary.
 
 ### Fixed

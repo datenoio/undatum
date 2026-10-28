@@ -21,7 +21,8 @@
 ## 4. Type inference and stats
 - [ ] 4.1 Shared type-inference module (TRY_CAST shares, `could_be_date` + qddate for leftovers)
 - [ ] 4.2 Use it in `schema`, `stats`, `quality`, `schema-drift`, `db load`; remove the old rules
-- [ ] 4.3 `stats` in at most two scans (aggregate query + grouped dictionary query)
+- [x] 4.3 `stats` in one aggregate scan plus grouped scans (dictionaries, four fields per scan;
+      exact distinct counts within 2M estimated values per scan); output identical
 - [ ] 4.4 Test: the same file gives the same field types in all four commands
 
 ## 5. Output without dicts
