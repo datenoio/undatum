@@ -207,7 +207,8 @@ def reverse(
 ):
     """Reverse the order of rows in a data file.
 
-    For large files, may require buffering. DuckDB engine provides optimization for supported formats.
+    Large inputs are buffered on disk. --engine duckdb reverses CSV, JSON and Parquet in DuckDB:
+    faster, but it holds the records in memory up to DuckDB's limit.
     """
     from ...cmds.reverser import Reverser
 
@@ -577,6 +578,8 @@ def dedup(
 
     Can deduplicate by all fields or specified key fields. Supports keeping first or last occurrence.
     Large unique-key sets automatically spill to disk; use --low-memory to force that path.
+    --engine duckdb deduplicates CSV, JSON and Parquet in DuckDB: faster, but it holds the
+    records in memory up to DuckDB's limit.
     """
     from ...cmds.deduplicator import Deduplicator
 

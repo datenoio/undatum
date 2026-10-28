@@ -164,6 +164,10 @@ def _run_sql(
         if required:
             logger.info("%s: input is not DuckDB-readable; using the Python engine", names)
         return None
+    holds_all_rows = any(op.sql_holds_all_rows for op, _ in steps)
+    if holds_all_rows and not required:
+        logger.debug("%s: bounded-memory Python engine (--engine duckdb uses DuckDB)", names)
+        return None
     try:
         import duckdb
 
@@ -174,7 +178,9 @@ def _run_sql(
         # order preserved, avoids per-thread buffers that grow with the input. DuckDB
         # spills to disk above the memory limit.
         config.setdefault("threads", 1)
-        if not config.get("memory"):
+        # Queries that hold every record were requested with --engine duckdb: they keep
+        # DuckDB's own limit, as a small one makes its windows and sorts fail.
+        if not config.get("memory") and not holds_all_rows:
             config["memory"] = DEFAULT_DUCKDB_MEMORY
         conn = create_duckdb_connection(**config)
         try:
