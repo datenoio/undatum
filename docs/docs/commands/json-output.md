@@ -186,7 +186,7 @@ Field statistics. Printed by `undatum stats --json`. [JSON Schema](pathname:///s
 | `schema` | string | yes | `undatum.stats/1` |
 | `count` | integer | yes | Records profiled |
 | `num_fields` | integer | yes | Number of fields |
-| `fieldtypes` | object | yes | Field -> detected type |
+| `fieldtypes` | object | yes | Field -> detected type: `int`, `float`, `bool`, `date`, `datetime`, `numstr` (digits with leading zeros) or `str` |
 | `fields` | array | yes | Per-field statistics |
 | `dictkeys` | array |  | Fields with few distinct values |
 | `dicts` | object |  | Value lists of the dictionary fields |

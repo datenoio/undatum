@@ -27,11 +27,13 @@ from ..common.command_utils import (
     resolve_csv_delimiter,
 )
 from ..common.duckdb_config import duckdb_connection
+from ..common.field_types import apply_text_types
 from ..common.progress import progress
 from ..common.schema_utils import duckdb_decompose, duckdb_to_json_schema_type
 from ..common.scheme import generate_scheme_from_file
 from ..common.tables import format_table
 from ..constants import DUCKABLE_CODECS, DUCKABLE_FILE_TYPES
+from ..io import RowSource
 from ..utils import get_file_type, get_option
 
 logger = logging.getLogger(__name__)
@@ -321,6 +323,11 @@ def build_schema(
                     raise ValueError(
                         f"Schema extraction failed for {filetype} files: {e}. Try using --engine duckdb or a different file format."
                     ) from e
+            if filetype in ("csv", "tsv") and not flatten_nested:
+                # Field types by the shared rules instead of the DuckDB sniffer's guess
+                text_relation = RowSource(filename, options).duckdb_from()
+                if text_relation is not None:
+                    apply_text_types(conn, text_relation, columns_raw)
         finally:
             conn.close()
 

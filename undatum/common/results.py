@@ -187,7 +187,11 @@ STATS = _register(
         {
             "count": ("integer", "Records profiled"),
             "num_fields": ("integer", "Number of fields"),
-            "fieldtypes": ("object", "Field -> detected type"),
+            "fieldtypes": (
+                "object",
+                "Field -> detected type: `int`, `float`, `bool`, `date`, `datetime`, `numstr` "
+                "(digits with leading zeros) or `str`",
+            ),
             "fields": ("array", "Per-field statistics"),
             "dictkeys": ("array", "Fields with few distinct values"),
             "dicts": ("object", "Value lists of the dictionary fields"),

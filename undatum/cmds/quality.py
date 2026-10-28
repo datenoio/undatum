@@ -226,18 +226,22 @@ def profile(
             most values have).
     """
     from ..common.duckdb_config import duckdb_connection
+    from ..common.field_types import infer_text_types, normalize_type, text_condition, value_sql
     from ..io import RowSource
-    from ..ops.expr import _value_sql, infer_types
-    from .drift import normalize_type
 
     options = options or {}
     source = RowSource(path, options)
+    # CSV and records read by undatum hold text; JSON and Parquet keep their types.
+    text_values = source.duckdb_from() is None or source.format_id in ("csv", "tsv")
     conn = duckdb_connection(options)
     try:
         _load(conn, source)
         described = conn.sql("DESCRIBE SELECT * FROM data").fetchall()
         schema = {str(r[0]): str(r[1]).upper() for r in described if str(r[0]) != "__empty"}
-        dominant = infer_types(conn, "data", schema)
+        dominant = {name: normalize_type(kind) for name, kind in schema.items()}
+        if text_values:
+            columns = [name for name, kind in schema.items() if kind == "VARCHAR"]
+            dominant.update(infer_text_types(conn, "data", columns))
         rows = int(conn.execute("SELECT count(*) FROM data").fetchall()[0][0])
         fields: list[FieldQuality] = []
         sql_types = {
@@ -251,8 +255,8 @@ def profile(
         for name, kind in schema.items():
             column = '"' + name.replace('"', '""') + '"'
             text = f"CAST({column} AS VARCHAR)"
-            value = _value_sql(text) if kind == "VARCHAR" else column
-            actual = normalize_type(dominant[name])
+            value = value_sql(text) if kind == "VARCHAR" else column
+            actual = dominant[name]
             target = (expected or {}).get(name) or actual
             native = normalize_type(kind)
             if kind != "VARCHAR":
@@ -268,8 +272,8 @@ def profile(
                     f"count_if(regexp_matches({value}, '^[+-]?[0-9]+$')"
                     f" AND TRY_CAST({value} AS HUGEINT) IS NOT NULL)"
                 )
-            elif target == "boolean":
-                fits = f"count_if(lower({value}) IN ('true', 'false'))"
+            elif target in ("boolean", "date", "datetime"):
+                fits = f"count_if({text_condition(value, target)})"
             elif target in sql_types:
                 fits = f"count(TRY_CAST({value} AS {sql_types[target]}))"
             elif target == "string":

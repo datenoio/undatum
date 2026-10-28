@@ -73,11 +73,17 @@ Polars stays an optional extra for SDK interchange through Arrow.
   the contract suite.
 - **Temporal values.** Temporal columns are formatted as Python's `isoformat()` before `COPY`,
   so the `_TEMPORAL` exclusion in `ops/runner.py` can go.
-- **Type inference.** A field's type is the narrowest DuckDB type that `TRY_CAST` succeeds on for
-  ≥95% of non-empty sampled values. That rule already lives in `ops/expr.py`; it moves to a shared
-  module.
-- **Dates.** Values of type DATE or TIMESTAMP (by `TRY_CAST` or the CSV sniffer) are dates.
-  qddate runs only on leftover text that `could_be_date()` admits, at most 20 values per field.
+- **Type inference** (`undatum/common/field_types.py`, decided with the maintainer). Text values
+  get the first of integer, number, boolean, date and datetime that ≥95% of the non-empty values of
+  a 10,000-record sample convert to, in every command (schema-drift used 100%); typed inputs keep
+  their types, so a JSON string `"2005"` stays a string (schema exports must match the data).
+  `stats` reports the new `bool` and `datetime` names; objects and arrays stay `str` there.
+- **Dates.** ISO dates and day-first dates (`%d.%m.%Y`, `%d/%m/%Y`, `%d-%m-%Y`, `%Y/%m/%d`),
+  checked in SQL so that `quality` measures conformance with the same condition. qddate no longer
+  decides a type: dates in words ("12 сентября 2018") are strings, as everywhere but `stats` before.
+- **`--where`** keeps the types `TRY_CAST` reads (ISO dates only), since expressions cast to them.
+- **`db load`** keeps its own rule for now: a created column must hold every value, which a 95%
+  threshold cannot promise.
 
 ### Workload classes
 - **ROW and WINDOW operations** (rename, fill, head, ...) keep `threads=1` and 256 MB. Order is

@@ -53,16 +53,26 @@ per-field computation.
   distinct values, so DuckDB's memory does not hold every field's values at once
 
 ### Requirement: Consistent Type Inference
-`schema`, `stats`, `quality`, `schema-drift` and `db load` SHALL infer field types with one shared
-rule set, and SHALL report the same type for the same field of the same input.
+`schema`, `analyze`, `stats`, `quality` and `schema-drift` SHALL infer field types with one shared
+rule set, and SHALL report the same type for the same field of the same input. Values read as text
+(CSV, TSV, and records undatum reads itself) SHALL get the first of integer, number, boolean, date
+and datetime that at least 95% of their non-empty values convert to, in a sample of 10,000
+records; placeholders (`n/a`, `null`, `-`, empty) SHALL count as empty, a value with a leading
+zero SHALL make the field a string, and dates SHALL be ISO or day-first (`31.12.2020`,
+`31/12/2020`, `31-12-2020`, `2020/12/31`). Typed inputs (JSON, Parquet) SHALL keep their own
+types.
 
 #### Scenario: Same file, same types
 - **WHEN** a user runs `schema`, `stats`, `quality` and `schema-drift` on one CSV file
-- **THEN** each field has the same inferred type in all four reports
+- **THEN** each field has the same type in all four reports
 
-#### Scenario: Text with digits is not probed as a date at length
-- **WHEN** a column holds hashes, addresses or sentences with numbers
-- **THEN** date detection stops after at most 20 non-date values of that column
+#### Scenario: A few bad values
+- **WHEN** 2% of a CSV column's values are text and the rest are integers
+- **THEN** every command reports the column as an integer
+
+#### Scenario: Numbers as JSON strings
+- **WHEN** a JSON Lines field holds strings such as `"2005"`
+- **THEN** every command reports the field as a string
 
 ### Requirement: DuckDB Execution Through Arrow
 Operations with a SQL form SHALL run in DuckDB for inputs that DuckDB cannot read natively when

@@ -12,11 +12,14 @@ from ...common.command_utils import (
     resolve_csv_delimiter,
 )
 from ...common.duckdb_config import duckdb_connection
+from ...common.field_types import column_types
 from ...common.progress import progress
 from ...common.s3_iterable import open_iterable_with_s3
 from ...common.schema_utils import duckdb_decompose
 from ...constants import DEFAULT_DICT_SHARE
+from ...io import RowSource
 from ...utils import dict_generator, get_option
+from .engine import stats_type_names
 
 logger = logging.getLogger(__name__)
 
@@ -172,6 +175,19 @@ class DuckDBStatsMixin:
             for (field_path, _), count in zip(batch, row, strict=True):
                 distinct[field_path] = int(count or 0)
         return distinct
+
+    def _duckdb_field_types(self, fromfile, options, field_paths):
+        """Stats type names of the fields, by the shared rules of ``common.field_types``."""
+        source = RowSource(fromfile, options)
+        relation = source.duckdb_from()
+        if relation is None:
+            return {}
+        codes: set[str] = set()
+        types = column_types(
+            self._duckdb, relation, text_values=source.format_id in ("csv", "tsv"), codes=codes
+        )
+        names = stats_type_names(types, codes)
+        return {path: names[path] for path in field_paths if path in names}
 
     @staticmethod
     def _duckdb_read_func(fromfile, filetype, delimiter=None):
@@ -460,13 +476,11 @@ class DuckDBStatsMixin:
             for field_path in field_paths
         }
 
-        # Determine final field types (matching iterable logic)
-        finfields = {}
         for fd in fieldtypes.values():
-            if "empty" in fd["types"]:
-                del fd["types"]["empty"]
-            types_keys = list(fd["types"].keys())
-            finfields[fd["key"]] = types_keys[0] if len(types_keys) == 1 else "str"
+            fd["types"].pop("empty", None)
+        # Field types by the shared rules (the sample above stays in the debug output)
+        finfields = dict.fromkeys(field_paths, "str")
+        finfields.update(self._duckdb_field_types(fromfile, options, field_paths))
         numeric_paths = {
             path for path, ftype in finfields.items() if ftype in ("int", "float", "numeric")
         }

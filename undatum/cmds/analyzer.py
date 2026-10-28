@@ -36,6 +36,7 @@ from ..common.command_utils import (
 from ..common.duckdb_config import duckdb_connection
 from ..common.engine_selector import is_format_supported_by_duckdb
 from ..common.errors import ValidationError
+from ..common.field_types import apply_text_types
 from ..common.s3_iterable import open_iterable_with_s3
 from ..common.schema_utils import duckdb_decompose
 from ..common.tables import format_table
@@ -527,6 +528,13 @@ def analyze(
                     delimiter=csv_delimiter,
                     conn=conn,
                 )
+                if filetype in ("csv", "tsv"):
+                    # Field types by the shared rules instead of the DuckDB sniffer's guess
+                    from ..io import RowSource
+
+                    text_relation = RowSource(filename, options).duckdb_from()
+                    if text_relation is not None:
+                        apply_text_types(conn, text_relation, columns_raw)
                 is_flat = True
                 table.num_cols = len(columns_raw)
                 for column in columns_raw:

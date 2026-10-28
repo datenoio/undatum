@@ -29,9 +29,12 @@ Two files are compared with [`diff --schema`](/commands/diff#schema-changes) (al
 ## How fields are compared
 
 - **Types** are normalized (integer, number, boolean, date, datetime, string, object,
-  array) and inferred strictly from a sample of 10,000 records, like `undatum schema`: a
-  column is an integer only if every value is. A single text value in a number column is
-  reported as a type change.
+  array) and inferred from a sample of 10,000 records with the rules `schema`, `stats` and
+  `quality` use: a CSV column has the first of integer, number, boolean, date (ISO or
+  day-first, such as `31.12.2020`) and datetime that at least 95% of its non-empty values
+  convert to, and a value with a leading zero (`007`) makes it a string. JSON and Parquet
+  columns keep their own types. A few text values in a number column are not a type change;
+  more than 5% are.
 - **Nullability** compares whether empty values (or `n/a`, `null`, `-`) occur. Declared
   baselines without nullability information skip this check.
 - **Renames** pair a removed and an added field of the same type when their names are

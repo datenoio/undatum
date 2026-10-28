@@ -19,11 +19,13 @@
 - [x] 3.3 Contract tests: every native input × output pair, both engines, identical records
 
 ## 4. Type inference and stats
-- [ ] 4.1 Shared type-inference module (TRY_CAST shares, `could_be_date` + qddate for leftovers)
-- [ ] 4.2 Use it in `schema`, `stats`, `quality`, `schema-drift`, `db load`; remove the old rules
+- [x] 4.1 Shared type-inference module (`common/field_types.py`: TRY_CAST and day-first date shares,
+      95%, typed inputs keep their types)
+- [x] 4.2 Use it in `schema`, `analyze`, `stats` (both engines), `quality`, `schema-drift`; `db load`
+      keeps an all-values rule for created columns (follow-up)
 - [x] 4.3 `stats` in one aggregate scan plus grouped scans (dictionaries, four fields per scan;
       exact distinct counts within 2M estimated values per scan); output identical
-- [ ] 4.4 Test: the same file gives the same field types in all four commands
+- [x] 4.4 Test: the same file gives the same field types in all four commands
 
 ## 5. Output without dicts
 - [ ] 5.1 `write_query` writes Arrow batches to the iterabledata writers for non-`COPY` formats

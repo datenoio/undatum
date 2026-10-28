@@ -10,12 +10,14 @@ from ...common.command_utils import (
     nested_keep_parents,
     nested_max_depth,
 )
+from ...common.field_types import infer_value_types
 from ...common.parallel import parallel_process_chunks
 from ...common.parallel_workers import merge_stats_partials, stats_accumulate_chunk
 from ...common.progress import progress
 from ...common.s3_iterable import open_iterable_with_s3
 from ...constants import DEFAULT_DICT_SHARE
 from ...utils import dict_generator, get_option
+from .engine import stats_type_names
 
 logger = logging.getLogger(__name__)
 
@@ -128,6 +130,10 @@ class IterableStatsMixin:
             else:
                 ftype = types_keys[0]
             finfields[fd["key"]] = ftype
+        # Final types by the shared rules, from each field's values and counts
+        codes: set[str] = set()
+        types = infer_value_types({k: v["uniq"] for k, v in fielddata.items()}, codes=codes)
+        finfields.update(stats_type_names(types, codes))
 
         profile["fieldtypes"] = finfields
 

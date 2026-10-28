@@ -24,11 +24,15 @@ from difflib import get_close_matches
 from typing import Any
 
 from ..common.errors import ValidationError
+from ..common.field_types import (
+    DUCKDB_TYPES,
+    MIN_TYPED_SHARE,
+    TEXT_TYPES,
+    infer_text_types,
+    value_sql,
+)
 from .base import Operation, Streaming, quote, register
 
-TYPE_CANDIDATES = ("BIGINT", "DOUBLE", "DATE", "TIMESTAMP", "BOOLEAN")
-MIN_TYPED_SHARE = 0.95
-SAMPLE_ROWS = 10_000
 BATCH_ROWS = 10_000
 RAW = "__undatum_raw"
 INDEX = "__undatum_i"
@@ -111,7 +115,9 @@ def check_expression(conn: Any, expression: str, option: str) -> None:
 def infer_types(
     conn: Any, relation: str, schema: dict[str, str], min_share: float = MIN_TYPED_SHARE
 ) -> dict[str, str]:
-    """Types for text columns: the first type ``min_share`` of their values convert to.
+    """DuckDB types for text columns, by the shared rules (:mod:`undatum.common.field_types`).
+
+    Only types ``TRY_CAST`` reads are used (ISO dates), since expressions cast to them.
 
     Args:
         conn: DuckDB connection.
@@ -121,43 +127,16 @@ def infer_types(
     """
     text = [name for name, kind in schema.items() if kind == "VARCHAR"]
     types = dict(schema)
-    if not text:
-        return types
-    parts = []
-    for name in text:
-        value = _value_sql(quote(name))
-        parts += [
-            f"count({value})",
-            # TRY_CAST('1.5' AS BIGINT) rounds, so integers are matched by pattern.
-            f"count_if(regexp_matches({value}, '^[+-]?[0-9]{{1,18}}$'))",
-            f"count(TRY_CAST({value} AS DOUBLE))",
-            f"count_if(TRY_CAST({value} AS DATE) IS NOT NULL"
-            f" AND NOT regexp_matches({value}, '[0-9]:[0-9]'))",
-            f"count(TRY_CAST({value} AS TIMESTAMP))",
-            f"count_if(lower({value}) IN ('true', 'false'))",
-            f"count_if(regexp_matches({value}, '^[+-]?0[0-9]'))",
-        ]
-    sample = f"(SELECT * FROM {relation} LIMIT {SAMPLE_ROWS})"
-    counts = conn.execute(f"SELECT {', '.join(parts)} FROM {sample}").fetchall()[0]
-    for index, name in enumerate(text):
-        total, *typed, leading_zero = counts[index * 7 : index * 7 + 7]
-        if not total or leading_zero:
-            continue
-        for kind, converted in zip(TYPE_CANDIDATES, typed, strict=True):
-            if converted >= total * min_share:
-                types[name] = kind
-                break
+    inferred = infer_text_types(conn, relation, text, min_share=min_share, day_first_dates=False)
+    for name, kind in inferred.items():
+        if kind in TEXT_TYPES:
+            types[name] = DUCKDB_TYPES[kind]
     return types
-
-
-# Placeholders that mean "no value" in text data.
-NULL_TOKENS = ("", "na", "n/a", "null", "none", "nan", "-")
 
 
 def _value_sql(column: str) -> str:
     """The value of a text column for typing: trimmed, NULL for placeholders."""
-    tokens = ", ".join(_literal(token) for token in NULL_TOKENS)
-    return f"CASE WHEN lower(trim({column})) IN ({tokens}) THEN NULL ELSE trim({column}) END"
+    return value_sql(column)
 
 
 def build_query(

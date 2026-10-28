@@ -19,7 +19,7 @@
     },
     "fieldtypes": {
       "type": "object",
-      "description": "Field -> detected type"
+      "description": "Field -> detected type: `int`, `float`, `bool`, `date`, `datetime`, `numstr` (digits with leading zeros) or `str`"
     },
     "fields": {
       "type": "array",
