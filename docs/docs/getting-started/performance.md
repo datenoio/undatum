@@ -34,7 +34,13 @@ On CSV, TSV, JSON, JSON Lines and Parquet inputs (plain or `.gz`/`.zst`) the def
   engine, checked by contract tests (`rename` is about 7x faster on 1M CSV rows);
 - `select`, `sort`, `join`, `count`, `stats`, `frequency`, `uniq` and `sql`;
 - `--where` conditions and `--add` columns. Inputs DuckDB cannot read are evaluated in batches
-  with the same results.
+  with the same results;
+- `convert` between these formats (one `COPY`, one thread, about 150-300 MB for millions of
+  rows): CSV to JSON Lines on 2M rows takes 2 s instead of 7.5 s. The records are the Python
+  engine's, checked by contract tests: CSV values stay text and empty CSV fields stay empty
+  strings. JSON Lines written by DuckDB are compact (no space after `:` and `,`). Inputs with
+  timestamps, intervals, decimals, 32-bit floats, UUIDs or binary values (and, for CSV output,
+  booleans or nested values) are converted by the Python engine, whose text differs for them.
 
 `dedup` and `reverse` use DuckDB only with `--engine duckdb`: DuckDB holds the records up to
 its memory limit (about 750 MB for 2M rows), while the default Python engine stays bounded

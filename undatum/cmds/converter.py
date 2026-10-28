@@ -1,6 +1,7 @@
 """File format conversion module."""
 
 import logging
+import os
 import time
 from collections import defaultdict
 from typing import Any
@@ -9,15 +10,14 @@ from ..common.chunked_io import chunked_reader
 from ..common.command_utils import (
     apply_iterable_csv_delimiter,
     apply_table_selection,
-    duckdb_read_expr,
     get_iterable_options,
     parse_column_list,
     parse_row_range,
+    quote_sql_identifier,
     resolve_csv_delimiter,
     validate_codec_profile,
     validate_write_mode,
 )
-from ..common.engine_selector import detect_engine, is_format_supported_by_duckdb
 from ..common.errors import (
     FileNotFoundError,
     FormatError,
@@ -29,7 +29,7 @@ from ..common.parallel import parallel_process_chunks
 from ..common.parallel_workers import transform_convert_chunk
 from ..common.path_utils import validate_file_path
 from ..common.progress import is_tty, wrap_iterable
-from ..constants import COMPRESSED_FILE_TYPES, DUCKABLE_FILE_TYPES, SUPPORTED_FILE_TYPES
+from ..constants import COMPRESSED_FILE_TYPES, SUPPORTED_FILE_TYPES
 from ..utils import get_file_type, get_option
 
 logger = logging.getLogger(__name__)
@@ -115,6 +115,42 @@ def _skip_duckdb_convert(options: dict) -> bool:
     if options.get("quotechar"):
         return True
     return False
+
+
+_CSV_FORMATS = ("csv", "tsv", "tab")
+# DuckDB writes these as different text than the Python writers: timestamps (a space where
+# isoformat() has "T"), intervals, times with a zone, decimals, 32-bit floats, UUIDs, binary.
+_TEXT_UNSAFE_TYPES = (
+    "TIMESTAMP",
+    "INTERVAL",
+    "TIME WITH TIME ZONE",
+    "DECIMAL",
+    "FLOAT",
+    "UUID",
+    "BLOB",
+)
+# ... in CSV also booleans (Python writes True/False) and nested values.
+_CSV_UNSAFE_TYPES = ("BOOLEAN", "STRUCT", "MAP", "UNION", "JSON")
+# DuckDB turns date-like JSON strings into dates and times, which may change their text.
+_JSON_INFERRED_TYPES = ("DATE", "TIME")
+
+
+def _duckdb_writes_same_text(types, out_fmt: str, *, from_json: bool) -> bool:
+    """Whether a DuckDB ``COPY`` of columns of ``types`` gives the Python writer's records.
+
+    Parquet output keeps types, except for the dates DuckDB infers from JSON strings.
+    """
+    text_out = out_fmt != "parquet"
+    for column_type in types:
+        if from_json and column_type.startswith(_JSON_INFERRED_TYPES):
+            return False
+        if (text_out or from_json) and column_type.startswith(_TEXT_UNSAFE_TYPES):
+            return False
+        if out_fmt in _CSV_FORMATS and (
+            column_type.startswith(_CSV_UNSAFE_TYPES) or column_type.endswith("]")
+        ):
+            return False
+    return True
 
 
 def _filter_bulk_convert_kwargs(bulk_convert_fn, convert_kwargs: dict) -> dict:
@@ -617,79 +653,81 @@ class Converter:
 
         return _ctx()
 
-    def _try_duckdb_convert(self, fromfile, tofile, options: dict) -> bool:
-        """Attempt DuckDB spill-to-disk conversion for duckable → Parquet/CSV/JSONL.
+    def _try_duckdb_convert(self, fromfile, tofile, options: dict):
+        """Convert with one DuckDB ``COPY`` when DuckDB reads the input and writes the output.
+
+        Covers CSV/TSV, JSON, JSON Lines and Parquet in and out (plain, gzip or zstd). The
+        records equal the Python engine's: CSV values stay text and empty CSV fields stay
+        empty strings. With ``--engine auto``, inputs whose values DuckDB would write as
+        different text (see :func:`_duckdb_writes_same_text`) use the Python engine.
 
         Returns:
-            True if conversion completed via DuckDB, False if caller should fall back.
+            iterabledata ``ConversionResult`` when DuckDB wrote ``tofile``, ``None`` to use
+            the iterabledata path.
         """
-        out_fmt = self._resolve_output_format(tofile, options)
-        if out_fmt not in ("parquet", "csv", "json", "jsonl"):
-            return False
+        import time
 
-        engine = get_option(options, "engine") or "auto"
-        low_memory = bool(options.get("low_memory"))
-        # Prefer DuckDB for low-memory parquet/csv/jsonl or when engine requests it.
-        if engine == "python":
-            return False
-        if engine == "auto" and not low_memory and out_fmt != "parquet":
-            # Keep existing iterable path as default for non-parquet unless low-memory.
-            return False
+        import duckdb
+        from iterable.types import ConversionResult
 
-        detected = detect_engine(
-            fromfile, engine if engine != "auto" else "auto", operation="convert"
-        )
-        if detected != "duckdb" and not (low_memory and engine == "auto"):
-            # Still try duckdb if format looks duckable under low-memory.
-            ftype = get_file_type(fromfile)
-            if not is_format_supported_by_duckdb(ftype, "raw") and ftype not in DUCKABLE_FILE_TYPES:
-                return False
+        from ..common.duckdb_config import duckdb_connection
+        from ..common.engine_selector import validate_engine
+        from ..common.writer import AtomicFileTarget, duckdb_copy_options, resolve_output_format
+        from ..io import RowSource
 
+        start = time.time()
+
+        engine = validate_engine(get_option(options, "engine"))
+        target = str(tofile)
+        copy_options = duckdb_copy_options(target)
+        if engine == "python" or copy_options is None:
+            return None
+        out_fmt = resolve_output_format(target, get_option(options, "format_out"))
+        if out_fmt != resolve_output_format(target):
+            return None  # --format-out differs from the extension COPY would write
+        source = RowSource(fromfile, options)
+        relation = source.duckdb_from()
+        if relation is None:
+            return None
+        text_in = source.format_id in ("csv", "tsv")
+        # A conversion streams: one thread keeps memory bounded (about 100-150 MB for millions
+        # of rows) and is nearly as fast, since COPY preserves the input order.
+        conn = duckdb_connection(options, "row")
         try:
-            from iterable.helpers.detect import detect_file_type
-
-            from ..common.duckdb_config import (
-                create_duckdb_connection,
-                get_duckdb_config_from_options,
-            )
-
-            ftype_info = detect_file_type(fromfile)
-            filetype = options.get("format_in")
-            compression = "raw"
-            if not filetype and ftype_info.get("success"):
-                filetype = ftype_info["datatype"].id()
-                if ftype_info.get("codec") is not None:
-                    compression = ftype_info["codec"].id()
-            filetype = (filetype or get_file_type(fromfile) or "").lower()
-            if not is_format_supported_by_duckdb(filetype, compression):
-                return False
-
-            try:
-                read_expr = duckdb_read_expr(
-                    fromfile, filetype, get_iterable_options(options), all_varchar=True
+            described = conn.execute(f"DESCRIBE SELECT * FROM {relation}").fetchall()
+            types = {str(row[0]): str(row[1]).upper() for row in described}
+            if engine == "auto" and not _duckdb_writes_same_text(
+                types.values(), out_fmt or "", from_json=source.format_id in ("json", "jsonl")
+            ):
+                logger.debug("convert: column types need the Python writer")
+                return None
+            if text_in and out_fmt not in _CSV_FORMATS:
+                # DuckDB reads empty CSV fields as NULL; the Python reader keeps "".
+                columns = ", ".join(
+                    f"COALESCE({quote_sql_identifier(name)}, '') AS {quote_sql_identifier(name)}"
+                    for name in types
                 )
-            except ValueError:
-                return False
-
-            duckdb_config = get_duckdb_config_from_options(options)
-            if low_memory and not duckdb_config.get("memory"):
-                duckdb_config["memory"] = "1GB"
-            conn = create_duckdb_connection(**duckdb_config)
-            try:
-                query = f"SELECT * FROM {read_expr}"
-                if out_fmt == "parquet":
-                    conn.execute(f"COPY ({query}) TO '{tofile}' (FORMAT PARQUET)")
-                elif out_fmt == "csv":
-                    conn.execute(f"COPY ({query}) TO '{tofile}' (FORMAT CSV, HEADER)")
-                else:
-                    conn.execute(f"COPY ({query}) TO '{tofile}' (FORMAT JSON)")
-            finally:
-                conn.close()
-            logger.info("convert: completed via DuckDB spill path (%s → %s)", filetype, out_fmt)
-            return True
-        except Exception as exc:  # noqa: BLE001 - fall back to iterable path
-            logger.warning("DuckDB convert path failed, falling back to iterable: %s", exc)
-            return False
+            else:
+                columns = "*"
+            with AtomicFileTarget(target) as stage:
+                escaped = stage.target.replace("'", "''")
+                copied = conn.execute(
+                    f"COPY (SELECT {columns} FROM {relation}) TO '{escaped}' ({copy_options})"
+                ).fetchall()
+                stage.commit()
+        except duckdb.Error as exc:
+            logger.warning("DuckDB convert failed, using the Python engine: %s", exc)
+            return None
+        finally:
+            conn.close()
+        rows = int(copied[0][0]) if copied else 0
+        logger.info("convert: written by DuckDB (%s -> %s)", source.format_id, out_fmt)
+        return ConversionResult(
+            rows_in=rows,
+            rows_out=rows,
+            elapsed_seconds=time.time() - start,
+            bytes_written=os.path.getsize(target),
+        )
 
     def convert(self, fromfile, tofile, options=None, limit=DEFAULT_HEADERS_DETECT_LIMIT):
         """Convert a file (or cloud/DB source) to another format.
@@ -699,8 +737,8 @@ class Converter:
         reporting, atomic local writes, and native cloud (s3/gs/az) handling.
         Friendly errors for missing files and unsupported formats are preserved.
 
-        When ``low_memory`` is set (or converting duckable formats to Parquet),
-        prefers DuckDB ``COPY`` spill-to-disk when possible.
+        CSV/TSV, JSON, JSON Lines and Parquet inputs and outputs are written with one DuckDB
+        ``COPY`` (same records as the Python engine); ``--engine python`` forces iterabledata.
 
         Args:
             fromfile: Path or URI of the input source.
@@ -709,8 +747,8 @@ class Converter:
             limit: Maximum records to sample for schema detection.
 
         Returns:
-            iterabledata ``ConversionResult`` with row/byte metrics, or ``None``
-            when DuckDB completed the conversion.
+            iterabledata ``ConversionResult`` with row/byte metrics (also when DuckDB
+            wrote the output).
 
         Raises:
             FileNotFoundError: If a local input file does not exist.
@@ -758,8 +796,11 @@ class Converter:
             return None
 
         if "://" not in fromfile and not _skip_duckdb_convert(options):
-            if self._try_duckdb_convert(fromfile, tofile, options):
-                return None
+            result = self._try_duckdb_convert(fromfile, tofile, options)
+            if result is not None:
+                if options.get("summary", True):
+                    logger.info(format_conversion_summary(result))
+                return result
 
         convert_kwargs = self._build_convert_kwargs(
             options, limit, fromfile=fromfile, tofile=tofile

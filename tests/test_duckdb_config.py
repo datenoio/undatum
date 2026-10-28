@@ -279,6 +279,10 @@ def test_commands_pass_duckdb_options_to_their_connection(tmp_path, monkeypatch,
         return real(**kwargs)
 
     monkeypatch.setattr(config, "create_duckdb_connection", spy)
+    # selector binds the factory when it is imported, which may be before this test.
+    from undatum.cmds import selector
+
+    monkeypatch.setattr(selector, "create_duckdb_connection", spy)
     source = tmp_path / "data.csv"
     source.write_text("name,age\nAlice,30\nBob,25\n", encoding="utf8")
     command = [args[0], str(source), *args[1:], "--duckdb-memory", "2GB"]

@@ -13,10 +13,10 @@
       `selector.py`, `sampler.py`, `joiner.py`, `converter.py`
 
 ## 3. Conversion through DuckDB
-- [ ] 3.1 `detect_engine` treats `convert` as SQL-expressible for native in/out pairs
-- [ ] 3.2 `COPY` for CSV/TSV, JSON Lines, Parquet outputs with Python-equal text (temporal and
-      NULL formatting)
-- [ ] 3.3 Contract tests: every native input × output pair, both engines, identical records
+- [x] 3.1 `detect_engine` treats `convert` as SQL-expressible for native in/out pairs
+- [x] 3.2 `COPY` for CSV/TSV, JSON Lines, Parquet outputs with Python-equal text (temporal and
+      NULL formatting) — one thread / 256 MB; types DuckDB writes differently stay on Python
+- [x] 3.3 Contract tests: every native input × output pair, both engines, identical records
 
 ## 4. Type inference and stats
 - [ ] 4.1 Shared type-inference module (TRY_CAST shares, `could_be_date` + qddate for leftovers)

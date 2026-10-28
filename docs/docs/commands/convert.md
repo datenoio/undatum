@@ -4,7 +4,7 @@ description: "undatum convert command reference"
 ---
 # `convert`
 
-Converts data between any formats supported by iterabledata (140+, see `undatum formats list`). Reading and writing are handled by the iterabledata engine, including cloud URIs (`s3://`, `gs://`, `az://`). Use `--recursive` to bulk-convert a directory or glob pattern.
+Converts data between any formats supported by iterabledata (140+, see `undatum formats list`). Reading and writing are handled by the iterabledata engine, including cloud URIs (`s3://`, `gs://`, `az://`); between CSV/TSV, JSON, JSON Lines and Parquet files DuckDB writes the output with one `COPY` (same records, see [performance](/getting-started/performance#duckdb-pushdown)). Use `--recursive` to bulk-convert a directory or glob pattern.
 
 ```bash norun
 # XML to JSON Lines

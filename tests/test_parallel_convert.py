@@ -213,7 +213,7 @@ class TestParallelConvert:
         out = tmp_path / "out.jsonl"
         conv = Converter()
         with (
-            patch.object(conv, "_try_duckdb_convert", return_value=False),
+            patch.object(conv, "_try_duckdb_convert", return_value=None),
             patch.object(conv, "_convert_python_parallel") as mock_par,
             patch("iterable.convert.convert") as mock_iter,
         ):
