@@ -44,7 +44,7 @@ class DuckDBStatsMixin:
             path="*",
             limit=10000000,  # Process all rows (default limit)
             recursive=True,
-            ignore_errors=True,
+            ignore_errors=False,  # a bad record must not shrink the counts unnoticed
             use_summarize=True,
             delimiter=delimiter,
         )
@@ -144,14 +144,7 @@ class DuckDBStatsMixin:
         """
         length_stats = {}
 
-        # Determine read function based on file type
-        if filetype in ["csv", "tsv"]:
-            read_func = duckdb_read_csv_expr(fromfile, delimiter)
-        elif filetype in ["json", "jsonl"]:
-            read_func = f"read_json('{fromfile}', ignore_errors=true)"
-        else:
-            # For other formats (like Parquet), use direct table reference
-            read_func = f"'{fromfile}'"
+        read_func = self._duckdb_read_func(fromfile, filetype, delimiter)
 
         # Compute length statistics for each field path
         for field_path in field_paths:
@@ -235,9 +228,10 @@ class DuckDBStatsMixin:
         """Build a DuckDB read function expression for the given file."""
         if filetype in ["csv", "tsv"]:
             return duckdb_read_csv_expr(fromfile, delimiter)
+        escaped = fromfile.replace("'", "''")
         if filetype in ["json", "jsonl"]:
-            return f"read_json('{fromfile}', ignore_errors=true)"
-        return f"'{fromfile}'"
+            return f"read_json('{escaped}')"
+        return f"'{escaped}'"
 
     @staticmethod
     def _quote_field_path(field_path):
@@ -489,13 +483,7 @@ class DuckDBStatsMixin:
         """
         dictionaries = {}
 
-        # Determine read function based on file type
-        if filetype in ["csv", "tsv"]:
-            read_func = duckdb_read_csv_expr(fromfile, delimiter)
-        elif filetype in ["json", "jsonl"]:
-            read_func = f"read_json('{fromfile}', ignore_errors=true)"
-        else:
-            read_func = f"'{fromfile}'"
+        read_func = self._duckdb_read_func(fromfile, filetype, delimiter)
 
         # Identify fields that need dictionaries (uniqueness percentage below dictshare)
         for field_path, fd in fielddata.items():
@@ -621,14 +609,8 @@ class DuckDBStatsMixin:
         total_count = 0
         if show_progress:
             try:
-                if filetype in ["json", "jsonl"]:
-                    query_str = f"SELECT COUNT(*) FROM read_json('{fromfile}', ignore_errors=true)"
-                elif filetype in ["csv", "tsv"]:
-                    query_str = (
-                        f"SELECT COUNT(*) FROM {duckdb_read_csv_expr(fromfile, csv_delimiter)}"
-                    )
-                else:
-                    query_str = f"SELECT COUNT(*) FROM '{fromfile}'"
+                read_func = self._duckdb_read_func(fromfile, filetype, csv_delimiter)
+                query_str = f"SELECT COUNT(*) FROM {read_func}"
                 with progress(desc="Counting rows", unit="rows", leave=False, total=None) as pbar:
                     total_count = duckdb.sql(query_str).fetchone()[0]
                     pbar.total = total_count
