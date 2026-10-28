@@ -3,10 +3,24 @@
 import logging
 import os
 import re
+from typing import Any, Literal
 
 import duckdb
 
 logger = logging.getLogger(__name__)
+
+# Defaults per kind of work; explicit --duckdb-* options always win.
+# - row: row-wise and window transforms are I/O bound; one thread is nearly as fast and, with
+#   insertion order preserved, per-thread buffers would otherwise grow with the input.
+# - ordered: queries that hold every record and rely on input order (row_number() over the
+#   input); one thread, and DuckDB's own memory limit since a small one fails their sorts.
+# - aggregate: aggregations, sorts and profiling use every core and DuckDB's memory limit.
+Workload = Literal["row", "ordered", "aggregate"]
+WORKLOAD_DEFAULTS: dict[str, dict[str, Any]] = {
+    "row": {"threads": 1, "memory": "256MB"},
+    "ordered": {"threads": 1},
+    "aggregate": {},
+}
 
 # Directory with preinstalled DuckDB extensions (DuckDB's extension_directory), so commands
 # that need an extension work without network access.
@@ -169,3 +183,24 @@ def get_duckdb_config_from_options(options: dict) -> dict:
     if "duckdb_temp_dir" in options:
         config["temp_dir"] = options["duckdb_temp_dir"]
     return config
+
+
+def duckdb_connection(
+    options: dict[str, Any] | None = None, workload: Workload = "aggregate"
+) -> duckdb.DuckDBPyConnection:
+    """A DuckDB connection for one command, configured from its ``--duckdb-*`` options.
+
+    Args:
+        options: Command options (``duckdb_threads``, ``duckdb_memory``, ``duckdb_temp_dir``;
+            ``threads`` when ``duckdb_threads`` is not given).
+        workload: ``row``, ``ordered`` or ``aggregate`` (see ``WORKLOAD_DEFAULTS``); fills the
+            settings the options leave unset.
+
+    Returns:
+        A new connection; the caller closes it.
+    """
+    config = get_duckdb_config_from_options(options or {})
+    for key, value in WORKLOAD_DEFAULTS[workload].items():
+        if not config.get(key):
+            config[key] = value
+    return create_duckdb_connection(**config)

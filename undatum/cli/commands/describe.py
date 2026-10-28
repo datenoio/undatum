@@ -7,6 +7,9 @@ import typer
 from ..common import AI_PROVIDER_HELP, AIMaskSamplesOpt, build_ai_config, enable_verbose
 from ..options import (
     DocMaskSamplesOpt,
+    DuckdbMemoryOpt,
+    DuckdbTempDirOpt,
+    DuckdbThreadsOpt,
     ErrorLogOpt,
     FlattenNestedOpt,
     JsonOpt,
@@ -144,6 +147,9 @@ def analyze(
     flatten_nested: FlattenNestedOpt = False,
     max_nested_depth: MaxNestedDepthOpt = None,
     keep_nested_parents: KeepNestedParentsOpt = True,
+    duckdb_threads: DuckdbThreadsOpt = None,
+    duckdb_memory: DuckdbMemoryOpt = None,
+    duckdb_temp_dir: DuckdbTempDirOpt = None,
     json_output: JsonOpt = False,
 ):
     """Analyzes given data file and returns human readable insights.
@@ -160,6 +166,9 @@ def analyze(
 
     options = {
         "engine": engine,
+        "duckdb_threads": duckdb_threads,
+        "duckdb_memory": duckdb_memory,
+        "duckdb_temp_dir": duckdb_temp_dir,
         "use_pandas": use_pandas,
         "outtype": outtype,
         "format_out": "json" if json_output else format_out,
@@ -542,6 +551,9 @@ def schema(
             help="With --validate, rows to sample when inferring the schema (engine default 10000).",
         ),
     ] = None,
+    duckdb_threads: DuckdbThreadsOpt = None,
+    duckdb_memory: DuckdbMemoryOpt = None,
+    duckdb_temp_dir: DuckdbTempDirOpt = None,
     json_output: JsonOpt = False,
 ):
     """Extract schema from a data file.
@@ -566,6 +578,9 @@ def schema(
         "ai_provider": ai_provider,
         "ai_config": ai_config,
         "engine": engine,
+        "duckdb_threads": duckdb_threads,
+        "duckdb_memory": duckdb_memory,
+        "duckdb_temp_dir": duckdb_temp_dir,
         "table": table,
         "quotechar": quotechar,
         "start_page": start_page,
@@ -703,6 +718,9 @@ def schema_drift(
         str | None, typer.Option("--output", "-o", help="Write the report to this file.")
     ] = None,
     table: TableNameOpt = None,
+    duckdb_threads: DuckdbThreadsOpt = None,
+    duckdb_memory: DuckdbMemoryOpt = None,
+    duckdb_temp_dir: DuckdbTempDirOpt = None,
     json_output: JsonOpt = False,
 ):
     """Compare the schema of every file with a baseline and report drift.
@@ -716,7 +734,16 @@ def schema_drift(
     from ...cmds.drift import emit_report, parse_fail_on, run_drift
 
     fail = parse_fail_on(fail_on)
-    reference, diffs = run_drift(paths, baseline, {"table": table})
+    reference, diffs = run_drift(
+        paths,
+        baseline,
+        {
+            "table": table,
+            "duckdb_threads": duckdb_threads,
+            "duckdb_memory": duckdb_memory,
+            "duckdb_temp_dir": duckdb_temp_dir,
+        },
+    )
     emit_report(diffs, "json" if json_output else format_out, output, baseline=reference)
     if any(diff.fails(fail) for diff in diffs):
         raise typer.Exit(1)

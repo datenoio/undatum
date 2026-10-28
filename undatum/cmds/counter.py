@@ -43,10 +43,13 @@ def count_records(fromfile: str, options: dict[str, Any] | None = None) -> int:
     logger.debug("count: %s with %s", fromfile, "DuckDB" if expr else "iterabledata")
 
     def _count_duckdb() -> int:
-        import duckdb
+        from ..common.duckdb_config import duckdb_connection
 
-        row = duckdb.execute(f"SELECT count(*) FROM {expr}").fetchall()[0]
-        return int(row[0]) if row else 0
+        conn = duckdb_connection(options)
+        try:
+            return int(conn.execute(f"SELECT count(*) FROM {expr}").fetchall()[0][0])
+        finally:
+            conn.close()
 
     return int(
         run_with_duckdb_fallback(
@@ -65,9 +68,9 @@ def _count_where(source: RowSource, steps: list[Any], engine: str) -> int:
     resolved = [(get_operation(name), cfg) for name, cfg in steps]
     relation = source.duckdb_from() if engine != "python" else None
     if relation is not None:
-        import duckdb
+        from ..common.duckdb_config import duckdb_connection
 
-        conn = duckdb.connect()
+        conn = duckdb_connection(source.options)
         try:
             query = compose_sql(conn, relation, resolved)
             if query is not None:

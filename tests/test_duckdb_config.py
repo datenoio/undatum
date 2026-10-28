@@ -9,6 +9,7 @@ import pytest
 from undatum.common.duckdb_config import (
     EXTENSION_DIR_ENV,
     create_duckdb_connection,
+    duckdb_connection,
     get_duckdb_config_from_options,
     load_extension,
     parse_memory_size,
@@ -221,3 +222,69 @@ class TestOfflineExtensions:
         assert info.value.exit_code == 2
         assert "'excel'" in info.value.message
         assert EXTENSION_DIR_ENV in info.value.message
+
+
+def _settings(conn):
+    threads, memory = conn.execute(
+        "SELECT current_setting('threads'), current_setting('memory_limit')"
+    ).fetchall()[0]
+    return int(threads), memory
+
+
+class TestWorkloads:
+    """Connection defaults per kind of work; explicit --duckdb-* options win."""
+
+    def test_row_wise_is_bounded(self):
+        threads, memory = _settings(duckdb_connection(workload="row"))
+        assert threads == 1
+        assert memory == _settings(create_duckdb_connection(memory="256MB"))[1]
+
+    def test_ordered_keeps_duckdb_memory_limit(self):
+        threads, memory = _settings(duckdb_connection(workload="ordered"))
+        assert threads == 1
+        assert memory == _settings(duckdb.connect())[1]
+
+    def test_aggregate_uses_every_core(self):
+        assert _settings(duckdb_connection()) == _settings(duckdb.connect())
+
+    def test_options_win(self):
+        options = {"duckdb_threads": 3, "duckdb_memory": "2GB"}
+        threads, memory = _settings(duckdb_connection(options, workload="row"))
+        assert threads == 3
+        assert memory == _settings(create_duckdb_connection(memory="2GB"))[1]
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["stats", "-O", "json"],
+        ["count"],
+        ["quality", "--json"],
+        ["schema-drift", "--json"],
+        ["frequency", "-f", "name"],
+    ],
+)
+def test_commands_pass_duckdb_options_to_their_connection(tmp_path, monkeypatch, args):
+    """--duckdb-memory reaches the DuckDB connection of every DuckDB-backed command."""
+    from typer.testing import CliRunner
+
+    import undatum.common.duckdb_config as config
+    from undatum.core import app
+
+    seen = []
+    real = config.create_duckdb_connection
+
+    def spy(**kwargs):
+        seen.append(kwargs)
+        return real(**kwargs)
+
+    monkeypatch.setattr(config, "create_duckdb_connection", spy)
+    source = tmp_path / "data.csv"
+    source.write_text("name,age\nAlice,30\nBob,25\n", encoding="utf8")
+    command = [args[0], str(source), *args[1:], "--duckdb-memory", "2GB"]
+    if args[0] == "schema-drift":
+        command += ["--baseline", str(source)]
+    result = CliRunner().invoke(app, command)
+    assert result.exit_code == 0, result.output
+    assert seen, "no DuckDB connection was made"
+    assert all(kwargs.get("memory") == "2GB" for kwargs in seen), seen

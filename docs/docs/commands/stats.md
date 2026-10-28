@@ -113,6 +113,9 @@ undatum stats [OPTIONS] INPUT_FILE
 | `--trust` | Acknowledge pickle deserialization risk when reading pickle sources. |  |
 | `--on-error` TEXT | Parse-error policy: raise (default), skip, or warn. |  |
 | `--error-log` TEXT | Append parse errors as JSONL (use with --on-error skip or warn). |  |
+| `--duckdb-threads` INTEGER | Number of threads for DuckDB engine. |  |
+| `--duckdb-memory` TEXT | Memory limit for DuckDB (e.g., '4GB', '512MB'). |  |
+| `--duckdb-temp-dir` TEXT | Temporary directory for DuckDB. |  |
 | `--json` | Print the result as one JSON document (same as --format-out json). |  |
 
 See also [shared options](/commands/shared-options).

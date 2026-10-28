@@ -127,6 +127,9 @@ undatum analyze [OPTIONS] INPUT_FILE
 | `--flatten-nested` | Unfold nested dict / array-of-dict fields into dotted paths (e.g. city.lat). |  |
 | `--max-nested-depth` INTEGER | With --flatten-nested, maximum nest depth to unfold (engine default 5). |  |
 | `--keep-nested-parents` / `--no-keep-nested-parents` | With --flatten-nested, keep parent dict/array fields alongside dotted children. | `--keep-nested-parents` |
+| `--duckdb-threads` INTEGER | Number of threads for DuckDB engine. |  |
+| `--duckdb-memory` TEXT | Memory limit for DuckDB (e.g., '4GB', '512MB'). |  |
+| `--duckdb-temp-dir` TEXT | Temporary directory for DuckDB. |  |
 | `--json` | Print the result as one JSON document (same as --format-out json). |  |
 
 Deprecated spellings (removed in 2.0): `--objects-limit` → `--limit`, `--outtype` → `--format-out`.

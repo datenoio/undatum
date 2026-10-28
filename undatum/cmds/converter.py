@@ -9,6 +9,7 @@ from ..common.chunked_io import chunked_reader
 from ..common.command_utils import (
     apply_iterable_csv_delimiter,
     apply_table_selection,
+    duckdb_read_expr,
     get_iterable_options,
     parse_column_list,
     parse_row_range,
@@ -355,7 +356,9 @@ class Converter:
         if relation is not None:
             import duckdb
 
-            conn = duckdb.connect()
+            from ..common.duckdb_config import duckdb_connection
+
+            conn = duckdb_connection(options)
             try:
                 query = compose_sql(conn, relation, steps) if steps else f"SELECT * FROM {relation}"
                 if query and duckdb_partitioned_copy(
@@ -661,13 +664,11 @@ class Converter:
             if not is_format_supported_by_duckdb(filetype, compression):
                 return False
 
-            if filetype == "csv":
-                read_expr = f"read_csv_auto('{fromfile}', all_varchar=true)"
-            elif filetype in ("json", "jsonl"):
-                read_expr = f"read_json_auto('{fromfile}')"
-            elif filetype == "parquet":
-                read_expr = f"read_parquet('{fromfile}')"
-            else:
+            try:
+                read_expr = duckdb_read_expr(
+                    fromfile, filetype, get_iterable_options(options), all_varchar=True
+                )
+            except ValueError:
                 return False
 
             duckdb_config = get_duckdb_config_from_options(options)

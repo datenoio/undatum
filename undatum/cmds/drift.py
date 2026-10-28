@@ -126,8 +126,7 @@ def normalize_type(kind: str | None) -> str:
 
 def profile_file(path: str, options: dict[str, Any] | None = None) -> dict[str, FieldInfo]:
     """Fields of a data file, inferred from a sample of its records."""
-    import duckdb
-
+    from ..common.duckdb_config import duckdb_connection
     from ..io import RowSource
     from ..ops.expr import _value_sql, infer_types
 
@@ -135,7 +134,7 @@ def profile_file(path: str, options: dict[str, Any] | None = None) -> dict[str, 
         raise FileNotFoundError(path)
     options = options or {}
     source = RowSource(path, options)
-    conn = duckdb.connect()
+    conn = duckdb_connection(options)
     try:
         relation = source.duckdb_from()
         if relation is None:

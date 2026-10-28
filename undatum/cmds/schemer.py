@@ -11,7 +11,6 @@ import tempfile
 import zipfile
 from typing import IO
 
-import duckdb
 import orjson
 import pandas as pd
 import xxhash
@@ -21,7 +20,13 @@ from pyzstd import ZstdFile
 from qddate import DateParser
 
 from ..ai import get_ai_service, get_description, get_fields_info
-from ..common.command_utils import duckdb_can_decode, resolve_csv_delimiter
+from ..common.command_utils import (
+    duckdb_can_decode,
+    duckdb_read_expr,
+    get_iterable_options,
+    resolve_csv_delimiter,
+)
+from ..common.duckdb_config import duckdb_connection
 from ..common.progress import progress
 from ..common.schema_utils import duckdb_decompose, duckdb_to_json_schema_type
 from ..common.scheme import generate_scheme_from_file
@@ -284,42 +289,40 @@ def build_schema(
             else:
                 engine = "iterable"
 
-        # Count records (only for DuckDB engine)
-        if engine == "duckdb":
-            try:
-                text_ignore = ", ignore_errors=true"
-                if filetype in ["json", "jsonl"]:
-                    query_str = f"select count(*) from read_json('{filename}'{text_ignore})"
-                elif filetype in ["csv", "tsv"]:
-                    query_str = f"select count(*) from read_csv('{filename}'{text_ignore})"
-                else:
-                    query_str = f"select count(*) from '{filename}'"
-                num_records = duckdb.execute(query_str).fetchall()[0][0]
-                table.num_records = num_records
-            except Exception as e:
-                logger.warning(f"Could not count records: {e}")
+        conn = duckdb_connection(options)
+        try:
+            # Count records (only for DuckDB engine)
+            if engine == "duckdb":
+                try:
+                    read_expr = duckdb_read_expr(filename, filetype, get_iterable_options(options))
+                    num_records = conn.execute(f"select count(*) from {read_expr}").fetchall()[0][0]
+                    table.num_records = num_records
+                except Exception as e:
+                    logger.warning(f"Could not count records: {e}")
+                    table.num_records = -1
+            else:
+                # For iterable engine, we can't easily count without reading all records
                 table.num_records = -1
-        else:
-            # For iterable engine, we can't easily count without reading all records
-            table.num_records = -1
 
-        # Getting structure
-        if flatten_nested:
-            columns_raw = _schema_columns_from_iterable(filename, objects_limit, options)
-        elif engine == "duckdb":
-            columns_raw = duckdb_decompose(
-                filename, filetype=filetype, path="*", limit=objects_limit
-            )
-        else:
-            logger.debug("schema: inferring the structure of %s with DuckDB", filename)
-            try:
+            # Getting structure
+            if flatten_nested:
+                columns_raw = _schema_columns_from_iterable(filename, objects_limit, options)
+            elif engine == "duckdb":
                 columns_raw = duckdb_decompose(
-                    filename, filetype=filetype, path="*", limit=objects_limit
+                    filename, filetype=filetype, path="*", limit=objects_limit, conn=conn
                 )
-            except Exception as e:
-                raise ValueError(
-                    f"Schema extraction failed for {filetype} files: {e}. Try using --engine duckdb or a different file format."
-                ) from e
+            else:
+                logger.debug("schema: inferring the structure of %s with DuckDB", filename)
+                try:
+                    columns_raw = duckdb_decompose(
+                        filename, filetype=filetype, path="*", limit=objects_limit, conn=conn
+                    )
+                except Exception as e:
+                    raise ValueError(
+                        f"Schema extraction failed for {filetype} files: {e}. Try using --engine duckdb or a different file format."
+                    ) from e
+        finally:
+            conn.close()
 
         is_flat = True
         table.num_cols = len(columns_raw)

@@ -39,7 +39,7 @@
   "undatum/cmds/selector.py": 5,
   "undatum/cmds/sql.py": 3,
   "undatum/cmds/statistics/__init__.py": 1,
-  "undatum/cmds/statistics/duckdb_engine.py": 13,
+  "undatum/cmds/statistics/duckdb_engine.py": 12,
   "undatum/cmds/statistics/iterable_engine.py": 10,
   "undatum/cmds/table.py": 1,
   "undatum/cmds/textproc.py": 1,

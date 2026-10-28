@@ -236,9 +236,9 @@ class Dataset:
         try:
             import duckdb
 
-            from ..common.duckdb_config import create_duckdb_connection
+            from ..common.duckdb_config import duckdb_connection
 
-            conn = create_duckdb_connection(threads=1, memory="256MB")
+            conn = duckdb_connection(workload="row")
         except Exception:  # pragma: no cover - DuckDB missing or misconfigured
             return False
         try:

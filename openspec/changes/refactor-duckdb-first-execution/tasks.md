@@ -1,13 +1,15 @@
 ## 1. Decision
-- [ ] 1.1 Approve DuckDB-first execution with Arrow interchange (no Polars engine)
+- [x] 1.1 Approve DuckDB-first execution with Arrow interchange (no Polars engine)
 - [ ] 1.2 Decide how Excel is read (DuckDB `excel` extension or `fastexcel`)
 
 ## 2. Connection factory and workload classes
-- [ ] 2.1 Workload classes in `create_duckdb_connection` (row-wise: 1 thread / 256 MB;
+- [x] 2.1 Workload classes in `create_duckdb_connection` (row-wise: 1 thread / 256 MB;
       aggregate/sort: all cores / DuckDB default), `--duckdb-*` overrides, temp directory
-- [ ] 2.2 Move `stats`, `count`, `analyze`, `schema`, `quality`, `drift`, `ops/expr.py` off the
+      (`duckdb_connection(options, workload)`; `--duckdb-*` options added to stats, count, uniq,
+      analyze, schema, quality and schema-drift)
+- [x] 2.2 Move `stats`, `count`, `analyze`, `schema`, `quality`, `drift`, `ops/expr.py` off the
       global `duckdb.sql()` / bare `duckdb.connect()`
-- [ ] 2.3 One escaped read-expression builder; remove the `read_csv_auto('{path}')` copies in
+- [x] 2.3 One escaped read-expression builder; remove the `read_csv_auto('{path}')` copies in
       `selector.py`, `sampler.py`, `joiner.py`, `converter.py`
 
 ## 3. Conversion through DuckDB

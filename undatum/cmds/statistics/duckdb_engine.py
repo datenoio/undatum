@@ -10,6 +10,7 @@ from ...common.command_utils import (
     get_iterable_options,
     resolve_csv_delimiter,
 )
+from ...common.duckdb_config import duckdb_connection
 from ...common.progress import progress
 from ...common.s3_iterable import open_iterable_with_s3
 from ...common.schema_utils import duckdb_decompose
@@ -21,6 +22,15 @@ logger = logging.getLogger(__name__)
 
 class DuckDBStatsMixin:
     """DuckDB statistics engine methods for StatProcessor."""
+
+    _duckdb_conn: duckdb.DuckDBPyConnection | None = None
+
+    @property
+    def _duckdb(self) -> duckdb.DuckDBPyConnection:
+        """Connection of the current stats run (a default one when used on its own)."""
+        if self._duckdb_conn is None:
+            self._duckdb_conn = duckdb_connection()
+        return self._duckdb_conn
 
     def _compute_duckdb_basic_stats(self, fromfile, filetype, delimiter=None):
         """Compute basic statistics using DuckDB's duckdb_decompose with summarize.
@@ -47,6 +57,7 @@ class DuckDBStatsMixin:
             ignore_errors=False,  # a bad record must not shrink the counts unnoticed
             use_summarize=True,
             delimiter=delimiter,
+            conn=self._duckdb,
         )
 
         fielddata = {}
@@ -193,7 +204,7 @@ class DuckDBStatsMixin:
                 """
 
                 # Execute query
-                result = duckdb.execute(query).fetchall()[0]
+                result = self._duckdb.execute(query).fetchall()[0]
 
                 if result:
                     minlen, maxlen, avglen, total_count = result
@@ -280,7 +291,7 @@ class DuckDBStatsMixin:
                     COUNT(*) as total
                 FROM {read_func}
                 """
-                result = duckdb.execute(query).fetchall()[0]
+                result = self._duckdb.execute(query).fetchall()[0]
                 if result:
                     missing_count, n_uniq, total = result
                     total = total or total_count or 0
@@ -334,7 +345,7 @@ class DuckDBStatsMixin:
                     STDDEV({numeric_expr}) as stddev_val
                 FROM {read_func}
                 """
-                result = duckdb.execute(query).fetchall()[0]
+                result = self._duckdb.execute(query).fetchall()[0]
                 if result and result[2] is not None:
                     min_val, max_val, mean_val, median_val, stddev_val = result
                     distribution_stats[field_path] = {
@@ -537,7 +548,7 @@ class DuckDBStatsMixin:
                 """
 
                 # Execute query and fetch all results
-                results = duckdb.sql(query).fetchall()
+                results = self._duckdb.execute(query).fetchall()
 
                 # Build dictionary structure matching iterable engine format
                 items_dict = {}
@@ -570,21 +581,26 @@ class DuckDBStatsMixin:
         """Compute statistics using DuckDB engine.
 
         This is the main entry point for DuckDB-based statistics computation.
-        It orchestrates all the DuckDB operations and combines results.
+        It orchestrates all the DuckDB operations and combines results on one connection
+        configured from ``--duckdb-threads``/``--duckdb-memory``/``--duckdb-temp-dir``
+        (``--threads`` when no DuckDB thread count is given).
 
         Args:
             fromfile: Path to input file
             options: Dictionary of options (same as stats method)
         """
+        self._duckdb_conn = duckdb_connection(options)
+        try:
+            return self._run_stats_duckdb(fromfile, options)
+        finally:
+            self._duckdb_conn.close()
+            self._duckdb_conn = None
+
+    def _run_stats_duckdb(self, fromfile, options):
         # Get progress control option (default: show progress)
         show_progress = get_option(options, "progress") is not False
         if "no_progress" in options and options["no_progress"]:
             show_progress = False
-
-        # Honor --threads on the default DuckDB connection
-        threads = get_option(options, "threads") or get_option(options, "duckdb_threads")
-        if threads:
-            duckdb.sql(f"SET threads={int(threads)}")
 
         # Detect file type if not provided
         filetype = get_option(options, "format_in")
@@ -612,7 +628,7 @@ class DuckDBStatsMixin:
                 read_func = self._duckdb_read_func(fromfile, filetype, csv_delimiter)
                 query_str = f"SELECT COUNT(*) FROM {read_func}"
                 with progress(desc="Counting rows", unit="rows", leave=False, total=None) as pbar:
-                    total_count = duckdb.execute(query_str).fetchall()[0][0]
+                    total_count = self._duckdb.execute(query_str).fetchall()[0][0]
                     pbar.total = total_count
                     pbar.update(total_count)
             except Exception as e:

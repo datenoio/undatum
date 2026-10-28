@@ -102,6 +102,9 @@ undatum quality [OPTIONS] INPUT_FILE
 | `-o`, `--output` TEXT | Write the report here (format from the extension). |  |
 | `-F`, `--format-in` TEXT | Override input format detection. |  |
 | `--table`, `--sheet` TEXT | Table or sheet name for multi-table sources (Excel, SQLite, lakehouse). |  |
+| `--duckdb-threads` INTEGER | Number of threads for DuckDB engine. |  |
+| `--duckdb-memory` TEXT | Memory limit for DuckDB (e.g., '4GB', '512MB'). |  |
+| `--duckdb-temp-dir` TEXT | Temporary directory for DuckDB. |  |
 | `--json` | Print the result as one JSON document (same as --format-out json). |  |
 
 See also [shared options](/commands/shared-options).

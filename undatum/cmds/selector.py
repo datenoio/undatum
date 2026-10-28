@@ -36,7 +36,6 @@ from ..ops import write_rows
 from ..utils import (
     dict_generator,
     field_values,
-    get_file_type,
     get_option,
     select_fields,
 )
@@ -172,25 +171,16 @@ def get_duckdb_fields_uniq(
     dolog=False,
     dq_instance=None,
     filter_sql=None,
+    iterableargs=None,
 ):  # pylint: disable=unused-argument
     """Returns all uniq values of the fields of the filename using DuckDB."""
     # dq_instance parameter kept for backward compatibility (no longer used)
     if duckdb_config is None:
         duckdb_config = {}
 
+    # Raises ValueError for formats DuckDB does not read.
+    read_expr = duckdb_read_expr(filename, filetype, iterableargs, all_varchar=True)
     conn = create_duckdb_connection(**duckdb_config)
-
-    # Determine input format and build appropriate read expression
-    source_type = filetype or get_file_type(filename) or "csv"
-    if source_type == "csv":
-        read_expr = f"read_csv_auto('{filename}', all_varchar=true)"
-    elif source_type in ("json", "jsonl"):
-        read_expr = f"read_json_auto('{filename}')"
-    elif source_type == "parquet":
-        read_expr = f"read_parquet('{filename}')"
-    else:
-        conn.close()
-        raise ValueError(f"Unsupported file type for DuckDB: {source_type}")
 
     fieldstext = ",".join(quote_sql_identifier(field) for field in fields)
     query = f"SELECT DISTINCT {fieldstext} FROM {read_expr}"
@@ -290,25 +280,16 @@ def get_duckdb_fields_freq(
     dolog=False,
     dq_instance=None,
     filter_sql=None,
+    iterableargs=None,
 ):  # pylint: disable=unused-argument
     """Returns frequencies for the fields of the filename using DuckDB."""
     # dq_instance parameter kept for backward compatibility (no longer used)
     if duckdb_config is None:
         duckdb_config = {}
 
+    # Raises ValueError for formats DuckDB does not read.
+    read_expr = duckdb_read_expr(filename, filetype, iterableargs, all_varchar=True)
     conn = create_duckdb_connection(**duckdb_config)
-
-    # Determine input format and build appropriate read expression
-    source_type = filetype or get_file_type(filename) or "csv"
-    if source_type == "csv":
-        read_expr = f"read_csv_auto('{filename}', all_varchar=true)"
-    elif source_type in ("json", "jsonl"):
-        read_expr = f"read_json_auto('{filename}')"
-    elif source_type == "parquet":
-        read_expr = f"read_parquet('{filename}')"
-    else:
-        conn.close()
-        raise ValueError(f"Unsupported file type for DuckDB: {source_type}")
 
     fieldstext = ",".join(quote_sql_identifier(field) for field in fields)
     query = f"SELECT {fieldstext}, count(*) as c FROM {read_expr}"
@@ -407,6 +388,7 @@ class Selector:
                     duckdb_config=duckdb_config,
                     dolog=True,
                     filter_sql=filter_sql,
+                    iterableargs=iterableargs,
                 )
             except Exception as e:
                 logger.warning(f"DuckDB uniq failed, falling back to iterable: {e}")
@@ -488,6 +470,7 @@ class Selector:
                     duckdb_config=duckdb_config,
                     dolog=True,
                     filter_sql=filter_sql,
+                    iterableargs=iterableargs,
                 )
             except Exception as e:
                 logger.warning(f"DuckDB frequency failed, falling back to iterable: {e}")

@@ -14,7 +14,6 @@ from .base import REGISTRY, Operation
 logger = logging.getLogger(__name__)
 
 BATCH_ROWS = 10_000
-DEFAULT_DUCKDB_MEMORY = "256MB"
 
 
 def get_operation(name: str) -> Operation[Any]:
@@ -171,18 +170,11 @@ def _run_sql(
     try:
         import duckdb
 
-        from ..common.duckdb_config import create_duckdb_connection, get_duckdb_config_from_options
+        from ..common.duckdb_config import duckdb_connection
 
-        config = get_duckdb_config_from_options(source.options)
-        # Row transforms are I/O bound: one thread is nearly as fast and, with insertion
-        # order preserved, avoids per-thread buffers that grow with the input. DuckDB
-        # spills to disk above the memory limit.
-        config.setdefault("threads", 1)
-        # Queries that hold every record were requested with --engine duckdb: they keep
-        # DuckDB's own limit, as a small one makes its windows and sorts fail.
-        if not config.get("memory") and not holds_all_rows:
-            config["memory"] = DEFAULT_DUCKDB_MEMORY
-        conn = create_duckdb_connection(**config)
+        # Queries that hold every record were requested with --engine duckdb and rely on the
+        # input order; row transforms are bounded (see WORKLOAD_DEFAULTS).
+        conn = duckdb_connection(source.options, "ordered" if holds_all_rows else "row")
         try:
             query = compose_sql(conn, relation, steps)
             if query is None:

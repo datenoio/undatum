@@ -8,6 +8,9 @@ import typer
 
 from ..common import enable_verbose
 from ..options import (
+    DuckdbMemoryOpt,
+    DuckdbTempDirOpt,
+    DuckdbThreadsOpt,
     EngineOpt,
     ErrorLogOpt,
     FlattenNestedOpt,
@@ -69,6 +72,9 @@ def uniq(
             help="Output format: 'csv' (default) or 'json' (also inferred from --output)."
         ),
     ] = None,
+    duckdb_threads: DuckdbThreadsOpt = None,
+    duckdb_memory: DuckdbMemoryOpt = None,
+    duckdb_temp_dir: DuckdbTempDirOpt = None,
     json_output: JsonOpt = False,
 ):
     """Extract all unique values from specified field(s).
@@ -96,6 +102,9 @@ def uniq(
         "max_nested_depth": max_nested_depth,
         "keep_nested_parents": keep_nested_parents,
         "engine": engine,
+        "duckdb_threads": duckdb_threads,
+        "duckdb_memory": duckdb_memory,
+        "duckdb_temp_dir": duckdb_temp_dir,
         "filter": filter_expr,
         "format_out": "json" if json_output else format_out,
     }
@@ -227,6 +236,9 @@ def stats(
     trust: TrustOpt = False,
     on_error: OnErrorOpt = None,
     error_log: ErrorLogOpt = None,
+    duckdb_threads: DuckdbThreadsOpt = None,
+    duckdb_memory: DuckdbMemoryOpt = None,
+    duckdb_temp_dir: DuckdbTempDirOpt = None,
     json_output: JsonOpt = False,
 ):
     """Generate detailed statistics about a dataset.
@@ -252,6 +264,9 @@ def stats(
         "progress": progress if not no_progress else False,
         "no_progress": no_progress,
         "engine": engine,
+        "duckdb_threads": duckdb_threads,
+        "duckdb_memory": duckdb_memory,
+        "duckdb_temp_dir": duckdb_temp_dir,
         "threads": threads,
         "table": table,
         "start_page": start_page,
@@ -393,6 +408,9 @@ def count(
         str | None,
         typer.Option("--format-out", "-O", help="Output format: text (default) or json."),
     ] = None,
+    duckdb_threads: DuckdbThreadsOpt = None,
+    duckdb_memory: DuckdbMemoryOpt = None,
+    duckdb_temp_dir: DuckdbTempDirOpt = None,
     json_output: JsonOpt = False,
     where: WhereOpt = None,
 ):
@@ -412,6 +430,9 @@ def count(
         "encoding": encoding,
         "filetype": filetype,
         "engine": engine,
+        "duckdb_threads": duckdb_threads,
+        "duckdb_memory": duckdb_memory,
+        "duckdb_temp_dir": duckdb_temp_dir,
         "table": table,
         "start_page": start_page,
         "trust": trust,

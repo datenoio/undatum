@@ -127,6 +127,7 @@ def duckdb_decompose(
     ignore_errors: bool = True,
     use_summarize: bool = False,
     delimiter: str | None = None,
+    conn: Any = None,
 ) -> list[Any]:
     """Decompose file or DataFrame structure using DuckDB.
 
@@ -145,6 +146,8 @@ def duckdb_decompose(
         ignore_errors: Whether to ignore parsing errors in DuckDB (default: True).
         use_summarize: If True, use 'summarize' (for analyzer), else use 'describe' (for schemer).
         delimiter: CSV/TSV delimiter (passed to DuckDB read_csv when set).
+        conn: DuckDB connection to run the queries on (the module's default connection
+            when omitted).
 
     Returns:
         List of lists containing field information:
@@ -199,7 +202,7 @@ def duckdb_decompose(
                 query_str = f"{query_cmd} select {path} from {read_func}{limit_clause}"
             # Execute query with error handling for None column references
             try:
-                data = duckdb.execute(query_str).fetchall()
+                data = (conn or duckdb).execute(query_str).fetchall()
             except (duckdb.Error, Exception) as e:
                 error_msg = str(e)
                 # Only catch specific "Referenced column 'None' not found" errors
@@ -291,7 +294,7 @@ def duckdb_decompose(
             return []
         # Execute query with error handling for None column references
         try:
-            data = duckdb.execute(query).fetchall()
+            data = (conn or duckdb).execute(query).fetchall()
         except (duckdb.Error, Exception) as e:
             # If query fails due to None column reference, return empty result
             error_msg = str(e)
@@ -446,6 +449,7 @@ def duckdb_decompose(
                         ignore_errors=ignore_errors,
                         use_summarize=use_summarize,
                         delimiter=delimiter,
+                        conn=conn,
                     )
                     for subitem in subtable:
                         table.append(subitem)

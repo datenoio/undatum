@@ -55,6 +55,9 @@ undatum count [OPTIONS] INPUT_FILE
 | `--on-error` TEXT | Parse-error policy: raise (default), skip, or warn. |  |
 | `--error-log` TEXT | Append parse errors as JSONL (use with --on-error skip or warn). |  |
 | `-O`, `--format-out` TEXT | Output format: text (default) or json. |  |
+| `--duckdb-threads` INTEGER | Number of threads for DuckDB engine. |  |
+| `--duckdb-memory` TEXT | Memory limit for DuckDB (e.g., '4GB', '512MB'). |  |
+| `--duckdb-temp-dir` TEXT | Temporary directory for DuckDB. |  |
 | `--json` | Print the result as one JSON document (same as --format-out json). |  |
 | `--where` TEXT | Keep records where this SQL condition is true (DuckDB syntax), e.g. "amount &gt; 100 AND city = 'Berlin'". Text values are typed automatically. |  |
 

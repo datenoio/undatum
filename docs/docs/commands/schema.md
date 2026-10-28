@@ -125,6 +125,9 @@ undatum schema [OPTIONS] INPUT_FILE
 | `--validate` | Validate rows against an inferred schema (iterabledata schema.validate). Use `undatum validate` for rule packs. |  |
 | `--strict` | With --validate, flag extra fields not present in the inferred schema. |  |
 | `--sample-size` INTEGER | With --validate, rows to sample when inferring the schema (engine default 10000). |  |
+| `--duckdb-threads` INTEGER | Number of threads for DuckDB engine. |  |
+| `--duckdb-memory` TEXT | Memory limit for DuckDB (e.g., '4GB', '512MB'). |  |
+| `--duckdb-temp-dir` TEXT | Temporary directory for DuckDB. |  |
 | `--json` | Print the result as one JSON document (same as --format-out json). |  |
 
 Deprecated spellings (removed in 2.0): `--outtype` → `--format-out`.

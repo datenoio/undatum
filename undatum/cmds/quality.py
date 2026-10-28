@@ -225,15 +225,14 @@ def profile(
         expected: Field -> normalized type to measure conformance against (else the type
             most values have).
     """
-    import duckdb
-
+    from ..common.duckdb_config import duckdb_connection
     from ..io import RowSource
     from ..ops.expr import _value_sql, infer_types
     from .drift import normalize_type
 
     options = options or {}
     source = RowSource(path, options)
-    conn = duckdb.connect()
+    conn = duckdb_connection(options)
     try:
         _load(conn, source)
         described = conn.sql("DESCRIBE SELECT * FROM data").fetchall()

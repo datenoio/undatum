@@ -261,11 +261,11 @@ class Where(Operation[WhereConfig]):
     streaming = Streaming.ROW
 
     def apply(self, rows: Iterable[Any], cfg: WhereConfig) -> Iterator[Any]:
-        import duckdb
         import pyarrow as pa
 
-        conn = duckdb.connect()
-        conn.execute("SET threads = 1")
+        from ..common.duckdb_config import duckdb_connection
+
+        conn = duckdb_connection(workload="row")
         try:
             columns: list[str] = []
             types: dict[str, str] | None = None
@@ -313,9 +313,9 @@ class Where(Operation[WhereConfig]):
             conn.close()
 
     def to_sql(self, source: str, schema: dict[str, str], cfg: WhereConfig) -> str | None:
-        import duckdb
+        from ..common.duckdb_config import duckdb_connection
 
-        conn = duckdb.connect()
+        conn = duckdb_connection(workload="row")
         try:
             types = infer_types(conn, source, schema)
             validate(conn, types, cfg)

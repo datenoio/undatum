@@ -6,6 +6,9 @@ import typer
 
 from ..common import enable_verbose
 from ..options import (
+    DuckdbMemoryOpt,
+    DuckdbTempDirOpt,
+    DuckdbThreadsOpt,
     ErrorLogOpt,
     FlattenNestedOpt,
     JsonOpt,
@@ -209,6 +212,9 @@ def quality(
         str | None, typer.Option("--format-in", "-F", help="Override input format detection.")
     ] = None,
     table: TableNameOpt = None,
+    duckdb_threads: DuckdbThreadsOpt = None,
+    duckdb_memory: DuckdbMemoryOpt = None,
+    duckdb_temp_dir: DuckdbTempDirOpt = None,
     json_output: JsonOpt = False,
 ):
     """Report whether a dataset is fit for use, and exit with 1 when a threshold fails.
@@ -228,7 +234,13 @@ def quality(
         rules=rules,
         schema=schema,
         thresholds=thresholds,
-        options={"format_in": format_in, "table": table},
+        options={
+            "format_in": format_in,
+            "table": table,
+            "duckdb_threads": duckdb_threads,
+            "duckdb_memory": duckdb_memory,
+            "duckdb_temp_dir": duckdb_temp_dir,
+        },
     )
     write_report(report, "json" if json_output else format_out, output)
     if not report["verdict"]["passed"]:

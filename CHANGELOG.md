@@ -17,9 +17,11 @@ Upgrading: Python 3.11 or newer is required, and undatum now uses DuckDB 2.0. On
 ### Added
 
 - **Offline DuckDB extensions** — `UNDATUM_DUCKDB_EXTENSION_DIR` points DuckDB at preinstalled extensions on machines without network access; a command that needs a missing extension stops with exit code 2 and names it.
+- **`--duckdb-threads`, `--duckdb-memory` and `--duckdb-temp-dir` on every DuckDB-backed command** — `stats`, `count`, `uniq`, `analyze`, `schema`, `quality` and `schema-drift` gain the options. These commands used DuckDB's process-wide default connection and ignored limits, the temporary directory and `UNDATUM_DUCKDB_EXTENSION_DIR`; every command now opens its own connection with the same settings. Row-wise transforms keep one thread and 256 MB by default; aggregations, sorts and profiling use every core and DuckDB's memory limit.
 
 ### Fixed
 
+- **DuckDB read expressions** — `uniq`, `frequency`, `sample`, `join` and `convert` built their DuckDB `read_csv` expressions without escaping the path or applying `--delimiter`; they now share one escaped builder, and `join` quotes key names with spaces or quotes.
 - Forward and backward fill now accept `0`, `0.0` and `False` as fallback values when no neighbour value exists.
 - `undatum mcp tools --parity` (and `undatum.tools.generated.parity_report()`) no longer fails with `No module named 'click'` on an install without the `api` extra. typer 0.26 and later vendor click, so `click` is not a dependency of undatum.
 - **No silent row loss on the DuckDB engine** — CSV files that are not UTF-8 (for example Windows-1251) are read by the Python engine with their detected encoding; `head`, `sort`, `select` and other commands printed nothing or only the header, and `stats` reported `count: 0`, all with exit code 0. DuckDB no longer skips rows it cannot read (`ignore_errors`): the command falls back to the Python engine, or, when records have already gone to standard output, stops with an error that suggests `--engine python`. `stats` on JSON or JSON Lines with a malformed record now fails like `head` and `count` instead of leaving the record out of the statistics.
