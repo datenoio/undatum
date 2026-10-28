@@ -536,16 +536,67 @@ def emit_records(
 
 
 # DuckDB COPY options per output extension (after stripping the compression suffix).
+# CSV lines end in CRLF, as the Python csv writer ends them.
 _DUCKDB_COPY_FORMATS = {
-    "csv": "FORMAT CSV, HEADER",
-    "tsv": "FORMAT CSV, HEADER, DELIMITER '\t'",
-    "tab": "FORMAT CSV, HEADER, DELIMITER '\t'",
+    "csv": "FORMAT CSV, HEADER, NEW_LINE '\r\n'",
+    "tsv": "FORMAT CSV, HEADER, DELIMITER '\t', NEW_LINE '\r\n'",
+    "tab": "FORMAT CSV, HEADER, DELIMITER '\t', NEW_LINE '\r\n'",
     "jsonl": "FORMAT JSON",
     "ndjson": "FORMAT JSON",
     "json": "FORMAT JSON, ARRAY true",
     "parquet": "FORMAT PARQUET",
 }
 _DUCKDB_COPY_CODECS = {None: None, "gz": "gzip", "gzip": "gzip", "zst": "zstd", "zstd": "zstd"}
+
+
+# DuckDB writes these as different text than the Python writers: timestamps (a space where
+# isoformat() has "T"), intervals, times with a zone, decimals, 32-bit floats, UUIDs, binary.
+_COPY_TEXT_UNSAFE_TYPES = (
+    "TIMESTAMP",
+    "INTERVAL",
+    "TIME WITH TIME ZONE",
+    "DECIMAL",
+    "FLOAT",
+    "UUID",
+    "BLOB",
+)
+# ... in CSV also booleans (Python writes True/False), nested values and times (DuckDB
+# shortens fractional seconds: "10:30:00.5" for "10:30:00.500000"). In JSON, DuckDB keeps
+# times that the iterabledata JSON writers (up to 1.0.23) write as null.
+_COPY_CSV_UNSAFE_TYPES = ("BOOLEAN", "STRUCT", "MAP", "UNION", "JSON", "TIME")
+# ... and in Parquet the types DuckDB stores differently: intervals (Python: durations), UUIDs
+# (Python: strings) and times with a zone (DuckDB: UTC).
+_COPY_PARQUET_UNSAFE_TYPES = ("INTERVAL", "UUID", "TIME WITH TIME ZONE")
+# DuckDB turns date-like JSON strings into dates and times, which may change their text.
+_JSON_INFERRED_TYPES = ("DATE", "TIME")
+
+
+def duckdb_copy_keeps_values(
+    types: Iterable[str], out_fmt: str, *, from_json: bool = False
+) -> bool:
+    """Whether a DuckDB ``COPY`` of columns of ``types`` writes what the Python writer writes.
+
+    Text outputs must have the same text, Parquet the same values when read back.
+
+    Args:
+        types: DuckDB column types of the result.
+        out_fmt: Output format id (``csv``, ``tsv``, ``jsonl``, ``json``, ``parquet``).
+        from_json: The columns were read from JSON by DuckDB, which infers dates from strings
+            that the Python reader keeps as strings.
+    """
+    text_out = out_fmt != "parquet"
+    for column_type in (str(kind).upper() for kind in types):
+        if from_json and column_type.startswith(_JSON_INFERRED_TYPES):
+            return False
+        if (text_out or from_json) and column_type.startswith(_COPY_TEXT_UNSAFE_TYPES):
+            return False
+        if not text_out and column_type.startswith(_COPY_PARQUET_UNSAFE_TYPES):
+            return False
+        if out_fmt in ("csv", "tsv", "tab") and (
+            column_type.startswith(_COPY_CSV_UNSAFE_TYPES) or column_type.endswith("]")
+        ):
+            return False
+    return True
 
 
 def duckdb_copy_options(path: str) -> str | None:

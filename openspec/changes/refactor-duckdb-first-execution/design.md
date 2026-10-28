@@ -60,8 +60,12 @@ Polars stays an optional extra for SDK interchange through Arrow.
   DuckDB scans it without a copy. Operations with a SQL form run on it, so one implementation
   serves every format that has an Arrow adapter.
 - **Output.** `COPY` writes CSV and Parquet, and JSON Lines when the text equals the Python
-  writer's. Other formats and stdout take Arrow batches through the existing iterabledata
-  writers.
+  writer's. Other formats and stdout take DuckDB's result batches through the existing
+  iterabledata writers. Arrow batches were measured for this (1M rows, 8 columns): `fetchmany`
+  into dicts 0.78 s, Arrow `to_pylist` 0.88 s, Arrow columns zipped 0.67 s, and Arrow changes the
+  Python values of HUGEINT, UUID, INTERVAL and MAP, so record writers keep `fetchmany`. The cost
+  was the JSON conversion of every record, done twice (1.05 s per pass per 1M records); it is now
+  done once, with a fast path for records of scalars (0.17 s).
 - **SDK.** `to_arrow()` returns a `pyarrow.Table` or `RecordBatchReader`; `to_polars()` and
   `to_pandas()` wrap it.
 
@@ -71,8 +75,14 @@ Polars stays an optional extra for SDK interchange through Arrow.
 - **NULL against empty string.** DuckDB reads empty CSV fields as NULL, and the Python reader
   gives `''`. Writers must produce the same text for both. JSON output from CSV input is part of
   the contract suite.
-- **Temporal values.** Temporal columns are formatted as Python's `isoformat()` before `COPY`,
-  so the `_TEMPORAL` exclusion in `ops/runner.py` can go.
+- **Temporal values.** The `_TEMPORAL` exclusion in `ops/runner.py` is replaced by one per-type
+  rule shared with `convert` (`duckdb_copy_keeps_values`), checked type by type against the
+  Python writer: dates use `COPY` in CSV and Parquet, timestamps and times only in Parquet (in
+  CSV DuckDB shortens fractional seconds: `10:30:00.5` for `10:30:00.500000`). Parquet also keeps
+  UUIDs, intervals and times with a zone on the Python writer. CSV `COPY` writes CRLF line ends,
+  as the Python csv writer does. JSON Lines from `convert` keep times through DuckDB, since the
+  iterabledata JSON writers up to 1.0.23 write them as `null` (fixed in iterabledata#27); once
+  undatum requires that release, times can follow the CSV rule or be formatted in SQL.
 - **Type inference** (`undatum/common/field_types.py`, decided with the maintainer). Text values
   get the first of integer, number, boolean, date and datetime that ≥95% of the non-empty values of
   a 10,000-record sample convert to, in every command (schema-drift used 100%); typed inputs keep

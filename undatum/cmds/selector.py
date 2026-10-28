@@ -3,6 +3,7 @@
 import itertools
 import logging
 import os
+from collections.abc import Iterator
 from typing import Any
 
 from ..common.command_utils import (
@@ -44,6 +45,8 @@ logger = logging.getLogger(__name__)
 
 LINEEND = b"\n"
 SELECT_BATCH_SIZE = 1000
+# Rows per fetch from aggregate DuckDB results (uniq, frequency).
+STREAM_BATCH_ROWS = 10_000
 
 
 class _SelectOutput:
@@ -163,6 +166,30 @@ def get_iterable_fields_uniq(iterable, fields, dolog=False, dq_instance=None, fi
     return uniqval
 
 
+def _stream_query(conn: Any, query: str) -> Iterator[tuple[Any, ...]]:
+    """Run ``query`` on ``conn`` and fetch its rows in batches; ``conn`` is closed after them.
+
+    The first batch is fetched here, so a query that fails raises before any row is written.
+    """
+    try:
+        result = conn.execute(query)
+        first = result.fetchmany(STREAM_BATCH_ROWS)
+    except BaseException:
+        conn.close()
+        raise
+
+    def rows() -> Iterator[tuple[Any, ...]]:
+        try:
+            batch = first
+            while batch:
+                yield from batch
+                batch = result.fetchmany(STREAM_BATCH_ROWS)
+        finally:
+            conn.close()
+
+    return rows()
+
+
 def get_duckdb_fields_uniq(
     filename,
     fields,
@@ -173,7 +200,11 @@ def get_duckdb_fields_uniq(
     filter_sql=None,
     iterableargs=None,
 ):  # pylint: disable=unused-argument
-    """Returns all uniq values of the fields of the filename using DuckDB."""
+    """Distinct values of ``fields`` in ``filename`` from DuckDB, as an iterator of tuples.
+
+    The query runs before this returns, so read errors raise here; rows are then fetched in
+    batches while they are written.
+    """
     # dq_instance parameter kept for backward compatibility (no longer used)
     if duckdb_config is None:
         duckdb_config = {}
@@ -189,14 +220,7 @@ def get_duckdb_fields_uniq(
     if dolog:
         logger.info(query)
 
-    try:
-        relation = conn.execute(query)
-        uniqval = relation.fetchall()
-        conn.close()
-        return uniqval
-    except Exception:
-        conn.close()
-        raise
+    return _stream_query(conn, query)
 
 
 def get_iterable_fields_freq(
@@ -282,7 +306,11 @@ def get_duckdb_fields_freq(
     filter_sql=None,
     iterableargs=None,
 ):  # pylint: disable=unused-argument
-    """Returns frequencies for the fields of the filename using DuckDB."""
+    """``fields`` values and their counts, most frequent first, as an iterator of tuples.
+
+    The query runs before this returns, so read errors raise here; rows are then fetched in
+    batches while they are written.
+    """
     # dq_instance parameter kept for backward compatibility (no longer used)
     if duckdb_config is None:
         duckdb_config = {}
@@ -299,14 +327,7 @@ def get_duckdb_fields_freq(
     if dolog:
         logger.info(query)
 
-    try:
-        relation = conn.execute(query)
-        uniqval = relation.fetchall()
-        conn.close()
-        return uniqval
-    except Exception:
-        conn.close()
-        raise
+    return _stream_query(conn, query)
 
 
 def header_names(fromfile: str, options: dict[str, Any] | None = None) -> list[str]:
@@ -412,14 +433,14 @@ class Selector:
                 field="engine",
                 suggestions=["auto", "duckdb", "python"],
             )
-        logger.debug(f"{len(uniqval)} unique values found")
-        emit_records(
+        written = emit_records(
             _rows_as_dicts(uniqval, fields),
             to_file,
             fieldnames=fields,
             format_out=format_out or None,
             stdout_format=format_out or "csv",
         )
+        logger.debug("uniq: %d unique values found", written)
 
     def headers(self, fromfile, options=None):
         """Print field names in file order (one per line, or JSON with ``format_out``)."""
@@ -459,7 +480,7 @@ class Selector:
         detected_engine = detect_engine(fromfile, engine, filetype, operation="frequency")
         detected_engine = force_iterable_if_table(options, detected_engine)
         detected_engine, filter_sql = _engine_for_filter(detected_engine, filter_expr, "frequency")
-        items = []
+        items = None
         if detected_engine == "duckdb":
             try:
                 duckdb_config = get_duckdb_config_from_options(options)
@@ -490,21 +511,21 @@ class Selector:
                     raise FormatError(fromfile, str(filetype or "unknown"))
             finally:
                 iterable.close()
-        elif not items and detected_engine != "duckdb":
+        elif items is None:
             raise ValidationError(
                 f"Unsupported engine '{detected_engine}'",
                 field="engine",
                 suggestions=["auto", "duckdb", "python"],
             )
-        logger.debug(f"frequency: {len(items)} unique values found")
         fields.append("count")
-        emit_records(
+        written = emit_records(
             _rows_as_dicts(items, fields),
             to_file,
             fieldnames=fields,
             format_out=format_out or None,
             stdout_format=format_out or "csv",
         )
+        logger.debug("frequency: %d unique values found", written)
 
     def select(self, fromfile, options=None):
         """Select or re-order columns from file."""

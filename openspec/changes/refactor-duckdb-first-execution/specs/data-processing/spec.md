@@ -13,8 +13,15 @@ zstd), and the records SHALL be identical to those of the Python engine.
 
 #### Scenario: Format DuckDB cannot write
 - **WHEN** the output format is not written natively by DuckDB (for example XLSX)
-- **THEN** the records are written by the iterabledata writer from DuckDB's Arrow batches or the
-  Python engine
+- **THEN** the records are written by the iterabledata writer from DuckDB's result batches or
+  the Python engine
+
+#### Scenario: Column types DuckDB writes differently
+- **WHEN** the result has a column whose values DuckDB `COPY` writes differently from the Python
+  writer (for example timestamps in CSV, UUIDs in Parquet)
+- **THEN** the records are written by the Python writer
+- **AND** dates and the other types `COPY` writes identically keep using `COPY`, with CSV lines
+  ending in CRLF as the Python writer ends them
 
 ### Requirement: Workload-Based DuckDB Settings
 Every DuckDB query SHALL run on a connection made by the shared connection factory. Row-wise and

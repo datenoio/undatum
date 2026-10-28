@@ -4,7 +4,10 @@ This module provides helper functions for encoding detection, delimiter detectio
 file type identification, dictionary manipulation, and data type guessing.
 """
 
+import datetime
+import decimal
 import re
+import uuid
 from collections import OrderedDict
 from typing import Any
 
@@ -503,7 +506,7 @@ def _is_flat(item: dict[str, Any]) -> bool:
 def normalize_for_json(obj: Any) -> Any:
     """Convert non-JSON-serializable types to JSON-serializable ones.
 
-    Recursively converts UUID objects and other non-serializable types to strings.
+    Recursively converts UUID objects to strings and tuples to lists.
     This is needed when writing data from formats like Parquet (which preserve
     UUIDs as UUID objects) to JSON formats like JSONL.
 
@@ -511,19 +514,35 @@ def normalize_for_json(obj: Any) -> Any:
         obj: Object to normalize (can be dict, list, tuple, or primitive type)
 
     Returns:
-        Normalized object with non-serializable types converted to strings
+        Normalized object with non-serializable types converted to strings. A dict whose
+        values need no conversion is returned as is, not copied.
     """
-    try:
-        import uuid
-
-        if isinstance(obj, uuid.UUID):
-            return str(obj)
-    except ImportError:
-        pass  # uuid module not available
-
     if isinstance(obj, dict):
-        return {key: normalize_for_json(value) for key, value in obj.items()}
-    elif isinstance(obj, (list, tuple)):
-        return [normalize_for_json(item) for item in obj]
-    else:
+        # Most records hold only scalars: check them without a call per value.
+        for value in obj.values():
+            if type(value) not in _JSON_SCALARS:
+                return {key: normalize_for_json(value) for key, value in obj.items()}
         return obj
+    if isinstance(obj, (list, tuple)):
+        return [normalize_for_json(item) for item in obj]
+    if isinstance(obj, uuid.UUID):
+        return str(obj)
+    return obj
+
+
+# Types normalize_for_json() leaves unchanged (exact types; subclasses take the full path).
+_JSON_SCALARS = frozenset(
+    {
+        str,
+        int,
+        float,
+        bool,
+        type(None),
+        decimal.Decimal,
+        datetime.date,
+        datetime.datetime,
+        datetime.time,
+        datetime.timedelta,
+        bytes,
+    }
+)

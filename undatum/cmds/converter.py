@@ -118,39 +118,6 @@ def _skip_duckdb_convert(options: dict) -> bool:
 
 
 _CSV_FORMATS = ("csv", "tsv", "tab")
-# DuckDB writes these as different text than the Python writers: timestamps (a space where
-# isoformat() has "T"), intervals, times with a zone, decimals, 32-bit floats, UUIDs, binary.
-_TEXT_UNSAFE_TYPES = (
-    "TIMESTAMP",
-    "INTERVAL",
-    "TIME WITH TIME ZONE",
-    "DECIMAL",
-    "FLOAT",
-    "UUID",
-    "BLOB",
-)
-# ... in CSV also booleans (Python writes True/False) and nested values.
-_CSV_UNSAFE_TYPES = ("BOOLEAN", "STRUCT", "MAP", "UNION", "JSON")
-# DuckDB turns date-like JSON strings into dates and times, which may change their text.
-_JSON_INFERRED_TYPES = ("DATE", "TIME")
-
-
-def _duckdb_writes_same_text(types, out_fmt: str, *, from_json: bool) -> bool:
-    """Whether a DuckDB ``COPY`` of columns of ``types`` gives the Python writer's records.
-
-    Parquet output keeps types, except for the dates DuckDB infers from JSON strings.
-    """
-    text_out = out_fmt != "parquet"
-    for column_type in types:
-        if from_json and column_type.startswith(_JSON_INFERRED_TYPES):
-            return False
-        if (text_out or from_json) and column_type.startswith(_TEXT_UNSAFE_TYPES):
-            return False
-        if out_fmt in _CSV_FORMATS and (
-            column_type.startswith(_CSV_UNSAFE_TYPES) or column_type.endswith("]")
-        ):
-            return False
-    return True
 
 
 def _filter_bulk_convert_kwargs(bulk_convert_fn, convert_kwargs: dict) -> dict:
@@ -659,7 +626,7 @@ class Converter:
         Covers CSV/TSV, JSON, JSON Lines and Parquet in and out (plain, gzip or zstd). The
         records equal the Python engine's: CSV values stay text and empty CSV fields stay
         empty strings. With ``--engine auto``, inputs whose values DuckDB would write as
-        different text (see :func:`_duckdb_writes_same_text`) use the Python engine.
+        different values (see :func:`duckdb_copy_keeps_values`) use the Python engine.
 
         Returns:
             iterabledata ``ConversionResult`` when DuckDB wrote ``tofile``, ``None`` to use
@@ -672,7 +639,12 @@ class Converter:
 
         from ..common.duckdb_config import duckdb_connection
         from ..common.engine_selector import validate_engine
-        from ..common.writer import AtomicFileTarget, duckdb_copy_options, resolve_output_format
+        from ..common.writer import (
+            AtomicFileTarget,
+            duckdb_copy_keeps_values,
+            duckdb_copy_options,
+            resolve_output_format,
+        )
         from ..io import RowSource
 
         start = time.time()
@@ -696,7 +668,7 @@ class Converter:
         try:
             described = conn.execute(f"DESCRIBE SELECT * FROM {relation}").fetchall()
             types = {str(row[0]): str(row[1]).upper() for row in described}
-            if engine == "auto" and not _duckdb_writes_same_text(
+            if engine == "auto" and not duckdb_copy_keeps_values(
                 types.values(), out_fmt or "", from_json=source.format_id in ("json", "jsonl")
             ):
                 logger.debug("convert: column types need the Python writer")

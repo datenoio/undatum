@@ -122,10 +122,13 @@ def measure(python: str, argv: list[str], repeat: int = 3) -> dict[str, Any]:
         ):
             args = [a.replace("{out}", out) for a in argv]
             start = time.perf_counter()
+            # ``-m`` imports from the working directory first: run outside any checkout, so
+            # each interpreter measures its own undatum.
             proc = subprocess.Popen(
                 [python, "-m", "undatum", *args],
                 stdout=subprocess.DEVNULL,
                 stderr=err,
+                cwd=out,
                 env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
             )
             _, status, usage = os.wait4(proc.pid, 0)
@@ -153,6 +156,7 @@ def run(
     only: list[str] | None = None,
 ) -> dict[str, Any]:
     """Measure the suite for each interpreter; commands are interleaved across them."""
+    data = data.resolve()
     inputs = {
         "{csv}": str(data / "bench.csv"),
         "{jsonl}": str(data / "bench.jsonl"),

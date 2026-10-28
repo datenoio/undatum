@@ -28,9 +28,11 @@
 - [x] 4.4 Test: the same file gives the same field types in all four commands
 
 ## 5. Output without dicts
-- [ ] 5.1 `write_query` writes Arrow batches to the iterabledata writers for non-`COPY` formats
-- [ ] 5.2 `uniq`, `frequency`, `sql` stop materialising results with `fetchall`
-- [ ] 5.3 Remove the `_TEMPORAL` exclusion once temporal text matches
+- [x] 5.1 `write_query` and the sinks convert each record once (fast path for records of scalars);
+      Arrow batches measured no faster than `fetchmany` for the dict writers (see design)
+- [x] 5.2 `uniq`, `frequency` stream DuckDB results in batches (`sql` already used `fetchmany`)
+- [x] 5.3 Replace the `_TEMPORAL` exclusion with a per-type rule shared with `convert`, tested type
+      by type against the Python writer; CSV `COPY` writes CRLF
 
 ## 6. Arrow bridge
 - [ ] 6.1 `RowSource.arrow_reader()` for formats with an iterabledata Arrow adapter

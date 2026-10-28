@@ -126,17 +126,15 @@ def write_rows(
     format_out: str | None = None,
     fieldnames: list[str] | None = None,
 ) -> int:
-    """Write ``rows`` in batches to ``output`` (or stdout); remove a partial file on error."""
-    from ..utils import normalize_for_json
+    """Write ``rows`` in batches to ``output`` (or stdout); remove a partial file on error.
 
+    The sinks convert values for JSON (``normalize_for_json``).
+    """
     sink = open_sink(output, format_out=format_out, fieldnames=fieldnames)
     count = 0
     try:
         while True:
-            batch = [
-                normalize_for_json(row) if isinstance(row, dict) else row
-                for row in itertools.islice(rows, BATCH_ROWS)
-            ]
+            batch = list(itertools.islice(rows, BATCH_ROWS))
             if not batch:
                 break
             sink.write_batch(batch)
@@ -190,29 +188,34 @@ def _run_sql(
         return None
 
 
-# DuckDB's COPY formats these differently from Python's isoformat(); such results are
-# fetched and written by the Python writer so both engines produce the same text.
-_TEMPORAL = ("DATE", "TIME", "TIMESTAMP", "INTERVAL")
 _COPY_FORMATS = ("csv", "parquet")
 
 
 def write_query(conn: Any, query: str, output: str | None, format_out: str | None = None) -> int:
     """Write the result of a DuckDB ``query`` to ``output`` (or stdout) in batches.
 
-    CSV and Parquet files are written with ``COPY`` (returns ``-1``: count not reported);
-    other outputs are fetched in batches and written by the Python writer.
+    CSV and Parquet files are written with ``COPY`` (returns ``-1``: count not reported)
+    when DuckDB writes the same values as the Python writer (see
+    :func:`~undatum.common.writer.duckdb_copy_keeps_values`); other outputs are fetched in
+    batches and written by the Python writer.
     """
-    from ..common.writer import duckdb_copy_to_file, resolve_output_format
+    from ..common.writer import (
+        duckdb_copy_keeps_values,
+        duckdb_copy_to_file,
+        resolve_output_format,
+    )
 
-    result_types = [str(row[1]).upper() for row in conn.sql(f"DESCRIBE {query}").fetchall()]
-    temporal = any(t.startswith(_TEMPORAL) for t in result_types)
-    if output and "://" not in output and not temporal:
+    if output and "://" not in output:
         fmt = resolve_output_format(output, format_out)
         native = resolve_output_format(output) if format_out else fmt
         # COPY is used for CSV and Parquet; JSON goes through the Python writer so the
         # text is the same on both engines (DuckDB writes compact JSON).
-        if fmt == native and fmt in _COPY_FORMATS and duckdb_copy_to_file(conn, query, output):
-            return -1
+        if fmt == native and fmt in _COPY_FORMATS:
+            described = conn.sql(f"DESCRIBE {query}").fetchall()
+            if duckdb_copy_keeps_values((row[1] for row in described), fmt) and (
+                duckdb_copy_to_file(conn, query, output)
+            ):
+                return -1
     import duckdb
 
     # execute() streams its result; relations lost fetchmany() in DuckDB 2.0.
