@@ -7,6 +7,7 @@ with an extra is made unimportable, so the suite catches that class of bug
 even when the dev environment has all extras installed.
 """
 
+import json
 import os
 import subprocess
 import sys
@@ -76,14 +77,18 @@ BLOCKER = textwrap.dedent(
 )
 
 
-def _run(code: str) -> subprocess.CompletedProcess:
+def _run(code: str, *, block: tuple[str, ...] = ()) -> subprocess.CompletedProcess:
     env = dict(os.environ)
     env["PYTHONPATH"] = os.pathsep.join(
         [os.path.dirname(os.path.dirname(os.path.abspath(__file__)))]
         + ([env["PYTHONPATH"]] if env.get("PYTHONPATH") else [])
     )
     return subprocess.run(
-        [sys.executable, "-c", BLOCKER + textwrap.dedent(code)],
+        [
+            sys.executable,
+            "-c",
+            BLOCKER + f"BLOCKED.update({list(block)!r})\n" + textwrap.dedent(code),
+        ],
         check=False,
         capture_output=True,
         text=True,
@@ -128,6 +133,23 @@ def test_all_core_modules_import_without_extras():
         """
     )
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_mcp_tools_parity_without_click():
+    # typer>=0.26 vendors click, and click only arrives through extras (uvicorn in ``api``),
+    # so undatum code must not import it directly.
+    result = _run(
+        """
+        import sys
+        from undatum.__main__ import main
+        sys.argv = ["undatum", "mcp", "tools", "--parity", "--json"]
+        main()
+        """,
+        block=("click",),
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    rows = {row["command"]: row for row in json.loads(result.stdout)}
+    assert rows["dedup"]["tool"] == "dedup"
 
 
 @pytest.mark.parametrize(

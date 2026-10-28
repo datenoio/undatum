@@ -271,7 +271,6 @@ def _coerce(annotation: Any, value: Any) -> Any:
 
 def parity_report() -> list[dict[str, str]]:
     """For each CLI command: the agent tool that covers it, or why none does."""
-    import click
     import typer.main
 
     from ..core import app
@@ -313,9 +312,9 @@ def parity_report() -> list[dict[str, str]]:
     rows = []
     for name in root.list_commands(ctx):  # type: ignore[attr-defined]
         command = root.get_command(ctx, name)  # type: ignore[attr-defined]
-        if command is None or command.hidden or isinstance(command, click.Group):
-            continue
-        if hasattr(command, "list_commands"):
+        # Skip groups by duck typing: typer>=0.26 vendors click, so ``click.Group`` is not
+        # importable on a base install.
+        if command is None or command.hidden or hasattr(command, "list_commands"):
             continue
         tool = name if name in REGISTRY else aliases.get(name)
         if tool and tool in tool_names:
