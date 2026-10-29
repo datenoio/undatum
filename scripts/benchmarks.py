@@ -39,7 +39,7 @@ ROOT = Path(__file__).resolve().parent.parent
 BUDGETS = ROOT / "tests" / "benchmarks" / "budgets.toml"
 TIERS = {"tiny": 2_000, "100k": 100_000, "1m": 1_000_000}
 
-# name -> argv after ``python -m undatum``. {csv}, {jsonl}, {parquet}: inputs; {out}: a
+# name -> argv after ``python -m undatum``. {csv}, {jsonl}, {parquet}, {orc}: inputs; {out}: a
 # fresh output directory per run.
 SUITE: dict[str, list[str]] = {
     "help": ["--help"],
@@ -60,6 +60,7 @@ SUITE: dict[str, list[str]] = {
     "sql": ["sql", "SELECT city, count(*) AS n FROM data GROUP BY city", "{csv}"],
     "convert-parquet": ["convert", "{csv}", "{out}/c.parquet"],
     "convert-jsonl": ["convert", "{parquet}", "{out}/c.jsonl"],
+    "convert-orc": ["convert", "{orc}", "{out}/o.parquet"],
 }
 
 
@@ -67,7 +68,8 @@ SUITE: dict[str, list[str]] = {
 
 
 def generate(tier: str, directory: Path) -> dict[str, Path]:
-    """Write ``bench.csv``, ``bench.jsonl`` and ``bench.parquet`` with ``TIERS[tier]`` rows.
+    """Write ``bench.csv``, ``bench.jsonl``, ``bench.parquet`` and ``bench.orc`` with
+    ``TIERS[tier]`` rows.
 
     Values are derived from the row number, so every run produces the same files.
     """
@@ -92,6 +94,7 @@ def generate(tier: str, directory: Path) -> dict[str, Path]:
         "csv": directory / "bench.csv",
         "jsonl": directory / "bench.jsonl",
         "parquet": directory / "bench.parquet",
+        "orc": directory / "bench.orc",
     }
     conn = duckdb.connect()
     conn.execute("SET threads = 1")  # stable row order
@@ -99,6 +102,11 @@ def generate(tier: str, directory: Path) -> dict[str, Path]:
     conn.execute(f"COPY ({query}) TO '{paths['jsonl']}' (FORMAT JSON)")
     conn.execute(f"COPY ({query}) TO '{paths['parquet']}' (FORMAT PARQUET)")
     conn.close()
+    # DuckDB does not write ORC; the input of the Arrow bridge (``RowSource.arrow_reader``).
+    import pyarrow.parquet as pq
+    from pyarrow import orc
+
+    orc.write_table(pq.read_table(paths["parquet"]), paths["orc"])
     return paths
 
 
@@ -161,6 +169,7 @@ def run(
         "{csv}": str(data / "bench.csv"),
         "{jsonl}": str(data / "bench.jsonl"),
         "{parquet}": str(data / "bench.parquet"),
+        "{orc}": str(data / "bench.orc"),
     }
     missing = [path for path in inputs.values() if not Path(path).exists()]
     if missing:

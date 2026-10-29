@@ -7,6 +7,14 @@
 # 2026-10-09 to 1.4 x the time measured on the GitHub ubuntu-latest runner (rounded up to 0.1 s),
 # which is 3-5 times slower than the Mac for commands that import iterabledata. Lower a budget
 # when a command gets faster; raise one only with the reason in the commit message.
+#
+# Recalibrated on 2026-10-29 after the DuckDB-first work (macOS arm64, Python 3.11, DuckDB 2.0,
+# median of 3-5 runs alternated with 1.9.1): 1M budgets by the formulas above where they are
+# lower; 100k time budgets lowered by the measured speedup where a command got faster by more
+# than 20% (select, convert-jsonl); memory budgets by the formula where it is lower.
+# convert-orc is new: 100k time as convert-parquet, which takes the same time on the Mac.
+# DuckDB 2.0 connections start about 20 MB larger than 1.5 (66 MB against 44 MB), which
+# head, count, rename, fill and sql show.
 
 # Each [command] in "faster" must stay faster than the second one.
 faster = [["count", "sort"], ["count-jsonl", "sort"], ["head", "sort"]]
@@ -17,19 +25,20 @@ version = { seconds = 0.7, rss_mb = 80 }
 head = { seconds = 0.9, rss_mb = 140 }
 count = { seconds = 0.9, rss_mb = 130 }
 "count-jsonl" = { seconds = 0.9, rss_mb = 160 }
-headers = { seconds = 3.4, rss_mb = 210 }
+headers = { seconds = 3.4, rss_mb = 180 }
 rename = { seconds = 1.0, rss_mb = 140 }
 fill = { seconds = 1.0, rss_mb = 140 }
-dedup = { seconds = 4.0, rss_mb = 240 }
-select = { seconds = 3.3, rss_mb = 240 }
+dedup = { seconds = 4.0, rss_mb = 180 }
+select = { seconds = 2.2, rss_mb = 180 }
 sort = { seconds = 3.4, rss_mb = 330 }
-frequency = { seconds = 3.3, rss_mb = 250 }
-uniq = { seconds = 3.3, rss_mb = 250 }
+frequency = { seconds = 3.3, rss_mb = 240 }
+uniq = { seconds = 3.3, rss_mb = 240 }
 stats = { seconds = 9.3, rss_mb = 370 }
 schema = { seconds = 5.8, rss_mb = 310 }
 sql = { seconds = 1.0, rss_mb = 150 }
-"convert-parquet" = { seconds = 3.5, rss_mb = 310 }
-"convert-jsonl" = { seconds = 4.6, rss_mb = 370 }
+"convert-parquet" = { seconds = 3.5, rss_mb = 290 }
+"convert-jsonl" = { seconds = 3.7, rss_mb = 240 }
+"convert-orc" = { seconds = 3.5, rss_mb = 300 }
 
 [tier.1m]
 help = { seconds = 0.7, rss_mb = 90 }
@@ -37,16 +46,17 @@ version = { seconds = 0.7, rss_mb = 80 }
 head = { seconds = 0.8, rss_mb = 160 }
 count = { seconds = 0.7, rss_mb = 290 }
 "count-jsonl" = { seconds = 0.8, rss_mb = 410 }
-headers = { seconds = 1.6, rss_mb = 210 }
+headers = { seconds = 1.6, rss_mb = 180 }
 rename = { seconds = 2.2, rss_mb = 200 }
-fill = { seconds = 2.5, rss_mb = 200 }
-dedup = { seconds = 7.1, rss_mb = 260 }
-select = { seconds = 2.0, rss_mb = 460 }
+fill = { seconds = 2.1, rss_mb = 200 }
+dedup = { seconds = 7.1, rss_mb = 180 }
+select = { seconds = 2.0, rss_mb = 260 }
 sort = { seconds = 2.5, rss_mb = 1230 }
-frequency = { seconds = 1.8, rss_mb = 420 }
-uniq = { seconds = 1.7, rss_mb = 420 }
+frequency = { seconds = 1.8, rss_mb = 410 }
+uniq = { seconds = 1.7, rss_mb = 410 }
 stats = { seconds = 6.5, rss_mb = 720 }
 schema = { seconds = 3.1, rss_mb = 330 }
 sql = { seconds = 0.9, rss_mb = 320 }
 "convert-parquet" = { seconds = 2.2, rss_mb = 410 }
-"convert-jsonl" = { seconds = 3.6, rss_mb = 270 }
+"convert-jsonl" = { seconds = 3.6, rss_mb = 260 }
+"convert-orc" = { seconds = 3.5, rss_mb = 660 }
