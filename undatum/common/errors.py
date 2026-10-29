@@ -176,6 +176,12 @@ class FormatError(UndatumError):
         )
 
 
+class ConversionError(UndatumError):
+    """Records could not be written to the output (the output file is incomplete)."""
+
+    code = "write_failed"
+
+
 class ConfigurationError(UndatumError):
     """Raised when there's a configuration issue.
 

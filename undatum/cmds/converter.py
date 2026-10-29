@@ -21,6 +21,7 @@ from ..common.command_utils import (
     validate_write_mode,
 )
 from ..common.errors import (
+    ConversionError,
     FileNotFoundError,
     FormatError,
     PermissionError,
@@ -93,7 +94,9 @@ def _native_bulk_pair(format_in: str | None, format_out: str | None) -> bool:
 
 
 def _skip_duckdb_convert(options: dict) -> bool:
-    """DuckDB COPY cannot honor table/sheet, column selection, codec profiles, compression level, CSV quotechar, or Parquet row-group size."""
+    """DuckDB COPY cannot honor table/sheet, column selection, codec profiles, compression level, CSV quotechar, Parquet row-group size, or nested values as text."""
+    if options.get("flatten"):
+        return True
     if options.get("table") or options.get("sheet"):
         return True
     if options.get("columns") or options.get("row_range"):
@@ -222,6 +225,31 @@ def express_analyze_jsonl(filename, itemlimit=100):
     keys = list(keys)
     keys.sort()
     return {"isflat": isflat, "keys": keys}
+
+
+def _is_flat_output(tofile, options: dict) -> bool:
+    """Whether the output format holds only flat records (CSV, TSV, ...)."""
+    from iterable.helpers.detect import is_flat
+
+    fmt = Converter._resolve_output_format(tofile, options)
+    return bool(fmt) and is_flat(filetype=fmt)
+
+
+def _raise_write_errors(result, tofile) -> None:
+    """Fail when iterabledata reported records it could not write (it only logs them)."""
+    errors = getattr(result, "errors", None) or []
+    if not errors:
+        return
+    rows_in, rows_out = getattr(result, "rows_in", 0), getattr(result, "rows_out", 0)
+    lost = (
+        f"{rows_in - rows_out:,} of {rows_in:,} records were not written; "
+        if rows_out < rows_in
+        else ""
+    )
+    raise ConversionError(
+        f"Converting to {tofile} failed: {lost}{errors[0]}. The output file is incomplete.",
+        context={"output": str(tofile), "errors": len(errors)},
+    )
 
 
 def make_flat(item):
@@ -491,7 +519,12 @@ class Converter:
         if quotechar:
             toiterableargs["quotechar"] = quotechar
 
-        is_flatten = bool(get_option(options, "flatten"))
+        # Flat outputs (CSV, TSV, ...) hold nested values as text, as the other commands write
+        # them; without flattening iterabledata names the columns by dotted paths but writes the
+        # nested rows, which fail.
+        is_flatten = bool(get_option(options, "flatten")) or (
+            tofile is not None and _is_flat_output(tofile, options)
+        )
         show_progress = get_option(options, "progress")
         if show_progress is None:
             show_progress = True
@@ -833,7 +866,8 @@ class Converter:
                     convert_kwargs.get("toiterableargs"),
                 ):
                     result = iterable_convert(fromfile, tofile, **convert_kwargs)
-        except (FileNotFoundError, PermissionError, FormatError):
+            _raise_write_errors(result, tofile)
+        except (FileNotFoundError, PermissionError, FormatError, ConversionError):
             raise
         except Exception as e:
             # Surface a helpful error when the input format is not supported.
@@ -1068,6 +1102,15 @@ class Converter:
                     workers=threads if threads else None,
                     **convert_kwargs,
                 )
+        failed = [item for item in result.file_results if item.error is not None]
+        if failed:
+            raise ConversionError(
+                f"{len(failed)} of {result.total_files} files were not converted; "
+                f"{failed[0].source_file}: {failed[0].error}",
+                context={"failed": [item.source_file for item in failed]},
+            )
+        for file_result in result.file_results:
+            _raise_write_errors(file_result.result, file_result.dest_file)
         if options.get("summary", True):
             logger.info(format_bulk_conversion_summary(result))
         return result

@@ -45,7 +45,10 @@ undatum convert s3://bucket/input.jsonl s3://bucket/output.parquet
 - `--error-log PATH` — append skipped/warned parse errors as JSONL
 - `--delimiter`, `--quotechar`, `--encoding`, `--tagname` — passed through to the reader (delimiter auto-detected for CSV when omitted)
 - `--recursive` / `--to-ext` / `--filename-pattern` — bulk-convert directories or globs (`{name}`, `{stem}`, `{ext}` in the output name)
-- `--flatten-data` — flatten nested records to a flat schema (not `--flatten`; convert does **not** take `--flatten-nested`)
+- Nested values (objects and lists) in CSV, TSV and other flat outputs are written as text, one column per
+  top-level field, as the other commands write them; Parquet, JSON and the other nested formats keep them.
+  `--flatten-data` writes them as text in every format (not `--flatten`; convert does **not** take
+  `--flatten-nested`)
 - `--low-memory` — streaming / native-batch path for large files
 - `--engine auto|duckdb|python`
 - `--compression` — output codec (for example `snappy`, `gzip`, `brotli`)
@@ -101,7 +104,7 @@ undatum convert [OPTIONS] INPUT_FILE OUTPUT
 | `--compression` TEXT | Output compression codec (e.g. 'brotli', 'snappy', 'gzip'). |  |
 | `--encoding` TEXT | Input encoding (e.g., 'utf8', 'cp1251'); detected when omitted. |  |
 | `--verbose` / `--no-verbose` | Enable verbose logging output. | `--no-verbose` |
-| `--flatten-data` / `--no-flatten-data` | Flatten nested data structures into flat records. | `--no-flatten-data` |
+| `--flatten-data` / `--no-flatten-data` | Write nested values (objects, lists) as text. CSV, TSV and other flat formats always do. | `--no-flatten-data` |
 | `--prefix-strip` / `--no-prefix-strip` | Strip XML namespace prefixes from element names. | `--prefix-strip` |
 | `--start-line` INTEGER | Line number (0-based) to start reading from. | `0` |
 | `--start-page` INTEGER | Page number (0-based) to start from for Excel files. | `0` |

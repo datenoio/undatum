@@ -43,7 +43,13 @@ def convert(
     ] = None,
     verbose: Annotated[bool, typer.Option(help="Enable verbose logging output.")] = False,
     flatten_data: Annotated[
-        bool, typer.Option(help="Flatten nested data structures into flat records.")
+        bool,
+        typer.Option(
+            help=(
+                "Write nested values (objects, lists) as text. CSV, TSV and other flat formats "
+                "always do."
+            )
+        ),
     ] = False,
     prefix_strip: Annotated[
         bool, typer.Option(help="Strip XML namespace prefixes from element names.")

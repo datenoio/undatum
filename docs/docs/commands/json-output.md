@@ -90,6 +90,7 @@ undatum stats missing.csv --json
 | `format_error` | 1 | The file format is unknown or cannot be written |
 | `invalid_rules` | 1 | A validation rule file is malformed |
 | `invalid_value` | 1 | A value could not be processed |
+| `write_failed` | 1 | Records could not be written to the output; the output file is incomplete |
 | `usage_error` | 2 | Unknown option, missing argument |
 | `configuration_error` | 2 | Bad configuration |
 | `dependency_missing` | 2 | An optional extra is not installed |
