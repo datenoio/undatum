@@ -9266,7 +9266,7 @@ requires-dist = [
     { name = "pyodbc", marker = "extra == 'mssql'", specifier = ">=5.0,<6" },
     { name = "pyorc", specifier = ">=0.11.0,<1" },
     { name = "pytesseract", marker = "extra == 'extract'", specifier = ">=0.3.10,<1" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8,<9.2" },
     { name = "pytest-benchmark", marker = "extra == 'dev'", specifier = ">=4" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5" },
     { name = "python-docx", specifier = ">=1.1.0,<2" },
