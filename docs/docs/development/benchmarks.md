@@ -19,9 +19,9 @@ python scripts/benchmarks.py check results.json
 ```
 
 Tiers are `tiny` (2,000 rows, used by the harness tests), `100k` and `1m`. Each tier has a
-CSV, a JSON Lines and a Parquet file with the same rows: numbers, dates, a quoted text field,
-an MD5 code and free text. The values come from the row number, so every run writes the
-same files.
+CSV, a JSON Lines, a Parquet and an ORC file with the same rows: numbers, dates, a quoted text
+field, an MD5 code and free text. The values come from the row number, so every run writes
+the same files. The ORC file (`convert-orc`) measures the inputs DuckDB reads through pyarrow.
 
 To compare two versions on one machine, pass one interpreter per version. The commands are
 measured in turns, so a busy machine affects both sides alike:
@@ -70,8 +70,25 @@ Measured on macOS arm64 with Python 3.13:
 | `sort` | fell back to Python for paths with `'` and fields with spaces | stays in DuckDB | quoted identifiers and the shared reader |
 
 Open items: `sort` peaks at about 900 MB on 1M rows (DuckDB sorts with every core; one thread
-needs 455 MB). Converting CSV to Parquet peaks at about 800 MB. Converting Parquet to JSON
-Lines takes 5.5 s through the Python writer.
+needs 455 MB).
+
+## DuckDB-first execution (2026-10)
+
+`refactor-duckdb-first-execution`, measured on macOS arm64 with Python 3.11: each step against
+the one before, commands alternated per run (100k rows unless noted):
+
+| Step | Suite change |
+|------|--------------|
+| Bug fixes (#72) | `stats` 58 s to 2.8 s (252 s to 3.9 s on 1M rows): date detection skips values that cannot be dates |
+| Python 3.11 and DuckDB 2.0 (#75) | about 20 MB more memory for `head`, `count`, `rename`, `fill` and `sql` (78 to 98 MB): a DuckDB 2.0 connection starts at 66 MB instead of 44 MB |
+| `convert` with `COPY` (#77) | `convert-jsonl` 1.13 s to 0.87 s (3.7 s to 1.2 s on 1M rows); `convert-parquet` peaks at 325 MB instead of 793 MB on 1M rows |
+| One type-inference rule set (#79) | `schema` on 1M rows peaks at 271 MB instead of 231 MB (the type sample runs on one thread; with every core it took 346 MB) |
+| Arrow bridge, `select` through the operations (#81) | `convert-orc` 1.6 s to 0.87 s (4.4 s to 1.1 s on 1M rows, 303 to 496 MB); `select` 0.82 s to 0.52 s |
+
+Converting Parquet to JSON Lines (5.5 s through the Python writer in the first measurements)
+takes 1.2 s on 1M rows, and converting CSV to Parquet peaks at 331 MB instead of 800 MB.
+Loaded machines inflate wall times several times over: compare CPU time (`ru_utime +
+ru_stime`), or rerun, before calling a step slower.
 
 ## Verified repack benchmarks
 

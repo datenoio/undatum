@@ -25,22 +25,59 @@ profile. In short:
 On 1M rows `rename` peaks at about 150 MB; CI fails when a streaming command goes over 300 MB
 on 1M rows (see [benchmarks](/development/benchmarks)).
 
-## DuckDB pushdown
+## Which commands use DuckDB
 
-On CSV, TSV, JSON, JSON Lines and Parquet inputs (plain or `.gz`/`.zst`) the default
-`--engine auto` runs these as one DuckDB query, which spills to disk on its own:
+DuckDB reads CSV, TSV, JSON, JSON Lines and Parquet (plain or `.gz`/`.zst`), and ORC and Arrow
+IPC/Feather v2 files through pyarrow. With the default `--engine auto`, these commands run on
+such inputs as DuckDB queries, which spill to disk on their own. Aggregations and sorts use
+every core; row commands use one thread, since reading and writing bound them. Other inputs,
+and options DuckDB cannot apply (`--table`, `--sheet`, `--flatten-nested`,
+`--on-error skip|warn`, XML tags), use the Python engine.
 
-- `rename`, `fill`, `replace`, `search`, `head` and `slice` — the same records as the Python
-  engine, checked by contract tests (`rename` is about 7x faster on 1M CSV rows);
-- `select`, `sort`, `join`, `count`, `stats`, `frequency`, `uniq` and `sql`;
-- `--where` conditions and `--add` columns. Inputs DuckDB cannot read are evaluated in batches
-  with the same results;
-- `convert` between these formats (one `COPY`, one thread, about 150-300 MB for millions of
-  rows): CSV to JSON Lines on 2M rows takes 2 s instead of 7.5 s. The records are the Python
-  engine's, checked by contract tests: CSV values stay text and empty CSV fields stay empty
-  strings. JSON Lines written by DuckDB are compact (no space after `:` and `,`). Inputs with
-  timestamps, intervals, decimals, 32-bit floats, UUIDs or binary values (and, for CSV output,
-  booleans or nested values) are converted by the Python engine, whose text differs for them.
+| Commands | With `--engine auto` | ORC, Arrow/Feather |
+|----------|----------------------|--------------------|
+| `rename`, `fill`, `replace`, `search`, `head`, `slice`, `select`, `--where`, `--add` | one DuckDB query for every step, with the records of the Python engine (contract tests) | DuckDB |
+| `convert` | one `COPY` for CSV and Parquet output, and for JSON Lines when the text equals the Python writer's | DuckDB |
+| `sort`, `uniq`, `frequency` | DuckDB | DuckDB |
+| `count` | DuckDB | the row count stored in the file (also DBF) |
+| `stats`, `schema`, `analyze`, `join`, `sample` | DuckDB | Python reader |
+| `quality`, `schema-drift` | DuckDB; inputs DuckDB cannot read are loaded into it by the Python reader | Python reader |
+| `sql` | DuckDB, with each file as a view (formats DuckDB reads by name) | not read |
+| `dedup`, `reverse` | Python (bounded memory); DuckDB with `--engine duckdb` | DuckDB with `--engine duckdb` |
+| `cat`, `enum`, `explode`, `exclude`, `fixlengths`, `mask`, `tail`, `transpose`, `validate` | Python, streaming | Python |
+
+The [Python SDK](/integrations/sdk) runs `count()`, `head()`, `uniq()`, `frequency()`,
+`schema()`, `write()` and the Arrow and DataFrame exports of a plan as one DuckDB query on the
+same terms.
+
+Measured on 1M rows (macOS arm64, Python 3.11, median of three runs), before the DuckDB-first
+work (October 2026) and now:
+
+| Command (1M rows) | Before | Now |
+|-------------------|-------|-----|
+| `stats data.csv` | 252 s, 508 MB | 2.4 s, 550 MB |
+| `convert data.parquet data.jsonl` | 4.3 s, 346 MB | 1.2 s, 184 MB |
+| `convert data.orc data.parquet` | 4.9 s, 315 MB | 1.2 s, 492 MB |
+| `convert data.csv data.parquet` | 1.2 s, 791 MB | 1.4 s, 331 MB |
+| `select data.csv -f id,amount -o s.csv` | 0.85 s, 318 MB | 0.68 s, 181 MB |
+| `rename data.csv -o r.csv` | 1.0 s, 127 MB | 0.7 s, 178 MB |
+| `dedup data.csv --key-fields city` | 2.7 s, 166 MB | 2.5 s, 121 MB |
+| `sort`, `frequency`, `uniq`, `count`, `head`, `sql` | 0.2-1.0 s | the same time, 10-65 MB more |
+
+DuckDB 2.0 connections start about 20 MB larger than DuckDB 1.5, which is most of the memory
+added to the short commands.
+
+Details:
+
+- `--where` conditions and `--add` columns on inputs DuckDB cannot read are evaluated in
+  batches with the same results.
+- `convert` writes the records of the Python engine, checked by contract tests: CSV values stay
+  text and empty CSV fields stay empty strings. JSON Lines written by DuckDB are compact (no
+  space after `:` and `,`). Inputs with timestamps, intervals, decimals, 32-bit floats, UUIDs or
+  binary values (and, for CSV output, booleans or nested values) are converted by the Python
+  engine, whose text differs for them.
+- ORC and Arrow inputs are read stripe by stripe or batch by batch, so peak memory grows with
+  the stripe size (about 400-470 MB for row commands on 1M rows).
 
 `dedup` and `reverse` use DuckDB only with `--engine duckdb`: DuckDB holds the records up to
 its memory limit (about 750 MB for 2M rows), while the default Python engine stays bounded

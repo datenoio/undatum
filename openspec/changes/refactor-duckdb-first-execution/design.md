@@ -64,8 +64,8 @@ Polars stays an optional extra for SDK interchange through Arrow.
   a query that reads its input twice fails and falls back to Python (partitioned `convert` keeps
   native readers for this reason). DuckDB cannot select a reader's columns, so `uniq` and
   `frequency` ask for their fields only. Excel stays on the Python reader: openpyxl takes 4.4 of
-  the 4.6 s of `frequency` on 100k rows, and turning its rows into Arrow adds 0.65 s (decision 1.2
-  is open). Measured on 1M ORC rows against `--engine python`: `frequency` 1.8 s to 0.8 s,
+  the 4.6 s of `frequency` on 100k rows, and turning its rows into Arrow adds 0.65 s (decision
+  1.2). Measured on 1M ORC rows against `--engine python`: `frequency` 1.8 s to 0.8 s,
   `uniq` 3.1 s to 1.9 s, `sort` to CSV 8.3 s to 1.0 s, `rename` to Parquet 4.6 s to 0.6 s,
   `convert` to Parquet 4.2 s to 1.0 s; peak memory grows with the stripe size (400–470 MB for row
   commands instead of 130–300 MB).
@@ -169,7 +169,9 @@ best balance (2M rows: 5.7 s / 1.29 GB; 100k x 61 columns: 4.0 s / 830 MB agains
 Each step ships on its own, with the benchmark comparison against the base branch.
 
 ## Open Questions
-- **Reading Excel:** use the DuckDB `excel` extension (an extension download, first-row
-  inference, no `.xls`) or `fastexcel`/calamine (3–4 MB; reads xls/xlsx/xlsb/ods into Arrow)?
-- **Streaming to stdout:** `COPY ... TO '/dev/stdout'` is fastest but unavailable on Windows.
-  Arrow batches to the stdout writer may be enough.
+- **Reading Excel (left for a later change):** the DuckDB `excel` extension (an extension
+  download, first-row inference, no `.xls`) or `fastexcel`/calamine (3–4 MB; reads
+  xls/xlsx/xlsb/ods into Arrow)? Either replaces openpyxl, which is most of the time spent.
+- **Streaming to stdout (resolved):** DuckDB results reach stdout in batches through the Python
+  writers, so the text is the Python engine's on every platform; `COPY ... TO '/dev/stdout'` is
+  not used.

@@ -1,6 +1,7 @@
 ## 1. Decision
 - [x] 1.1 Approve DuckDB-first execution with Arrow interchange (no Polars engine)
-- [ ] 1.2 Decide how Excel is read (DuckDB `excel` extension or `fastexcel`)
+- [x] 1.2 Decide how Excel is read: the Python reader stays in this change; the DuckDB
+      `excel` extension or `fastexcel` is left for a later change
 
 ## 2. Connection factory and workload classes
 - [x] 2.1 Workload classes in `create_duckdb_connection` (row-wise: 1 thread / 256 MB;
@@ -52,8 +53,9 @@
 - [x] 7.3 SDK reference regenerated (`scripts/generate_sdk_reference.py`)
 
 ## 8. Verification
-- [ ] 8.1 Benchmarks (`scripts/benchmarks.py`) against the base branch for every step; update
-      `tests/benchmarks/budgets.toml`
-- [ ] 8.2 Memory budget suite unchanged for streaming commands
-- [ ] 8.3 `docs/docs/getting-started/performance.md` lists which commands use DuckDB
-- [ ] 8.4 `openspec validate refactor-duckdb-first-execution --strict`
+- [x] 8.1 Benchmarks (`scripts/benchmarks.py`) against the base branch for every step; update
+      `tests/benchmarks/budgets.toml` (a `convert-orc` case for the Arrow bridge; `schema`
+      samples types on one thread, 346 MB to 271 MB on 1M rows)
+- [x] 8.2 Memory budget suite unchanged for streaming commands
+- [x] 8.3 `docs/docs/getting-started/performance.md` lists which commands use DuckDB
+- [x] 8.4 `openspec validate refactor-duckdb-first-execution --strict`
