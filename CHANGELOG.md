@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Forward and backward fill now accept `0`, `0.0` and `False` as fallback values when no neighbour value exists.
+- `undatum mcp tools --parity` (and `undatum.tools.generated.parity_report()`) no longer fails with `No module named 'click'` on an install without the `api` extra. typer 0.26 and later vendor click, so `click` is not a dependency of undatum.
 
 ## [1.9.1](https://github.com/datenoio/undatum/compare/v1.9.0...v1.9.1) - 2026-10-15
 
