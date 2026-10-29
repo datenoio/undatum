@@ -545,6 +545,10 @@ def _to_parquet(table: TableSchema) -> dict:
     }
 
 
+# --format values written by _write_schema_output (odcs as YAML, the others as JSON)
+SCHEMA_FORMATS = ("cerberus", "jsonschema", "json-schema", "avro", "parquet", "odcs")
+
+
 def _convert_to_format(table: TableSchema, format_name: str) -> dict:
     """Convert TableSchema to specified format.
 
@@ -579,13 +583,14 @@ def _write_schema_output(table, options, output_stream):
     """Write schema to output stream in specified format."""
     # Check if a specific schema format is requested (cerberus, jsonschema, avro, parquet)
     schema_format = options.get("format")
-    if schema_format and schema_format.lower() in [
-        "cerberus",
-        "jsonschema",
-        "json-schema",
-        "avro",
-        "parquet",
-    ]:
+    if schema_format and schema_format.lower() == "odcs":
+        from ..validate.odcs import contract_from_schema
+
+        output_stream.write(
+            yaml.safe_dump(contract_from_schema(table), sort_keys=False, allow_unicode=True)
+        )
+        return
+    if schema_format and schema_format.lower() in SCHEMA_FORMATS:
         try:
             converted_schema = _convert_to_format(table, schema_format.lower())
             # All format outputs are JSON-serializable
@@ -881,14 +886,8 @@ class Schemer:
                     if "output" in options and options["output"]:
                         # Determine file extension based on format
                         schema_format = options.get("format")
-                        if schema_format and schema_format.lower() in [
-                            "cerberus",
-                            "jsonschema",
-                            "json-schema",
-                            "avro",
-                            "parquet",
-                        ]:
-                            ext = "json"  # All format outputs are JSON
+                        if schema_format and schema_format.lower() in SCHEMA_FORMATS:
+                            ext = "yaml" if schema_format.lower() == "odcs" else "json"
                         elif options.get("outtype") == "json":
                             ext = "json"
                         elif options.get("outtype") == "yaml":
@@ -912,14 +911,8 @@ class Schemer:
                 for table in tables.values():
                     # Determine file extension based on format
                     schema_format = options.get("format")
-                    if schema_format and schema_format.lower() in [
-                        "cerberus",
-                        "jsonschema",
-                        "json-schema",
-                        "avro",
-                        "parquet",
-                    ]:
-                        ext = "json"  # All format outputs are JSON
+                    if schema_format and schema_format.lower() in SCHEMA_FORMATS:
+                        ext = "yaml" if schema_format.lower() == "odcs" else "json"
                     elif options.get("outtype") == "json":
                         ext = "json"
                     elif options.get("outtype") == "yaml":

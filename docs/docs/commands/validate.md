@@ -120,6 +120,67 @@ Example rule files are available in `examples/validation-rules/`:
   - the input is not CSV or TSV.
 - `undatum quality --rules` uses the same query.
 
+#### Data Contracts (ODCS)
+
+`--rules` also takes an [Open Data Contract Standard](https://bitol-io.github.io/open-data-contract-standard/)
+(ODCS v3) contract, a YAML file with `kind: DataContract`. `undatum schema --format odcs` writes a
+draft contract for a file:
+
+```bash
+undatum schema data.csv --format odcs --output contract.odcs.yaml
+undatum validate data.csv --rules contract.odcs.yaml
+undatum validate data.csv --rules contract.odcs.yaml --format-out json
+```
+
+A contract with several schema objects needs the name of one after `#`:
+`--rules contract.odcs.yaml#orders`.
+
+```yaml
+apiVersion: v3.2.0
+kind: DataContract
+id: orders-contract
+version: 1.0.0
+schema:
+  - name: orders
+    properties:
+      - name: order_id
+        logicalType: integer
+        primaryKey: true
+      - name: email
+        logicalType: string
+        logicalTypeOptions: {format: email}
+        quality:
+          - metric: nullValues
+            mustBeLessThan: 5
+            unit: percent
+            severity: warning
+      - name: status
+        enum: [{value: open}, {value: shipped}]
+    quality:
+      - metric: rowCount
+        mustBeGreaterThan: 0
+```
+
+How the parts of a contract are checked:
+
+| Contract | Checked as |
+|---|---|
+| `required`, `unique`, `primaryKey` (one property) | Rules, record by record |
+| `logicalType`: `integer`, `number` | The `integer` and `number` rule types |
+| `logicalType`: `boolean`, `date`, `timestamp` | The `boolean`, `date` and `datetime` formats |
+| `enum` | Allowed values (numbers also as their text, as CSV holds them) |
+| `logicalTypeOptions`: `minLength`, `maxLength`, `pattern`, `minimum`, `maximum`, `format` (`email`, `uuid`, `url`) | Rules; a pattern matches anywhere in the value, as in ODCS |
+| Quality metrics `nullValues`, `missingValues`, `invalidValues`, `duplicateValues`, `rowCount` | Contract checks: counted over the file and compared with `mustBe`, `mustBeLessThan`, `mustBeBetween`, ... in `rows` or `percent` |
+| `primaryKey` on several properties, `exclusiveMinimum`, `exclusiveMaximum`, `multipleOf` | Contract checks |
+| `sql`, `custom` and `text` checks, other types and options | Listed as not checked |
+
+Rules report violations per record, as from a rule file, on both engines. Contract checks are
+listed in their own table, and in the `contract` key of the JSON report. A failed check of
+severity `error` (the default) makes the command exit with 1, and one of severity `warning`
+does so with `--fail-on-warnings`. `nullValues` counts missing fields, nulls and empty values,
+because CSV has no other null. SQL checks are never run: a contract from elsewhere could run any
+SQL. `undatum quality --rules` and `Dataset.validate()` check the rules of a contract, not its contract checks.
+
 #### Legacy Mode (Backward Compatible)
 
 Simple single-rule validation for quick checks:

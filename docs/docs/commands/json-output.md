@@ -268,10 +268,11 @@ Rule-file validation report. Printed by `undatum validate --rules --json`. [JSON
 | Key | Type | Always | Description |
 |-----|------|--------|-------------|
 | `schema` | string | yes | `undatum.validate/1` |
-| `statistics` | object | yes | total_records, total_violations, errors, warnings, info, passed |
+| `statistics` | object | yes | total_records, total_violations, errors, warnings, info, passed; with a data contract also failed_checks (error, warning, info) |
 | `violations_by_field` | object |  | Field -> number of violations |
 | `violations_by_rule` | object |  | Rule -> number of violations |
 | `violations` | array | yes | Violations (at most --max-violations) |
+| `contract` | object |  | With an ODCS data contract: object, checks (name, fields, metric, value, unit, operator, limit, expected, passed, severity, description), not_checked (name, reason) |
 
 ### `undatum.validate-rules/1`
 

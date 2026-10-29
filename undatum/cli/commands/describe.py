@@ -488,7 +488,7 @@ def schema(
     format: Annotated[
         str,
         typer.Option(
-            help="Schema format: 'yaml' (default), 'json', 'cerberus', 'jsonschema', 'avro', or 'parquet'. Overrides outtype when specified."
+            help="Schema format: 'yaml' (default), 'json', 'cerberus', 'jsonschema', 'avro', 'parquet', or 'odcs' (an Open Data Contract Standard contract). Overrides outtype when specified."
         ),
     ] = None,
     output: Annotated[
@@ -616,7 +616,7 @@ def schema_bulk(
     format: Annotated[
         str,
         typer.Option(
-            help="Schema format: 'yaml' (default), 'json', 'cerberus', 'jsonschema', 'avro', or 'parquet'. Overrides outtype when specified."
+            help="Schema format: 'yaml' (default), 'json', 'cerberus', 'jsonschema', 'avro', 'parquet', or 'odcs' (an Open Data Contract Standard contract). Overrides outtype when specified."
         ),
     ] = None,
     output: Annotated[str, typer.Option(help="Output directory path for schema files.")] = None,

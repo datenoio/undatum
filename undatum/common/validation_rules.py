@@ -391,13 +391,16 @@ class ValidationRule:
 class ValidationRuleSet:
     """Collection of validation rules."""
 
-    def __init__(self, rules: list[ValidationRule]):
+    def __init__(self, rules: list[ValidationRule], contract: Any = None):
         """Initialize rule set.
 
         Args:
             rules: List of ValidationRule objects
+            contract: The :class:`~undatum.validate.odcs.Contract` the rules come from, if any
+                (its checks count over the whole file).
         """
         self.rules = rules
+        self.contract = contract
 
     @property
     def stateful(self) -> bool:
@@ -451,6 +454,10 @@ class ValidationRuleSet:
 def parse_validation_rules(file_path: str) -> ValidationRuleSet:
     """Parse validation rules from YAML or JSON file.
 
+    The file is an undatum rule file (a ``rules`` list) or an ODCS data contract
+    (``kind: DataContract``, see :mod:`undatum.validate.odcs`); ``contract.yaml#orders``
+    selects the schema object ``orders`` of a contract with several.
+
     Args:
         file_path: Path to rule file
 
@@ -461,6 +468,10 @@ def parse_validation_rules(file_path: str) -> ValidationRuleSet:
         ValidationRuleError: If file cannot be parsed or is invalid
     """
     path = Path(file_path)
+    object_name = None
+    if not path.exists() and "#" in file_path:
+        base, _, object_name = file_path.rpartition("#")
+        path = Path(base)
     if not path.exists():
         raise ValidationRuleError(f"Rule file not found: {file_path}")
 
@@ -494,6 +505,13 @@ def parse_validation_rules(file_path: str) -> ValidationRuleSet:
     # Validate structure
     if not isinstance(data, dict):
         raise ValidationRuleError("Rule file must contain a dictionary/object")
+
+    from ..validate.odcs import is_contract, read_contract
+
+    if is_contract(data):
+        contract = read_contract(data, object_name or None, str(path))
+        rules = [ValidationRule({**rule, "_base_dir": path.parent}) for rule in contract.rules]
+        return ValidationRuleSet(rules, contract=contract)
 
     if "rules" not in data:
         raise ValidationRuleError("Rule file must contain 'rules' key")

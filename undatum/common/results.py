@@ -289,11 +289,18 @@ VALIDATE = _register(
         {
             "statistics": (
                 "object",
-                "total_records, total_violations, errors, warnings, info, passed",
+                "total_records, total_violations, errors, warnings, info, passed; with a data "
+                "contract also failed_checks (error, warning, info)",
             ),
             "violations_by_field": ("object", "Field -> number of violations"),
             "violations_by_rule": ("object", "Rule -> number of violations"),
             "violations": ("array", "Violations (at most --max-violations)"),
+            "contract": (
+                "object",
+                "With an ODCS data contract: object, checks (name, fields, metric, value, unit, "
+                "operator, limit, expected, passed, severity, description), not_checked (name, "
+                "reason)",
+            ),
         },
         ("statistics", "violations"),
     )

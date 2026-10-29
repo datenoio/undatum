@@ -22,6 +22,9 @@ undatum schema data.jsonl --format parquet
 # Generate Cerberus schema (for backward compatibility with deprecated `scheme` command)
 undatum schema data.jsonl --format cerberus
 
+# Draft an ODCS data contract (YAML), to check files with validate --rules
+undatum schema data.csv --format odcs --output contract.odcs.yaml
+
 # Save to file
 undatum schema data.jsonl --output schema.yaml
 
@@ -60,6 +63,7 @@ they take those commands' options.
 - `jsonschema` - JSON Schema (W3C/IETF standard) - Use for API validation, OpenAPI specs, and tool integration
 - `avro` - Apache Avro schema format - Use for Kafka message schemas and Hadoop data pipelines
 - `parquet` - Parquet schema format - Use for data lake schemas and Parquet file metadata
+- `odcs` - [Open Data Contract Standard](https://bitol-io.github.io/open-data-contract-standard/) v3.2.0 contract (YAML): one schema object with a `logicalType` and `physicalType` per field, status `draft`. Add constraints and quality checks, then check files with [`validate --rules`](/commands/validate#data-contracts-odcs)
 
 **Use cases:**
 - **JSON Schema**: API documentation, data validation in web applications, OpenAPI specifications
@@ -104,7 +108,7 @@ undatum schema [OPTIONS] INPUT_FILE
 |--------|-------------|---------|
 | `--verbose` / `--no-verbose` | Enable verbose logging output. | `--no-verbose` |
 | `-O`, `--format-out` TEXT | Output format: 'text' (default), 'json', or 'yaml'. | `text` |
-| `--format` TEXT | Schema format: 'yaml' (default), 'json', 'cerberus', 'jsonschema', 'avro', or 'parquet'. Overrides outtype when specified. |  |
+| `--format` TEXT | Schema format: 'yaml' (default), 'json', 'cerberus', 'jsonschema', 'avro', 'parquet', or 'odcs' (an Open Data Contract Standard contract). Overrides outtype when specified. |  |
 | `-o`, `--output` TEXT | Optional output file path. If not specified, prints to stdout. |  |
 | `--autodoc` / `--no-autodoc` | Enable AI-powered automatic field documentation. | `--no-autodoc` |
 | `--lang` TEXT | Language for AI-generated documentation (default: 'English'). | `English` |

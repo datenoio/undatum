@@ -85,7 +85,8 @@ class Validator:
             if checked is not None:
                 rule_set.close()
                 logger.debug("validate: rules checked by DuckDB")
-                self._generate_validation_report(checked[1], checked[0], options)
+                contract = _contract_results(fromfile, options, rule_set)
+                self._generate_validation_report(checked[1], checked[0], options, contract)
                 return
 
         # Process records and collect violations
@@ -147,7 +148,8 @@ class Validator:
                 it_in.close()
 
         # Generate reports
-        self._generate_validation_report(all_violations, total_records, options)
+        contract = _contract_results(fromfile, options, rule_set)
+        self._generate_validation_report(all_violations, total_records, options, contract)
 
     def _validate_legacy(self, fromfile, options):
         """Legacy validation mode: apply one built-in rule to one field."""
@@ -246,13 +248,14 @@ class Validator:
             if to_file:
                 out.close()
 
-    def _generate_validation_report(self, violations, total_records, options):
+    def _generate_validation_report(self, violations, total_records, options, contract=None):
         """Generate validation report from violations.
 
         Args:
             violations: List of violation dictionaries
             total_records: Total number of records processed
             options: Validation options
+            contract: Results of a data contract's checks (see :func:`_contract_results`)
         """
         output_format = get_option(options, "output_format") or "text"
         severity_filter = get_option(options, "severity") or "all"
@@ -271,6 +274,12 @@ class Validator:
             "info": len([v for v in violations if v["severity"] == "info"]),
             "passed": total_records - len({v["row"] for v in violations}),
         }
+        if contract is not None:
+            failed = [check for check in contract["checks"] if not check["passed"]]
+            stats["failed_checks"] = {
+                severity: sum(check["severity"] == severity for check in failed)
+                for severity in ("error", "warning", "info")
+            }
 
         # Group violations by field and rule
         violations_by_field = defaultdict(list)
@@ -282,14 +291,14 @@ class Validator:
 
         # Generate report
         if output_format == "jsonl":
-            self._generate_jsonl_report(violations, stats, options)
+            self._generate_jsonl_report(violations, stats, options, contract)
         elif output_format == "json":
             self._generate_json_report(
-                violations, stats, violations_by_field, violations_by_rule, options
+                violations, stats, violations_by_field, violations_by_rule, options, contract
             )
         else:
             self._generate_text_report(
-                violations, stats, violations_by_field, violations_by_rule, options
+                violations, stats, violations_by_field, violations_by_rule, options, contract
             )
 
         # Write detailed violation report if requested
@@ -308,7 +317,7 @@ class Validator:
                 )
 
     def _generate_text_report(
-        self, violations, stats, violations_by_field, violations_by_rule, options
+        self, violations, stats, violations_by_field, violations_by_rule, options, contract=None
     ):
         """Generate text format validation report."""
         from rich.console import Console
@@ -363,6 +372,8 @@ class Validator:
         )
 
         console.print(summary_table)
+        if contract is not None:
+            _print_contract(console, contract)
         console.print()
 
         # Violations by field
@@ -418,12 +429,10 @@ class Validator:
                     f"\n[dim]... and {len(violations) - max_violations} more violations. Use --violation-report to see all.[/dim]"
                 )
 
-        # Exit code based on failures
-        fail_on_warnings = options.get("fail_on_warnings", False)
-        if stats["errors"] > 0 or (fail_on_warnings and stats["warnings"] > 0):
+        if _failed(stats, options):
             sys.exit(1)
 
-    def _generate_jsonl_report(self, violations, stats, options):
+    def _generate_jsonl_report(self, violations, stats, options, contract=None):
         """One JSON object per violation on stdout (or --output); the summary on stderr."""
         import json as _json
 
@@ -439,17 +448,20 @@ class Validator:
         else:
             for line in lines:
                 print(line)
+        checks = ""
+        if contract is not None:
+            failed = sum(not check["passed"] for check in contract["checks"])
+            checks = f"; {failed} of {len(contract['checks'])} contract checks failed"
         print(
             f"{stats['total_violations']} violations in {stats['total_records']} records "
-            f"({stats['errors']} errors, {stats['warnings']} warnings)",
+            f"({stats['errors']} errors, {stats['warnings']} warnings){checks}",
             file=sys.stderr,
         )
-        fail_on_warnings = options.get("fail_on_warnings", False)
-        if stats["errors"] > 0 or (fail_on_warnings and stats["warnings"] > 0):
+        if _failed(stats, options):
             sys.exit(1)
 
     def _generate_json_report(
-        self, violations, stats, violations_by_field, violations_by_rule, options
+        self, violations, stats, violations_by_field, violations_by_rule, options, contract=None
     ):
         """Generate JSON format validation report."""
         report = {
@@ -458,12 +470,75 @@ class Validator:
             "violations_by_rule": {k: len(v) for k, v in violations_by_rule.items()},
             "violations": violations[: options.get("max_violations", 100)],  # Limit for JSON output
         }
+        if contract is not None:
+            report["contract"] = contract
 
         from ..common.results import VALIDATE, dumps, envelope
 
         print(dumps(envelope(VALIDATE, report)))
 
-        # Exit code based on failures
-        fail_on_warnings = options.get("fail_on_warnings", False)
-        if stats["errors"] > 0 or (fail_on_warnings and stats["warnings"] > 0):
+        if _failed(stats, options):
             sys.exit(1)
+
+
+def _failed(stats: dict, options: dict) -> bool:
+    """Whether the report fails the run: errors, or warnings with --fail-on-warnings."""
+    checks = stats.get("failed_checks") or {}
+    if stats["errors"] > 0 or checks.get("error", 0) > 0:
+        return True
+    return bool(options.get("fail_on_warnings", False)) and (
+        stats["warnings"] > 0 or checks.get("warning", 0) > 0
+    )
+
+
+def _contract_results(fromfile: str, options: dict, rule_set: Any) -> dict | None:
+    """Run a data contract's checks over the file (one more pass), or ``None`` for rule files."""
+    contract = getattr(rule_set, "contract", None)
+    if contract is None:
+        return None
+    from ..io import RowSource
+    from ..validate.odcs import evaluate_checks
+
+    results: list[dict] = []
+    if contract.checks:
+        records: Any = RowSource(fromfile, options)
+        filter_expr = options.get("filter")
+        if filter_expr:
+            records = (record for record in records if match_filter(record, filter_expr))
+        results = evaluate_checks(contract.checks, records)
+    return {
+        "object": contract.object_name,
+        "checks": results,
+        "not_checked": contract.not_checked,
+    }
+
+
+def _print_contract(console: Any, contract: dict) -> None:
+    from rich.table import Table
+
+    if contract["checks"]:
+        table = Table(
+            title=f"Contract checks ({contract['object']})",
+            show_header=True,
+            header_style="bold magenta",
+        )
+        for column in ("Check", "Fields", "Metric", "Value", "Expected", "Result"):
+            table.add_column(column)
+        for check in contract["checks"]:
+            unit = "%" if check["unit"] == "percent" else ""
+            if check["passed"]:
+                result = "[green]passed[/green]"
+            else:
+                style = {"error": "red", "warning": "yellow"}.get(check["severity"], "blue")
+                result = f"[{style}]failed ({check['severity']})[/{style}]"
+            table.add_row(
+                check["name"],
+                ", ".join(check["fields"]),
+                check["metric"],
+                f"{check['value']:g}{unit}",
+                f"{check['expected']}{unit}",
+                result,
+            )
+        console.print(table)
+    for item in contract["not_checked"]:
+        console.print(f"[dim]Not checked: {item['name']}: {item['reason']}[/dim]")

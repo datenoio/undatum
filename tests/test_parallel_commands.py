@@ -60,7 +60,7 @@ def _run_validate_capture(path: Path, rules: Path, **opts) -> dict:
     """Run validate and capture violations without SystemExit on errors."""
     captured: dict = {}
 
-    def _capture(violations, total_records, options):
+    def _capture(violations, total_records, options, contract=None):
         captured["violations"] = list(violations)
         captured["total_records"] = total_records
 
