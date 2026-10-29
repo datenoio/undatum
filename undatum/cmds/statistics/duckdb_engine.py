@@ -1,6 +1,7 @@
 """DuckDB-backed statistics computations (mixin)."""
 
 import logging
+import math
 from contextlib import nullcontext
 
 import duckdb
@@ -140,6 +141,10 @@ class DuckDBStatsMixin:
                     ("min", "max", "mean", "median", "stddev"), values[5:], strict=True
                 ):
                     stats[name] = float(value) if value is not None else None
+                for name in ("mean", "stddev"):  # parallel sums differ in the last digits
+                    value = stats[name]
+                    if value is not None:
+                        stats[name] = _significant(float(value))
             profile[field_path] = stats
         return total, profile
 
@@ -411,9 +416,10 @@ class DuckDBStatsMixin:
         distinct = {}
         for field_path, _ in targets:
             distinct[field_path] = len(counts[field_path])
-            # Most frequent first; values as text, like the iterable engine.
+            # Most frequent first, equal counts by value (DuckDB groups in no fixed order);
+            # values as text, like the iterable engine.
             items = {}
-            for value, freq in sorted(counts[field_path], key=lambda pair: -pair[1]):
+            for value, freq in _by_frequency(counts[field_path]):
                 items[str(value)] = int(freq)
             dictionaries[field_path] = {
                 "items": items,
@@ -603,3 +609,18 @@ class DuckDBStatsMixin:
         if not get_option(options, "quiet"):
             self._display_enhanced_statistics_table(fielddata, finfields, dictkeys)
         return profile
+
+
+def _by_frequency(pairs):
+    """``(value, count)`` pairs, most frequent first and equal counts by value."""
+    try:
+        return sorted(pairs, key=lambda pair: (-pair[1], pair[0]))
+    except TypeError:  # structs and lists do not compare
+        return sorted(pairs, key=lambda pair: (-pair[1], str(pair[0])))
+
+
+def _significant(value: float, digits: int = 12) -> float:
+    """``value`` rounded to ``digits`` significant digits."""
+    if value == 0 or not math.isfinite(value):
+        return value
+    return round(value, digits - 1 - math.floor(math.log10(abs(value))))

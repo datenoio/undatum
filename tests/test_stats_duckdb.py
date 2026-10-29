@@ -357,3 +357,47 @@ def test_stats_values_match_direct_counts(tmp_path):
     assert data["score"]["missing_count"] == 0
     assert (data["score"]["min"], data["score"]["median"], data["score"]["max"]) == (10, 20, 30)
     assert profile["dicts"]["city"]["items"] == {"Berlin": 2, "Paris": 1, "Rome": 1}
+
+
+def test_dictionaries_order_equal_counts_by_value(tmp_path):
+    """Most frequent first; equal counts by value, whatever order DuckDB groups in."""
+    source = tmp_path / "ties.csv"
+    source.write_text("city\nRome\nParis\nBerlin\nParis\nBerlin\nOslo\n", encoding="utf8")
+    profile = StatProcessor().stats(
+        str(source), {"engine": "duckdb", "format_out": "json", "output": str(tmp_path / "s.json")}
+    )
+    assert list(profile["dicts"]["city"]["items"].items()) == [
+        ("Berlin", 2),
+        ("Paris", 2),
+        ("Oslo", 1),
+        ("Rome", 1),
+    ]
+
+
+def test_profile_is_the_same_on_every_run(tmp_path):
+    """Many equal counts and floating-point sums on several threads give one profile."""
+    source = tmp_path / "many.csv"
+    rows = "".join(f"{i % 997},{(i * 7919) % 1000 / 3},{i}\n" for i in range(30_000))
+    source.write_text("code,amount,id\n" + rows, encoding="utf8")
+    profiles = set()
+    for _ in range(4):
+        out = tmp_path / "s.json"
+        StatProcessor().stats(
+            str(source),
+            {"engine": "duckdb", "format_out": "json", "output": str(out), "duckdb_threads": 4},
+        )
+        profiles.add(out.read_text(encoding="utf8"))
+    assert len(profiles) == 1
+
+
+def test_frequency_order_and_significant_digits():
+    from undatum.cmds.statistics.duckdb_engine import _by_frequency, _significant
+
+    assert _by_frequency([(3, 1), (1, 2), (2, 2)]) == [(1, 2), (2, 2), (3, 1)]
+    structs = [({"b": 1}, 1), ({"a": 1}, 1)]
+    assert _by_frequency(structs) == [({"a": 1}, 1), ({"b": 1}, 1)]
+    assert _significant(4999.995000000001) == 4999.995
+    assert _significant(2886.7527893234433) == 2886.75278932
+    assert _significant(-0.000123456789012345) == -0.000123456789012
+    assert _significant(0.0) == 0.0
+    assert _significant(float("inf")) == float("inf")

@@ -57,6 +57,7 @@ COMMANDS = [
     ["schema"],
     ["schema", "--format", "odcs"],
     ["analyze"],
+    ["stats"],
     ["stats", "--engine", "python"],
 ]
 
