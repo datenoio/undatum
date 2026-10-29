@@ -9,6 +9,7 @@ from ..options import (
     DuckdbMemoryOpt,
     DuckdbTempDirOpt,
     DuckdbThreadsOpt,
+    EngineOpt,
     ErrorLogOpt,
     FlattenNestedOpt,
     JsonOpt,
@@ -113,6 +114,7 @@ def validate(
         bool,
         typer.Option("--list-rules", help="List the built-in rules (format: ...) and exit."),
     ] = False,
+    engine: EngineOpt = None,
 ):
     """Validate data against validation rules.
 
@@ -178,6 +180,7 @@ def validate(
         "flatten_nested": flatten_nested,
         "max_nested_depth": max_nested_depth,
         "keep_nested_parents": keep_nested_parents,
+        "engine": engine,
     }
     acmd = Validator()
     acmd.validate(input_file, options)

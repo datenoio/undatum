@@ -104,6 +104,22 @@ Example rule files are available in `examples/validation-rules/`:
 - `cross-field-validation.yml` - Cross-field validation examples
 - `complex-validation.yml` - Comprehensive validation scenario
 
+**Engines:**
+- For CSV and TSV files, `--engine auto` (the default) checks a rule file as one DuckDB query,
+  about 4× faster on large files (1M rows: 1.4 s instead of 5.8 s).
+- It reports the same violations, in the same order and with the same messages, as the Python
+  engine, which `--engine python` selects.
+- It applies to field rules made of `required`, `type`, `references`, `unique`, `min`/`max`,
+  `min_length`/`max_length`, `enum` and `pattern`.
+- The file is checked record by record in Python when:
+  - a rule uses `format` or `custom`, or is a cross-field rule;
+  - a pattern uses `\w`, `\s`, `\b` or a construct DuckDB's regular expressions lack (Python
+    reads them differently);
+  - a value is a number only Python reads (digits or spaces outside ASCII);
+  - the `--filter` has no SQL form;
+  - the input is not CSV or TSV.
+- `undatum quality --rules` uses the same query.
+
 #### Legacy Mode (Backward Compatible)
 
 Simple single-rule validation for quick checks:
@@ -140,7 +156,7 @@ undatum validate --rule ru.org.inn --fields VendorINN data.jsonl --mode invalid
 
 ## Reference
 
-**Reads:** any readable format · **Writes:** validation report or the (in)valid rows · **Memory:** streaming · **Engines:** python
+**Reads:** any readable format · **Writes:** validation report or the (in)valid rows · **Memory:** streaming · **Engines:** auto, duckdb, python
 
 ```text
 undatum validate [OPTIONS] [INPUT_FILE]
@@ -181,6 +197,7 @@ undatum validate [OPTIONS] [INPUT_FILE]
 | `--keep-nested-parents` / `--no-keep-nested-parents` | With --flatten-nested, keep parent dict/array fields alongside dotted children. | `--keep-nested-parents` |
 | `--json` | Print the result as one JSON document (same as --format-out json). |  |
 | `--list-rules` | List the built-in rules (format: ...) and exit. |  |
+| `-e`, `--engine` [auto\|duckdb\|python] | Processing engine: auto (default), duckdb, or python. |  |
 
 Deprecated spellings (removed in 2.0): `--output-format` → `--format-out`.
 

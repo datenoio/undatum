@@ -316,15 +316,27 @@ def _violations(
     severities = {"error": 0, "warning": 0, "info": 0}
     by_rule: dict[str, int] = {}
     sample: list[dict[str, Any]] = []
+
+    def count(violation: dict[str, Any]) -> None:
+        severities[violation["severity"]] = severities.get(violation["severity"], 0) + 1
+        by_rule[violation["rule"]] = by_rule.get(violation["rule"], 0) + 1
+        if len(sample) < SAMPLE_VIOLATIONS:
+            sample.append(violation)
+
+    from ..validate.sql import sql_violations
+
+    checked = sql_violations(path, rule_set, options)
+    if checked is not None:
+        rule_set.close()
+        for violation in checked[1]:
+            count(violation)
+        return severities, sample, by_rule
     try:
         for index, record in enumerate(RowSource(path, options)):
             if not isinstance(record, dict):
                 continue
             for violation in rule_set.validate_record(record, index):
-                severities[violation["severity"]] = severities.get(violation["severity"], 0) + 1
-                by_rule[violation["rule"]] = by_rule.get(violation["rule"], 0) + 1
-                if len(sample) < SAMPLE_VIOLATIONS:
-                    sample.append(violation)
+                count(violation)
     finally:
         rule_set.close()
     return severities, sample, by_rule

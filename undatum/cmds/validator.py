@@ -69,8 +69,24 @@ class Validator:
             self._validate_legacy(fromfile, options)
 
     def _validate_with_rules(self, fromfile, options, rules_file):
-        """Validate using rule file."""
+        """Validate using rule file.
+
+        CSV and TSV files are checked by one DuckDB query when every rule compiles
+        (:func:`~undatum.validate.sql.sql_violations`); otherwise record by record in Python.
+        """
         rule_set = parse_validation_rules(rules_file)
+
+        from ..common.engine_selector import validate_engine
+
+        if validate_engine(get_option(options, "engine")) != "python":
+            from ..validate.sql import sql_violations
+
+            checked = sql_violations(fromfile, rule_set, options)
+            if checked is not None:
+                rule_set.close()
+                logger.debug("validate: rules checked by DuckDB")
+                self._generate_validation_report(checked[1], checked[0], options)
+                return
 
         # Process records and collect violations
         all_violations = []
