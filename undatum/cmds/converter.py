@@ -626,6 +626,12 @@ class Converter:
             original = convert_core.open_iterable
 
             def wrapped(*args, **kwargs):
+                from ..common.s3_iterable import _open_spreadsheet
+
+                # Spreadsheets are read by fastexcel, as in the other commands
+                spreadsheet = _open_spreadsheet(args, kwargs)
+                if spreadsheet is not None:
+                    return spreadsheet
                 iterable = original(*args, **kwargs)
                 mode = kwargs.get("mode")
                 if mode is None and len(args) >= 2:

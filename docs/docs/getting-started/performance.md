@@ -27,14 +27,15 @@ on 1M rows (see [benchmarks](/development/benchmarks)).
 
 ## Which commands use DuckDB
 
-DuckDB reads CSV, TSV, JSON, JSON Lines and Parquet (plain or `.gz`/`.zst`), and ORC and Arrow
-IPC/Feather v2 files through pyarrow. With the default `--engine auto`, these commands run on
-such inputs as DuckDB queries, which spill to disk on their own. Aggregations and sorts use
-every core; row commands use one thread, since reading and writing bound them. Other inputs,
-and options DuckDB cannot apply (`--table`, `--sheet`, `--flatten-nested`,
-`--on-error skip|warn`, XML tags), use the Python engine.
+DuckDB reads CSV, TSV, JSON, JSON Lines and Parquet (plain or `.gz`/`.zst`), ORC and Arrow
+IPC/Feather v2 files through pyarrow, and spreadsheets (xlsx, xlsm, xls, xlsb, ods) through
+fastexcel. With the default `--engine auto`, these commands run on such inputs as DuckDB
+queries, which spill to disk on their own. Aggregations and sorts use every core; row commands
+use one thread, since reading and writing bound them. Other inputs, and options DuckDB cannot
+apply (`--table` of a database, `--flatten-nested`, `--on-error skip|warn`, XML tags), use the
+Python engine; `--sheet`, `--table` and `--start-page` of a spreadsheet are applied by fastexcel.
 
-| Commands | With `--engine auto` | ORC, Arrow/Feather |
+| Commands | With `--engine auto` | ORC, Arrow/Feather, spreadsheets |
 |----------|----------------------|--------------------|
 | `rename`, `fill`, `replace`, `search`, `head`, `slice`, `select`, `--where`, `--add` | one DuckDB query for every step, with the records of the Python engine (contract tests) | DuckDB |
 | `convert` | one `COPY` for CSV and Parquet output, and for JSON Lines when the text equals the Python writer's | DuckDB |
@@ -78,6 +79,8 @@ Details:
   engine, whose text differs for them.
 - ORC and Arrow inputs are read stripe by stripe or batch by batch, so peak memory grows with
   the stripe size (about 400-470 MB for row commands on 1M rows).
+- A spreadsheet's sheet is read whole by fastexcel, for either engine (100k rows: `convert` to
+  Parquet 0.36 s and 152 MB, `frequency` 0.5 s; the previous openpyxl reader took 1.6-1.9 s).
 
 `dedup` and `reverse` use DuckDB only with `--engine duckdb`: DuckDB holds the records up to
 its memory limit (about 750 MB for 2M rows), while the default Python engine stays bounded

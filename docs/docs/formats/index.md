@@ -43,7 +43,7 @@ undatum formats list --capabilities --json
 | JSON (array/object) | yes | yes | limited | Prefer JSONL for large files |
 | Parquet | yes | yes | batched | Requires `pyarrow` (default dependency); codec profiles `fast`/`balanced`/`max` |
 | Arrow / Feather | yes | yes | batched | Native batch convert path in iterabledata 1.0.17+ |
-| Excel XLSX / XLS | yes | limited | sheet-based | `--table` / `--sheet` for a named sheet; `--start-page` for a 0-based index |
+| Excel XLSX / XLS | yes | limited | sheet-based | `--table` / `--sheet` for a named sheet; `--start-page` for a 0-based index; read with typed values (see below) |
 | XML | yes | limited | yes | Use `--tagname` for record elements |
 | BSON | yes | yes | yes | |
 | AVRO | yes | yes | batched | Writable since iterabledata 1.0.14 (lazy schema inference) |
@@ -99,6 +99,17 @@ Parquet/ORC/AVRO with format-native compression. See [`repack`](/commands/repack
    other read commands); malformed rows raise `FormatParseError` unless you pass
    `--on-error skip` or `--on-error warn`. Pair with `--error-log errors.jsonl` to keep a JSONL
    record of skipped rows.
+6. **Spreadsheets have typed values.** xlsx, xlsm, xls, xlsb and ods files are read with
+   fastexcel, the same way by both engines:
+   - numbers are numbers: integers when every value of the column is whole, since Excel stores
+     only floating-point numbers;
+   - dates are dates when every value of the column is at midnight, else datetimes;
+   - booleans are booleans, and empty cells are null;
+   - formula cells give their cached results;
+   - a column without a header is named `__UNNAMED__<n>`;
+   - a column that mixes numbers and text is text.
+
+   Compressed workbooks (`.xlsx.gz`) are not read with fastexcel.
 
 For the authoritative list, always trust `undatum formats list --capabilities` for your
 installed version. Upstream release notes:
@@ -118,7 +129,7 @@ undatum supports **140+ formats** through iterabledata (exact catalog depends on
 | **JSON** | `.json` | Array or object documents |
 | **Parquet / ORC / Avro** | `.parquet`, `.orc`, `.avro` | Columnar and binary row formats; Avro is writable (iterabledata 1.0.14+) |
 | **Arrow / Feather** | `.arrow`, `.feather` | Bounded batch I/O; native batch convert path available |
-| **Excel** | `.xls`, `.xlsx`, `.xlsb`, `.ods` | Named sheet via `--table` / `--sheet`; `--start-page` for a 0-based index |
+| **Excel** | `.xls`, `.xlsx`, `.xlsm`, `.xlsb`, `.ods` | Named sheet via `--table` / `--sheet`; `--start-page` for a 0-based index; `--start-line` skips rows before the header |
 | **BSON** | `.bson` | Binary JSON (MongoDB) |
 | **DuckDB / SQLite** | `.ddb`, `.duckdb`, `.sqlite`, `.db` | Table name defaults from output filename when omitted |
 

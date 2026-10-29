@@ -122,20 +122,11 @@ def test_duckdb_reads_the_arrow_input(source, caplog):
     assert any("read through Arrow" in message for message in caplog.messages)
 
 
-@pytest.mark.parametrize("name", ["in.xlsx", "in.avro"])
-def test_formats_without_an_arrow_reader_use_python(tmp_path, name):
-    path = tmp_path / name
-    if name.endswith(".xlsx"):
-        import openpyxl
+def test_formats_without_an_arrow_reader_use_python(tmp_path):
+    from undatum.common.writer import write_records
 
-        book = openpyxl.Workbook()
-        book.active.append(["n", "city"])
-        book.active.append([1, "Berlin"])
-        book.save(path)
-    else:
-        from undatum.common.writer import write_records
-
-        write_records(str(path), [{"n": row["n"], "city": row["city"]} for row in ROWS[:3]])
+    path = tmp_path / "in.avro"
+    write_records(str(path), [{"n": row["n"], "city": row["city"]} for row in ROWS[:3]])
     assert RowSource(str(path), {}).arrow_reader() is None
     assert not RowSource(str(path), {}).duckdb_readable()
 

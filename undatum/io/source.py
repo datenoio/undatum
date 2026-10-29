@@ -23,7 +23,9 @@ logger = logging.getLogger(__name__)
 _PYTHON_ONLY_OPTIONS = ("table", "sheet", "flatten_nested", "tagname", "start_line", "trust")
 # Formats DuckDB does not read but pyarrow does (``pyarrow.dataset`` is not used: it imports
 # pandas, about 2 s).
-_ARROW_FORMATS = ("orc", "arrow")
+_ARROW_FORMATS = ("orc", "arrow", "xlsx", "xls", "xlsb", "ods")
+# Reader options that fastexcel applies to spreadsheets (sheet by name or index, header line).
+_SPREADSHEET_OPTIONS = ("table", "sheet", "start_line")
 # Names of the Arrow readers registered on DuckDB connections.
 _arrow_names = itertools.count()
 
@@ -40,6 +42,8 @@ class RowSource:
 
     path: str
     options: dict[str, Any] = field(default_factory=dict)
+    # A spreadsheet's sheet, read once (fastexcel parses the whole sheet).
+    _sheet: Any = field(default=None, init=False, repr=False, compare=False)
 
     def __iter__(self) -> Iterator[Any]:
         from ..common.s3_iterable import open_path
@@ -63,6 +67,11 @@ class RowSource:
         fast = format_from_name(self.path)
         if fast is not None:
             return fast
+        from .excel import EXCEL_EXTENSIONS
+
+        spreadsheet = EXCEL_EXTENSIONS.get(self.path.rsplit(".", 1)[-1].lower())
+        if spreadsheet is not None:
+            return spreadsheet, None
         from iterable.helpers.detect import detect_file_type
 
         try:
@@ -80,9 +89,18 @@ class RowSource:
         ``--on-error skip|warn``, XML tags)."""
         if "://" in self.path or not os.path.isfile(self.path):
             return True
-        if any(self.options.get(key) for key in _PYTHON_ONLY_OPTIONS):
+        options: tuple[str, ...] = _PYTHON_ONLY_OPTIONS
+        if any(self.options.get(key) for key in _SPREADSHEET_OPTIONS) and self._spreadsheet():
+            options = tuple(key for key in options if key not in _SPREADSHEET_OPTIONS)
+        if any(self.options.get(key) for key in options):
             return True
         return self.options.get("on_error") in ("skip", "warn")
+
+    def _spreadsheet(self) -> bool:
+        """Whether this is an uncompressed Excel or OpenDocument spreadsheet (fastexcel)."""
+        from .excel import EXCEL_FORMATS
+
+        return self.format_id in EXCEL_FORMATS and self._detected()[1] in (None, "raw")
 
     def duckdb_from(self) -> str | None:
         """Return a DuckDB ``FROM`` expression for this source, or ``None``.
@@ -116,10 +134,11 @@ class RowSource:
     def arrow_reader(self, columns: list[str] | None = None) -> Any | None:
         """A new ``pyarrow.RecordBatchReader`` over the input, or ``None``.
 
-        For formats DuckDB does not read but pyarrow does: ORC (stripe by stripe) and Arrow
-        IPC/Feather v2 files or streams (memory-mapped). ``None`` for other formats,
-        compressed or remote files, options only the Python reader applies, and files pyarrow
-        cannot open (Feather v1, ORC without pyarrow ORC support).
+        For formats DuckDB does not read but pyarrow does: ORC (stripe by stripe), Arrow
+        IPC/Feather v2 files or streams (memory-mapped), and spreadsheets (xlsx, xls, xlsb,
+        ods: the sheet read by fastexcel, see :func:`~undatum.io.excel.excel_table`). ``None``
+        for other formats, compressed or remote files, options only the Python reader applies,
+        and files pyarrow cannot open (Feather v1, ORC without pyarrow ORC support).
 
         Args:
             columns: Read only these top-level columns (DuckDB cannot select the columns of
@@ -134,6 +153,13 @@ class RowSource:
         try:
             import pyarrow as pa
 
+            if fmt not in ("orc", "arrow"):
+                from .excel import excel_table
+
+                if self._sheet is None:
+                    self._sheet = excel_table(self.path, get_iterable_options(self.options))
+                table = self._sheet if columns is None else self._sheet.select(columns)
+                return pa.RecordBatchReader.from_batches(table.schema, table.to_batches())
             if fmt == "orc":
                 from pyarrow import orc
 

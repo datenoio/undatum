@@ -31,6 +31,7 @@ requirements:
     - python >=3.11
     - avro >=1.11.3,<2
     - python-duckdb >=2.0,<3
+    - fastexcel >=0.21,<1
     - iterabledata >=1.0.21,<1.1
     - lz4 >=4.3.2,<5
     - openpyxl >=3.1.2,<4

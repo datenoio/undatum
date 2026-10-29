@@ -36,6 +36,8 @@ dependencies = [
     # scripts/check_dependency_bounds.py enforces this.
     "avro>=1.11.3,<2",
     "duckdb>=2.0,<3",
+    # Reads xlsx, xlsm, xls, xlsb and ods into Arrow (Rust, calamine).
+    "fastexcel>=0.21,<1",
     "iterabledata>=1.0.21,<1.1",
     "lz4>=4.3.2,<5",
     "openpyxl>=3.1.2,<4",

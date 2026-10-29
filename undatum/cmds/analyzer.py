@@ -18,7 +18,6 @@ from collections import OrderedDict
 from typing import Any
 
 import duckdb
-import xlrd
 import xmltodict
 import yaml
 from pydantic import BaseModel
@@ -42,6 +41,7 @@ from ..common.schema_utils import duckdb_decompose
 from ..common.tables import format_table
 from ..formats.docx import analyze_docx
 from ..io.arrow import import_pandas, records_table
+from ..io.excel import EXCEL_FORMATS
 from ..utils import detect_encoding, get_dict_value, get_option
 
 logger = logging.getLogger(__name__)
@@ -631,61 +631,29 @@ def analyze(
                     report.tables.append(table)
                 report.total_records = total
                 report.total_tables = len(report.tables)
-            elif filetype == "xlsx":
-                from openpyxl import load_workbook
+            elif filetype in EXCEL_FORMATS:
+                # Typed records of each sheet, read by fastexcel as in the other commands
+                from ..io.excel import excel_table, sheet_names
 
-                wb = load_workbook(filename, read_only=True, data_only=True)
-                total = 0
-                for sheetname in _selected_sheet_names(list(wb.sheetnames), table_name, start_page):
-                    sheet = wb[sheetname]
-                    objects = []
-                    max_num = min(objects_limit, sheet.max_row or 0)
-                    for row in sheet.iter_rows(max_row=max_num, values_only=True):
-                        objects.append([str(cell) if cell is not None else "" for cell in row])
-                    table = table_from_objects(
-                        objects,
-                        table_id=sheetname,
-                        objects_limit=objects_limit,
-                        use_pandas=use_pandas,
-                        filetype="csv",
-                        autodoc=autodoc,
-                        lang=lang,
-                        ai_service=ai_service,
-                        stats=stats,
-                    )
-                    total += table.num_records
-                    report.tables.append(table)
-                report.total_records = total
-                report.total_tables = len(report.tables)
-            elif filetype == "xls":
-                wb = xlrd.open_workbook(filename)
                 total = 0
                 for sheetname in _selected_sheet_names(
-                    list(wb.sheet_names()), table_name, start_page
+                    sheet_names(filename), table_name, start_page
                 ):
-                    sheet = wb.sheet_by_name(sheetname)
-                    objects = []
-                    max_num = objects_limit if objects_limit < sheet.nrows else sheet.nrows
-                    for n in range(0, max_num):
-                        tmp = []
-                        for i in range(0, sheet.ncols):
-                            cell_value = sheet.cell_value(n, i)
-                            get_col = str(cell_value)
-                            tmp.append(get_col)
-                        objects.append(tmp)
+                    sheet = excel_table(filename, {"table": sheetname})
                     table = table_from_objects(
-                        objects,
+                        sheet.slice(0, objects_limit).to_pylist(),
                         table_id=sheetname,
                         objects_limit=objects_limit,
                         use_pandas=use_pandas,
-                        filetype="csv",
+                        filetype="jsonl",
                         autodoc=autodoc,
                         lang=lang,
                         ai_service=ai_service,
                         stats=stats,
                     )
-                    report.tables.append(table)
+                    table.num_records = sheet.num_rows
                     total += table.num_records
+                    report.tables.append(table)
                 report.total_records = total
                 report.total_tables = len(report.tables)
             elif filetype == "xml":

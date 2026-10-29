@@ -161,5 +161,5 @@ class TestAnalyzeXlsx:
         report = analyze(sample_xlsx, engine="iterable", stats=False)
         assert report.success is True
         assert len(report.tables) == 1
-        assert report.tables[0].num_records == 4
+        assert report.tables[0].num_records == 3  # the header is not a record
         assert report.tables[0].num_cols >= 2

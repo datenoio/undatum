@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
 
-_EXCEL_FORMATS = {"xlsx", "xls", "ods"}
+_EXCEL_FORMATS = {"xlsx", "xls", "xlsb", "ods"}
 _CODEC_PROFILES = ("fast", "balanced", "max")
 _WRITE_MODES = ("append", "overwrite", "error", "ignore", "create")
 _ON_ERROR_POLICIES = ("raise", "skip", "warn")
@@ -603,6 +603,13 @@ def list_source_tables(filename: str | None) -> list[str] | None:
     """
     if not filename:
         return None
+    from ..io.excel import excel_format, sheet_names
+
+    if excel_format(filename):
+        try:
+            return sheet_names(filename) or None
+        except Exception:  # noqa: BLE001 - listing is best-effort
+            return None
     try:
         from iterable.ai.fileinfo import list_tables
 
@@ -624,6 +631,11 @@ def _list_source_tables(filename: str | None) -> list[str] | None:
 def _source_format_id(filename: str | None) -> str | None:
     if not filename:
         return None
+    from ..io.excel import excel_format
+
+    spreadsheet = excel_format(filename)
+    if spreadsheet:
+        return spreadsheet
     try:
         from iterable.helpers.detect import detect_file_type
 
