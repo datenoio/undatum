@@ -183,7 +183,9 @@ dev = [
     "types-PyYAML",
     "types-requests",
     "types-PyMySQL",
-    "pytest>=8",
+    # pytest 9.2 removed Function._nodeid, which pytest-benchmark 5.3.0 still reads
+    # (ionelmc/pytest-benchmark#321); lift the bound once a fixed release is out.
+    "pytest>=8,<9.2",
     "pytest-cov>=5",
     "pytest-benchmark>=4",
     "pre-commit>=3.7",
