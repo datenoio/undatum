@@ -131,6 +131,7 @@ undatum analyze [OPTIONS] INPUT_FILE
 | `--duckdb-memory` TEXT | Memory limit for DuckDB (e.g., '4GB', '512MB'). |  |
 | `--duckdb-temp-dir` TEXT | Temporary directory for DuckDB. |  |
 | `--json` | Print the result as one JSON document (same as --format-out json). |  |
+| `--cache` / `--no-cache` | Reuse the result kept in ~/.undatum/cache for an unchanged file (default: on; UNDATUM_CACHE=0 or 'defaults: cache: false' in a config file turn it off). |  |
 
 Deprecated spellings (removed in 2.0): `--objects-limit` → `--limit`, `--outtype` → `--format-out`.
 

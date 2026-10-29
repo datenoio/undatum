@@ -23,6 +23,7 @@ CLI_DEFAULT_KEYS = (
     "delimiter",
     "quotechar",
     "format_out",
+    "cache",
 )
 
 _TRUTHY = {"1", "true", "yes", "on"}
@@ -60,7 +61,7 @@ def _defaults_from_mapping(config: dict[str, Any]) -> dict[str, Any]:
                 out[key] = int(value)
             except (TypeError, ValueError):
                 continue
-        elif key == "progress":
+        elif key in ("progress", "cache"):
             if isinstance(value, bool):
                 out[key] = value
             elif isinstance(value, str) and value.strip().lower() in _TRUTHY | _FALSY:
@@ -81,13 +82,14 @@ def _env_defaults() -> dict[str, Any]:
             out["threads"] = int(threads)
         except ValueError:
             pass
-    progress = os.getenv("UNDATUM_PROGRESS")
-    if progress is not None and progress.strip() != "":
-        lowered = progress.strip().lower()
-        if lowered in _TRUTHY:
-            out["progress"] = True
-        elif lowered in _FALSY:
-            out["progress"] = False
+    for key, name in (("progress", "UNDATUM_PROGRESS"), ("cache", "UNDATUM_CACHE")):
+        value = os.getenv(name)
+        if value is not None and value.strip() != "":
+            lowered = value.strip().lower()
+            if lowered in _TRUTHY:
+                out[key] = True
+            elif lowered in _FALSY:
+                out[key] = False
     encoding = os.getenv("UNDATUM_ENCODING")
     if encoding:
         out["encoding"] = encoding

@@ -312,6 +312,7 @@ def run(examples: list[Example], verbose: bool = False) -> list[str]:
         "COLUMNS": "120",
     }
     with tempfile.TemporaryDirectory(prefix="undatum-docs-") as tmp:
+        env["UNDATUM_CACHE_DIR"] = str(pathlib.Path(tmp) / "cache")  # not ~/.undatum/cache
         fixtures = pathlib.Path(tmp) / "fixtures"
         fixtures.mkdir()
         make_fixtures(fixtures)

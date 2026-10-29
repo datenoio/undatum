@@ -8,6 +8,7 @@ import typer
 
 from ..common import enable_verbose
 from ..options import (
+    CacheOpt,
     DuckdbMemoryOpt,
     DuckdbTempDirOpt,
     DuckdbThreadsOpt,
@@ -151,6 +152,7 @@ def headers(
     max_nested_depth: MaxNestedDepthOpt = None,
     keep_nested_parents: KeepNestedParentsOpt = True,
     json_output: JsonOpt = False,
+    cache: CacheOpt = None,
 ):
     """Returns fieldnames of the file. Supports XML, CSV, JSON, BSON.
 
@@ -180,6 +182,9 @@ def headers(
         "keep_nested_parents": keep_nested_parents,
     }
     acmd = Selector()
+    from ...common.cache import cli_cache_option
+
+    options["cache"] = cli_cache_option(cache)
     acmd.headers(input_file, options)
 
 
@@ -240,6 +245,7 @@ def stats(
     duckdb_memory: DuckdbMemoryOpt = None,
     duckdb_temp_dir: DuckdbTempDirOpt = None,
     json_output: JsonOpt = False,
+    cache: CacheOpt = None,
 ):
     """Generate detailed statistics about a dataset.
 
@@ -278,6 +284,9 @@ def stats(
         "error_log": error_log,
     }
     acmd = StatProcessor(nodates=not checkdates)
+    from ...common.cache import cli_cache_option
+
+    options["cache"] = cli_cache_option(cache)
     acmd.stats(input_file, options)
 
 
@@ -413,6 +422,7 @@ def count(
     duckdb_temp_dir: DuckdbTempDirOpt = None,
     json_output: JsonOpt = False,
     where: WhereOpt = None,
+    cache: CacheOpt = None,
 ):
     """Count the number of rows in a data file.
 
@@ -441,6 +451,9 @@ def count(
         "format_out": "json" if json_output else format_out,
     }
     acmd = Counter()
+    from ...common.cache import cli_cache_option
+
+    options["cache"] = cli_cache_option(cache)
     acmd.count(input_file, options)
 
 
@@ -643,6 +656,7 @@ def sniff(
     max_nested_depth: MaxNestedDepthOpt = None,
     keep_nested_parents: KeepNestedParentsOpt = True,
     json_output: JsonOpt = False,
+    cache: CacheOpt = None,
 ):
     """Detect file properties (delimiter, encoding, types, record count).
 
@@ -670,6 +684,9 @@ def sniff(
         "keep_nested_parents": keep_nested_parents,
     }
     acmd = Sniffer()
+    from ...common.cache import cli_cache_option
+
+    options["cache"] = cli_cache_option(cache)
     acmd.sniff(input_file, options)
 
 

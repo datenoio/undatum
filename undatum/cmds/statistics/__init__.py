@@ -27,13 +27,18 @@ class StatProcessor(DuckDBStatsMixin, IterableStatsMixin):
     """Statistical processing handler."""
 
     def __init__(self, nodates=True):
-        if nodates:
-            self.qd = None
-        else:
+        self._nodates = nodates
+        self._qd = None
+        self.types = TypeGuesser(None)
+
+    @property
+    def qd(self):
+        """The qddate parser (``--checkdates``), built on first use: it takes ~0.7 s."""
+        if self._qd is None and not self._nodates:
             from qddate import DateParser
 
-            self.qd = DateParser(generate=True)
-        self.types = TypeGuesser(self.qd)
+            self._qd = DateParser(generate=True)
+        return self._qd
 
     def stats(self, fromfile, options):
         """Produces statistics and structure analysis of JSONlines, BSON or CSV file and produces stats.
@@ -48,7 +53,6 @@ class StatProcessor(DuckDBStatsMixin, IterableStatsMixin):
                 - no_progress: Disable progress bar
                 - Other iterable options (delimiter, encoding, etc.)
         """
-        self.types = TypeGuesser(self.qd)  # per file: date probes are per field name
         # Get engine preference and detect appropriate engine
         engine = get_option(options, "engine") or "auto"
         filetype = get_option(options, "format_in")
@@ -84,6 +88,41 @@ class StatProcessor(DuckDBStatsMixin, IterableStatsMixin):
         except PermissionError as e:
             raise PermissionError(fromfile, operation="read") from e
 
+        from ...common.cache import cache_enabled, cached
+
+        if cache_enabled(options) and format_out not in {"json", "html", "markdown"}:
+            # The engines print the text table as they finish; a cached profile has none, so
+            # compute quietly and print the table from the profile, cached or not.
+            quiet = {**options, "quiet": True}
+            profile = cached(
+                "stats",
+                fromfile,
+                options,
+                lambda: self._compute_profile(fromfile, quiet, detected_engine),
+            )
+            if not get_option(options, "quiet"):
+                self._display_enhanced_statistics_table(
+                    profile["debug"]["fielddata"],
+                    profile.get("fieldtypes") or {},
+                    profile.get("dictkeys") or [],
+                )
+        else:
+            profile = cached(
+                "stats",
+                fromfile,
+                options,
+                lambda: self._compute_profile(fromfile, options, detected_engine),
+            )
+
+        if format_out == "json":
+            _emit_stats_json(profile, output)
+        elif format_out in {"html", "markdown"}:
+            _emit_stats_report(profile, format_out, output)
+        return profile
+
+    def _compute_profile(self, fromfile, options, detected_engine):
+        """The stats profile of ``fromfile`` on ``detected_engine`` (DuckDB falls back to Python)."""
+        self.types = TypeGuesser(self.qd)  # per file: date probes are per field name
         profile = None
         # Use DuckDB engine if selected
         if detected_engine == "duckdb":
@@ -131,11 +170,6 @@ class StatProcessor(DuckDBStatsMixin, IterableStatsMixin):
                 field="engine",
                 suggestions=["auto", "duckdb", "python"],
             )
-
-        if format_out == "json":
-            _emit_stats_json(profile, output)
-        elif format_out in {"html", "markdown"}:
-            _emit_stats_report(profile, format_out, output)
         return profile
 
 

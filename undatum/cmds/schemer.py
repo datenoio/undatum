@@ -51,8 +51,8 @@ class FieldSchema(BaseModel):
     ftype: str
     is_array: bool = False
     description: str | None = None
-    sem_type: str = None
-    sem_url: str = None
+    sem_type: str | None = None
+    sem_url: str | None = None
 
 
 class TableSchema(BaseModel):
@@ -785,8 +785,17 @@ class Schemer:
                 _write_schema_validation(report, options, sys.stdout)
             return report
 
+        from ..common.cache import cached
+
         engine = options.get("engine", "auto")
-        table = build_schema(fromfile, engine=engine, options=options)
+        table = cached(
+            "schema",
+            fromfile,
+            options,
+            lambda: build_schema(fromfile, engine=engine, options=options),
+            load=TableSchema.model_validate,
+            dump=lambda result: result.model_dump(),
+        )
 
         # Apply AI documentation if requested
         if options.get("autodoc"):

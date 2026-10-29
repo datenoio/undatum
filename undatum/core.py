@@ -19,6 +19,7 @@ from typer.core import TyperGroup
 from . import __version__
 from .cli.ai_cli import ai_app
 from .cli.api_cli import api_app
+from .cli.cache_cli import cache_app
 from .cli.commands import data_app
 from .cli.common import (
     configure_logging,
@@ -353,6 +354,7 @@ app.command("web")(web_command)
 app.add_typer(ai_app, name="ai")
 app.add_typer(package_app, name="package")
 app.add_typer(api_app, name="api")
+app.add_typer(cache_app, name="cache")
 app.add_typer(config_app, name="config")
 app.add_typer(pipeline_app, name="pipeline")
 app.add_typer(db_app, name="db")

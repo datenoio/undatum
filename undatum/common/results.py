@@ -1,7 +1,7 @@
 """Machine-readable results of informational commands.
 
 Informational commands (``count``, ``headers``, ``sniff``, ``stats``, ``schema``, ``diff``,
-``validate``, ``analyze``, ``formats list``, ``config show``, ``commands``) print one JSON document with
+``validate``, ``analyze``, ``formats list``, ``config show``, ``commands``, ``cache list``) print one JSON document with
 ``--json`` or ``--format-out json``. Its ``schema`` key names the layout and its major version,
 for example ``undatum.count/1``; an incompatible change (a removed or renamed key, a changed
 type) raises the version. :data:`SCHEMAS` documents every layout; the documentation site
@@ -405,6 +405,21 @@ EXTENSIONS = _register(
             ),
         },
         ("directory", "extensions"),
+    )
+)
+CACHE = _register(
+    ResultSchema(
+        "undatum.cache/1",
+        "cache list",
+        "Cached command results",
+        {
+            "directory": ("string", "Cache directory"),
+            "entries": (
+                "array",
+                "Cached files: path, size, mtime, stale, bytes, results (command, created, bytes)",
+            ),
+        },
+        ("directory", "entries"),
     )
 )
 CONFIG = _register(

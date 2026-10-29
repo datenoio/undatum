@@ -28,7 +28,7 @@ defaults:
   format_out: json
 ```
 
-`defaults:` keys: `engine`, `threads`, `progress`, `encoding`, `delimiter`, `quotechar`, `format_out`.
+`defaults:` keys: `engine`, `threads`, `progress`, `encoding`, `delimiter`, `quotechar`, `format_out`, `cache` (see [`cache`](/commands/cache)).
 
 ### Precedence
 
@@ -43,6 +43,7 @@ defaults:
 | `UNDATUM_DELIMITER` | `defaults.delimiter` |
 | `UNDATUM_QUOTECHAR` | `defaults.quotechar` |
 | `UNDATUM_FORMAT_OUT` | `defaults.format_out` |
+| `UNDATUM_CACHE` | `defaults.cache` |
 
 **AI settings** (`ai:`): environment, then the first config file found (`./undatum.yaml` preferred over `~/.undatum/config.yaml`), then CLI flags. Provider API keys (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, ...) apply to `ai *` and every `--autodoc` command. `pii_mask_samples: true|false` overrides the default masking of AI samples (masked for remote providers). See [AI documentation](/integrations/ai).
 

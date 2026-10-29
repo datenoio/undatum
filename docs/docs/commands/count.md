@@ -60,6 +60,7 @@ undatum count [OPTIONS] INPUT_FILE
 | `--duckdb-temp-dir` TEXT | Temporary directory for DuckDB. |  |
 | `--json` | Print the result as one JSON document (same as --format-out json). |  |
 | `--where` TEXT | Keep records where this SQL condition is true (DuckDB syntax), e.g. "amount &gt; 100 AND city = 'Berlin'". Text values are typed automatically. |  |
+| `--cache` / `--no-cache` | Reuse the result kept in ~/.undatum/cache for an unchanged file (default: on; UNDATUM_CACHE=0 or 'defaults: cache: false' in a config file turn it off). |  |
 
 Deprecated spellings (removed in 2.0): `--filetype` → `--format-in`.
 

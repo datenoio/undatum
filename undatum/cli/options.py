@@ -104,6 +104,17 @@ DuckdbMemoryOpt = Annotated[
 
 DuckdbTempDirOpt = Annotated[str | None, typer.Option(help="Temporary directory for DuckDB.")]
 
+CacheOpt = Annotated[
+    bool | None,
+    typer.Option(
+        "--cache/--no-cache",
+        help=(
+            "Reuse the result kept in ~/.undatum/cache for an unchanged file (default: on; "
+            "UNDATUM_CACHE=0 or 'defaults: cache: false' in a config file turn it off)."
+        ),
+    ),
+]
+
 JsonOpt = Annotated[
     bool,
     typer.Option(

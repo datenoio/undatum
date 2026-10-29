@@ -6,6 +6,7 @@ import typer
 
 from ..common import AI_PROVIDER_HELP, AIMaskSamplesOpt, build_ai_config, enable_verbose
 from ..options import (
+    CacheOpt,
     DocMaskSamplesOpt,
     DuckdbMemoryOpt,
     DuckdbTempDirOpt,
@@ -152,6 +153,7 @@ def analyze(
     duckdb_memory: DuckdbMemoryOpt = None,
     duckdb_temp_dir: DuckdbTempDirOpt = None,
     json_output: JsonOpt = False,
+    cache: CacheOpt = None,
 ):
     """Analyzes given data file and returns human readable insights.
 
@@ -195,6 +197,9 @@ def analyze(
         "keep_nested_parents": keep_nested_parents,
     }
     acmd = Analyzer()
+    from ...common.cache import cli_cache_option
+
+    options["cache"] = cli_cache_option(cache)
     acmd.analyze(input_file, options)
 
 
@@ -556,6 +561,7 @@ def schema(
     duckdb_memory: DuckdbMemoryOpt = None,
     duckdb_temp_dir: DuckdbTempDirOpt = None,
     json_output: JsonOpt = False,
+    cache: CacheOpt = None,
 ):
     """Extract schema from a data file.
 
@@ -596,6 +602,9 @@ def schema(
         "sample_size": sample_size,
     }
     acmd = Schemer()
+    from ...common.cache import cli_cache_option
+
+    options["cache"] = cli_cache_option(cache)
     result = acmd.extract_schema(input_file, options)
     if validate_schema and isinstance(result, dict) and not result.get("valid"):
         raise typer.Exit(code=1)

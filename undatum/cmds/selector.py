@@ -436,7 +436,9 @@ class Selector:
         """Print field names in file order (one per line, or JSON with ``format_out``)."""
         if options is None:
             options = {}
-        keys = header_names(fromfile, options)
+        from ..common.cache import cached
+
+        keys = cached("headers", fromfile, options, lambda: header_names(fromfile, options))
         output = get_option(options, "output")
         format_out = (get_option(options, "format_out") or "").lower()
         if not format_out and output and str(output).lower().endswith(".json"):

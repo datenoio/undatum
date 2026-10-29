@@ -348,6 +348,16 @@ DuckDB extensions undatum uses and whether they are installed. Printed by `undat
 | `directory` | string | yes | Extension directory |
 | `extensions` | array | yes | Extensions: name, purpose, installed, path, size (bytes); install adds downloaded |
 
+### `undatum.cache/1`
+
+Cached command results. Printed by `undatum cache list --json`. [JSON Schema](pathname:///schemas/undatum.cache.v1.json)
+
+| Key | Type | Always | Description |
+|-----|------|--------|-------------|
+| `schema` | string | yes | `undatum.cache/1` |
+| `directory` | string | yes | Cache directory |
+| `entries` | array | yes | Cached files: path, size, mtime, stale, bytes, results (command, created, bytes) |
+
 ### `undatum.config/1`
 
 Effective CLI configuration. Printed by `undatum config show --json`. [JSON Schema](pathname:///schemas/undatum.config.v1.json)

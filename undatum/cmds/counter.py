@@ -119,7 +119,9 @@ class Counter:
             raise FileNotFoundError(fromfile, find_similar_files(fromfile)) from e
         except PermissionError as e:
             raise PermissionError(fromfile, operation="read") from e
-        count = count_records(fromfile, options)
+        from ..common.cache import cached
+
+        count = cached("count", fromfile, options, lambda: count_records(fromfile, options))
         if str(options.get("format_out") or "").lower() == "json":
             from ..common.results import COUNT, emit
 

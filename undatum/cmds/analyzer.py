@@ -185,8 +185,8 @@ class FieldSchema(BaseModel):
     unique_count: int | None = None
     total_count: int | None = None
     uniqueness_pct: float | None = None
-    sem_type: str = None
-    sem_url: str = None
+    sem_type: str | None = None
+    sem_url: str | None = None
     semantic_types: list[dict] | None = None
     pii: bool | None = None
 
@@ -208,13 +208,13 @@ class ReportSchema(BaseModel):
     filename: str
     file_size: int
     file_type: str
-    compression: str = None
+    compression: str | None = None
     total_tables: int = 1
     total_records: int = -1
     tables: list[TableSchema] | None = []
     metadata: dict = {}
     success: bool = False
-    error: str = None
+    error: str | None = None
 
 
 MAX_SAMPLE_SIZE = 200
@@ -1007,25 +1007,40 @@ class Analyzer:
         except PermissionError as e:
             raise PermissionError(filename, operation="read") from e
 
-        report = analyze(
-            filename,
-            encoding=options.get("encoding"),
-            delimiter=options.get("delimiter"),
-            objects_limit=options.get("objects_limit", OBJECTS_ANALYZE_LIMIT),
-            scan=options.get("scan", True),
-            stats=options.get("stats", True),
-            engine=get_option(options, "engine") or "auto",
-            use_pandas=options.get("use_pandas") or False,
-            ignore_errors=options.get("ignore_errors", True),
-            autodoc=options.get("autodoc") or False,
-            lang=options.get("lang") or "English",
-            ai_provider=options.get("ai_provider"),
-            ai_config=options.get("ai_config"),
-            table_name=options.get("table"),
-            start_page=options.get("start_page") or 0,
-            trust=bool(options.get("trust")),
-            options=options,
-        )
+        def compute():
+            return analyze(
+                filename,
+                encoding=options.get("encoding"),
+                delimiter=options.get("delimiter"),
+                objects_limit=options.get("objects_limit", OBJECTS_ANALYZE_LIMIT),
+                scan=options.get("scan", True),
+                stats=options.get("stats", True),
+                engine=get_option(options, "engine") or "auto",
+                use_pandas=options.get("use_pandas") or False,
+                ignore_errors=options.get("ignore_errors", True),
+                autodoc=options.get("autodoc") or False,
+                lang=options.get("lang") or "English",
+                ai_provider=options.get("ai_provider"),
+                ai_config=options.get("ai_config"),
+                table_name=options.get("table"),
+                start_page=options.get("start_page") or 0,
+                trust=bool(options.get("trust")),
+                options=options,
+            )
+
+        from ..common.cache import cached
+
+        if options.get("autodoc"):  # the AI documentation is written anew every time
+            report = compute()
+        else:
+            report = cached(
+                "analyze",
+                filename,
+                options,
+                compute,
+                load=ReportSchema.model_validate,
+                dump=lambda result: result.model_dump(),
+            )
 
         options = dict(options)
         options["outtype"] = _resolve_analyze_outtype(options)
