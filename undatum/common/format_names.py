@@ -12,6 +12,9 @@ FAST_FORMATS = {
     "jsonl": "jsonl",
     "ndjson": "jsonl",
     "parquet": "parquet",
+    "orc": "orc",
+    "arrow": "arrow",
+    "feather": "arrow",
 }
 FAST_CODECS = {"gz": "gz", "zst": "zst", "zstd": "zst", "bz2": "bz2", "xz": "xz", "zip": "zip"}
 # Every format in FAST_FORMATS can be written by iterabledata.

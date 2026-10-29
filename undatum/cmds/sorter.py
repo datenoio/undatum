@@ -10,7 +10,7 @@ from ..common.command_utils import (
     iter_command_rows,
 )
 from ..common.duckdb_config import create_duckdb_connection, get_duckdb_config_from_options
-from ..common.engine_selector import detect_engine
+from ..common.engine_selector import detect_engine, engine_for_arrow
 from ..common.errors import (
     FileNotFoundError,
     PermissionError,
@@ -98,6 +98,7 @@ class Sorter:
 
         detected_engine = detect_engine(fromfile, engine, filetype, operation="sort")
         detected_engine = force_iterable_if_table(options, detected_engine)
+        detected_engine = engine_for_arrow(detected_engine, engine, RowSource(fromfile, options))
 
         # Initialize items for output handling
         items = []
@@ -109,7 +110,7 @@ class Sorter:
                 conn = create_duckdb_connection(**duckdb_config)
 
                 # The shared reader: escaped path, CSV dialect, doubled quotes, codecs.
-                read_expr = RowSource(fromfile, options).duckdb_from()
+                read_expr = RowSource(fromfile, options).duckdb_relation(conn)
                 if read_expr is None:
                     raise ValueError("DuckDB cannot read this input")
 

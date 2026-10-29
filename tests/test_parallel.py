@@ -263,5 +263,5 @@ class TestParallelWorkers:
         a = frequency_chunk(([{"city": "X"}, {"city": "X"}], ["city"], None))
         b = frequency_chunk(([{"city": "Y"}], ["city"], None))
         merged = merge_frequency_partials([a, b])
-        assert merged["X"] == 2
-        assert merged["Y"] == 1
+        assert merged[("X",)] == 2
+        assert merged[("Y",)] == 1

@@ -82,15 +82,15 @@ types.
 - **THEN** every command reports the field as a string
 
 ### Requirement: DuckDB Execution Through Arrow
-Operations with a SQL form SHALL run in DuckDB for inputs that DuckDB cannot read natively when
-iterabledata can stream the input as Arrow record batches, and the records SHALL be identical to
-those of the Python engine.
+Operations with a SQL form, `convert`, `sort`, `uniq` and `frequency` SHALL run in DuckDB for
+inputs that DuckDB cannot read natively when pyarrow reads them as Arrow record batches (ORC,
+Arrow IPC/Feather), and the records SHALL be identical to those of the Python engine.
 
-#### Scenario: Frequency on an Excel sheet
-- **WHEN** a user runs `undatum frequency book.xlsx -f region`
-- **THEN** DuckDB computes the counts from Arrow batches produced by iterabledata
-- **AND** the result equals the result of `--engine python`
+#### Scenario: Frequency on an ORC file
+- **WHEN** a user runs `undatum frequency events.orc -f region`
+- **THEN** DuckDB computes the counts from Arrow batches of the `region` column
+- **AND** the result equals the result of `--engine python`, including missing values
 
-#### Scenario: Format without an Arrow adapter
-- **WHEN** iterabledata cannot stream the input as Arrow batches
+#### Scenario: Format without an Arrow reader
+- **WHEN** pyarrow cannot read the input as Arrow batches (XLSX, Avro, Feather v1)
 - **THEN** the operation runs on the Python engine as before

@@ -355,6 +355,8 @@ class Converter:
 
         relation = None
         if (get_option(options, "engine") or "auto") != "python":
+            # Native readers only: partitioning queries the input twice, and an Arrow reader
+            # (RowSource.duckdb_relation) can be read once.
             relation = source.duckdb_from()
         if relation is not None:
             import duckdb
@@ -658,14 +660,16 @@ class Converter:
         if out_fmt != resolve_output_format(target):
             return None  # --format-out differs from the extension COPY would write
         source = RowSource(fromfile, options)
-        relation = source.duckdb_from()
-        if relation is None:
+        if not source.duckdb_readable():
             return None
         text_in = source.format_id in ("csv", "tsv")
         # A conversion streams: one thread keeps memory bounded (about 100-150 MB for millions
         # of rows) and is nearly as fast, since COPY preserves the input order.
         conn = duckdb_connection(options, "row")
         try:
+            relation = source.duckdb_relation(conn)
+            if relation is None:
+                return None
             described = conn.execute(f"DESCRIBE SELECT * FROM {relation}").fetchall()
             types = {str(row[0]): str(row[1]).upper() for row in described}
             if engine == "auto" and not duckdb_copy_keeps_values(

@@ -35,10 +35,14 @@
       by type against the Python writer; CSV `COPY` writes CRLF
 
 ## 6. Arrow bridge
-- [ ] 6.1 `RowSource.arrow_reader()` for formats with an iterabledata Arrow adapter
-- [ ] 6.2 Runner registers the reader in DuckDB when `duckdb_from()` is `None`
-- [ ] 6.3 Contract tests on XLSX, Avro and ORC inputs
-- [ ] 6.4 Remove the per-command DuckDB code paths covered by the ops registry
+- [x] 6.1 `RowSource.arrow_reader()` for ORC and Arrow IPC/Feather with pyarrow (iterabledata has
+      no Arrow reader API; kept in undatum until it has one)
+- [x] 6.2 The ops runner, `convert`, `sort`, `uniq` and `frequency` register the reader in DuckDB
+      when `duckdb_from()` is `None` (`RowSource.duckdb_relation()`)
+- [x] 6.3 Contract tests on ORC and Arrow/Feather inputs; XLSX and Avro have no Arrow reader and
+      stay on Python (Excel: decision 1.2)
+- [x] 6.4 `select` runs through the ops registry; its own DuckDB and Python paths are removed
+      (`sort`, `sample` and `join` have no SQL form in the registry yet)
 
 ## 7. SDK
 - [ ] 7.1 `count`, `head`, `uniq`, `frequency`, `schema` compile to SQL; reuse

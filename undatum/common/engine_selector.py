@@ -95,6 +95,22 @@ def detect_engine(
     return "iterable"
 
 
+def engine_for_arrow(detected: str, engine: str | None, source: Any) -> str:
+    """``duckdb`` instead of ``iterable`` with ``--engine auto`` when DuckDB reads ``source``
+    through Arrow (``RowSource.arrow_reader``: ORC, Arrow IPC/Feather), else ``detected``.
+
+    Args:
+        detected: Engine chosen by :func:`detect_engine`.
+        engine: Requested ``--engine`` value.
+        source: The input's ``RowSource``.
+    """
+    if detected == "iterable" and validate_engine(engine) == "auto":
+        if source.arrow_reader() is not None:
+            logger.debug("%s: read through Arrow by DuckDB", source.path)
+            return "duckdb"
+    return detected
+
+
 def _is_sql_expressible(operation: str) -> bool:
     """Check if an operation can be expressed in SQL.
 

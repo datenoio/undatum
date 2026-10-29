@@ -16,6 +16,7 @@ Upgrading: Python 3.11 or newer is required, and undatum now uses DuckDB 2.0. On
 
 ### Added
 
+- **DuckDB reads ORC and Arrow/Feather inputs** — `convert`, `sort`, `uniq`, `frequency`, `select` and the row operations (`rename`, `fill`, `dedup`, `head`, ...) scan ORC and Arrow IPC/Feather v2 files through pyarrow in DuckDB instead of the Python reader, with the same records: on 1M ORC rows `sort` to CSV takes 1.0 s instead of 8.3 s, `rename` to Parquet 0.6 s instead of 4.6 s, `convert` to Parquet 1.0 s instead of 4.2 s and `frequency` 0.8 s instead of 1.8 s. Peak memory grows with the ORC stripe size (about 400–470 MB instead of 130–300 MB for row commands on 1M rows; `sort` takes up to 1 GB, as DuckDB sorts do on other inputs). Excel, Avro and Feather v1 files keep the Python reader.
 - **Offline DuckDB extensions** — `UNDATUM_DUCKDB_EXTENSION_DIR` points DuckDB at preinstalled extensions on machines without network access; a command that needs a missing extension stops with exit code 2 and names it.
 - **`--duckdb-threads`, `--duckdb-memory` and `--duckdb-temp-dir` on every DuckDB-backed command** — `stats`, `count`, `uniq`, `analyze`, `schema`, `quality` and `schema-drift` gain the options. These commands used DuckDB's process-wide default connection and ignored limits, the temporary directory and `UNDATUM_DUCKDB_EXTENSION_DIR`; every command now opens its own connection with the same settings. Row-wise transforms keep one thread and 256 MB by default; aggregations, sorts and profiling use every core and DuckDB's memory limit.
 
@@ -28,6 +29,8 @@ Upgrading: Python 3.11 or newer is required, and undatum now uses DuckDB 2.0. On
 
 ### Fixed
 
+- **`uniq` and `frequency` with the Python engine** wrote missing values as the text `None`; they are empty CSV fields and JSON `null`, as with DuckDB.
+- **`select` without `--where`** ran its own DuckDB code, which wrote timestamps to CSV with `COPY` (text different from the Python engine's) and filtered typed columns differently; it runs the `select` operation, as with `--where`.
 - **DuckDB read expressions** — `uniq`, `frequency`, `sample`, `join` and `convert` built their DuckDB `read_csv` expressions without escaping the path or applying `--delimiter`; they now share one escaped builder, and `join` quotes key names with spaces or quotes.
 - **`convert --engine duckdb`** wrote `null` for empty CSV fields in JSON and Parquet output, wrote `.json` files as JSON Lines, and wrote the output in place instead of atomically.
 - Forward and backward fill now accept `0`, `0.0` and `False` as fallback values when no neighbour value exists.

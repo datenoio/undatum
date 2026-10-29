@@ -56,9 +56,19 @@ Polars 2.1 was compared with DuckDB on the same machine (review sections 4 and 5
 Polars stays an optional extra for SDK interchange through Arrow.
 
 ### Arrow is the interchange
-- **Formats DuckDB does not read.** iterabledata produces a `pyarrow.RecordBatchReader`, and
-  DuckDB scans it without a copy. Operations with a SQL form run on it, so one implementation
-  serves every format that has an Arrow adapter.
+- **Formats DuckDB does not read.** iterabledata has no Arrow reader API, so undatum reads the
+  formats pyarrow reads itself (`RowSource.arrow_reader()`: ORC stripe by stripe, Arrow
+  IPC/Feather files and streams memory-mapped; decided with the maintainer) and DuckDB scans the
+  `pyarrow.RecordBatchReader` without a copy. `pyarrow.dataset` is not used: importing it imports
+  pandas (2.5 s). A reader is read once, so each `RowSource.duckdb_relation()` serves one query;
+  a query that reads its input twice fails and falls back to Python (partitioned `convert` keeps
+  native readers for this reason). DuckDB cannot select a reader's columns, so `uniq` and
+  `frequency` ask for their fields only. Excel stays on the Python reader: openpyxl takes 4.4 of
+  the 4.6 s of `frequency` on 100k rows, and turning its rows into Arrow adds 0.65 s (decision 1.2
+  is open). Measured on 1M ORC rows against `--engine python`: `frequency` 1.8 s to 0.8 s,
+  `uniq` 3.1 s to 1.9 s, `sort` to CSV 8.3 s to 1.0 s, `rename` to Parquet 4.6 s to 0.6 s,
+  `convert` to Parquet 4.2 s to 1.0 s; peak memory grows with the stripe size (400–470 MB for row
+  commands instead of 130–300 MB).
 - **Output.** `COPY` writes CSV and Parquet, and JSON Lines when the text equals the Python
   writer's. Other formats and stdout take DuckDB's result batches through the existing
   iterabledata writers. Arrow batches were measured for this (1M rows, 8 columns): `fetchmany`
@@ -127,8 +137,9 @@ best balance (2M rows: 5.7 s / 1.29 GB; 100k x 61 columns: 4.0 s / 830 MB agains
   output from CSV to JSON.
 - **Memory of aggregations on all cores.** These run outside the streaming budget, as they do
   today. The benchmark budgets record their peak RSS.
-- **Arrow adapters missing in iterabledata.** Formats without one stay on the Python path.
-  iterabledata gains adapters format by format.
+- **Arrow adapters missing in iterabledata.** undatum reads ORC and Arrow/Feather with pyarrow
+  itself; other formats stay on the Python path until iterabledata gains Arrow readers, which can
+  then replace `RowSource.arrow_reader()`.
 - **DuckDB versions.** This change needs DuckDB 2.0's relation-to-Arrow API, so it lands after
   `update-python-311-duckdb-2`.
 

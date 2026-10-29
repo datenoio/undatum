@@ -156,8 +156,7 @@ def _run_sql(
 ) -> int | None:
     """Run ``steps`` in DuckDB; return the record count, or ``None`` to use Python."""
     names = " | ".join(op.name for op, _ in steps)
-    relation = source.duckdb_from()
-    if relation is None:
+    if not source.duckdb_readable():
         if required:
             logger.info("%s: input is not DuckDB-readable; using the Python engine", names)
         return None
@@ -174,6 +173,9 @@ def _run_sql(
         # input order; row transforms are bounded (see WORKLOAD_DEFAULTS).
         conn = duckdb_connection(source.options, "ordered" if holds_all_rows else "row")
         try:
+            relation = source.duckdb_relation(conn)
+            if relation is None:
+                return None
             query = compose_sql(conn, relation, steps)
             if query is None:
                 if required:

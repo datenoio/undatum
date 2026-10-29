@@ -187,36 +187,38 @@ def merge_stats_partials(
 
 def frequency_chunk(
     payload: tuple[list[Any], list[str], str | None],
-) -> dict[str, int]:
+) -> dict[tuple[str | None, ...], int]:
     """Count field-value frequencies for one chunk.
 
     Args:
         payload: ``(chunk, fields, filter_expr)``.
 
     Returns:
-        Mapping of tab-joined field values to counts.
+        Mapping of field values (text, ``None`` for missing values) to counts.
     """
     chunk, fields, filter_expr = payload
     from undatum.common.filter import match_filter
     from undatum.utils import field_values
 
-    valuedict: dict[str, int] = {}
+    valuedict: dict[tuple[str | None, ...], int] = {}
     for record in chunk:
         if filter_expr is not None and not match_filter(record, filter_expr):
             continue
         try:
             allvals = [field_values(record, field) for field in fields]
             for n1, _ in enumerate(allvals[0]):
-                k = "\t".join(str(allvals[n2][n1]) for n2, _ in enumerate(allvals))
+                k = tuple(None if values[n1] is None else str(values[n1]) for values in allvals)
                 valuedict[k] = valuedict.get(k, 0) + 1
         except (KeyError, IndexError, TypeError):
             continue
     return valuedict
 
 
-def merge_frequency_partials(partials: list[dict[str, int]]) -> dict[str, int]:
+def merge_frequency_partials(
+    partials: list[dict[tuple[str | None, ...], int]],
+) -> dict[tuple[str | None, ...], int]:
     """Merge frequency Counter-like dicts from parallel workers."""
-    merged: dict[str, int] = {}
+    merged: dict[tuple[str | None, ...], int] = {}
     for part in partials:
         for key, cnt in part.items():
             merged[key] = merged.get(key, 0) + cnt
