@@ -156,7 +156,7 @@ undatum validate [OPTIONS] [INPUT_FILE]
 | `-f`, `--fields` TEXT | Comma-separated list of field names to validate (legacy mode). |  |
 | `-d`, `--delimiter` TEXT | CSV delimiter character (auto-detected when omitted). |  |
 | `--quotechar` TEXT | CSV quote character (iterabledata default '"' when omitted). |  |
-| `--encoding` TEXT | File encoding (e.g., 'utf8', 'latin1'). | `utf8` |
+| `--encoding` TEXT | Input encoding (e.g., 'utf8', 'cp1251'); detected when omitted. |  |
 | `--verbose` / `--no-verbose` | Enable verbose logging output. | `--no-verbose` |
 | `-F`, `--format-in` TEXT | Override input file format detection (e.g., 'csv', 'jsonl'). |  |
 | `--zipfile` / `--no-zipfile` | Treat input file as a ZIP archive. | `--no-zipfile` |

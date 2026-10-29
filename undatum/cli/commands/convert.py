@@ -37,7 +37,10 @@ def convert(
         str | None,
         typer.Option(help="Output compression codec (e.g. 'brotli', 'snappy', 'gzip')."),
     ] = None,
-    encoding: Annotated[str, typer.Option(help="File encoding (e.g., 'utf8', 'latin1').")] = "utf8",
+    encoding: Annotated[
+        str | None,
+        typer.Option(help="Input encoding (e.g., 'utf8', 'cp1251'); detected when omitted."),
+    ] = None,
     verbose: Annotated[bool, typer.Option(help="Enable verbose logging output.")] = False,
     flatten_data: Annotated[
         bool, typer.Option(help="Flatten nested data structures into flat records.")
@@ -500,7 +503,10 @@ def flatten(
         str | None, typer.Option(help="CSV delimiter character (auto-detected when omitted).")
     ] = None,
     quotechar: QuoteCharOpt = None,
-    encoding: Annotated[str, typer.Option(help="File encoding (e.g., 'utf8', 'latin1').")] = "utf8",
+    encoding: Annotated[
+        str | None,
+        typer.Option(help="Input encoding (e.g., 'utf8', 'cp1251'); detected when omitted."),
+    ] = None,
     format_in: Annotated[
         str, typer.Option(help="Override input file format detection (e.g., 'jsonl', 'xml').")
     ] = None,
@@ -563,7 +569,10 @@ def split(
         str | None, typer.Option(help="CSV delimiter character (auto-detected when omitted).")
     ] = None,
     quotechar: QuoteCharOpt = None,
-    encoding: Annotated[str, typer.Option(help="File encoding (e.g., 'utf8', 'latin1').")] = "utf8",
+    encoding: Annotated[
+        str | None,
+        typer.Option(help="Input encoding (e.g., 'utf8', 'cp1251'); detected when omitted."),
+    ] = None,
     verbose: Annotated[bool, typer.Option(help="Enable verbose logging output.")] = False,
     format_in: Annotated[
         str, typer.Option(help="Override input file format detection (e.g., 'csv', 'jsonl').")

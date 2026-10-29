@@ -99,7 +99,7 @@ undatum convert [OPTIONS] INPUT_FILE OUTPUT
 | `-d`, `--delimiter` TEXT | CSV delimiter character (auto-detected when omitted). |  |
 | `--quotechar` TEXT | CSV quote character (iterabledata default '"' when omitted). |  |
 | `--compression` TEXT | Output compression codec (e.g. 'brotli', 'snappy', 'gzip'). |  |
-| `--encoding` TEXT | File encoding (e.g., 'utf8', 'latin1'). | `utf8` |
+| `--encoding` TEXT | Input encoding (e.g., 'utf8', 'cp1251'); detected when omitted. |  |
 | `--verbose` / `--no-verbose` | Enable verbose logging output. | `--no-verbose` |
 | `--flatten-data` / `--no-flatten-data` | Flatten nested data structures into flat records. | `--no-flatten-data` |
 | `--prefix-strip` / `--no-prefix-strip` | Strip XML namespace prefixes from element names. | `--prefix-strip` |

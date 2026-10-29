@@ -152,3 +152,43 @@ def test_failure_before_any_record_lets_the_caller_fall_back(capfd):
     with pytest.raises(duckdb.Error):
         write_query(_Connection(good_fetches=0), "SELECT v", None)
     assert capfd.readouterr().out == ""
+
+
+@pytest.mark.parametrize("engine", ["python", "auto"])
+def test_convert_detects_the_encoding(tmp_path, cp1251_csv, engine):
+    # --encoding is optional, as in the other commands (it was utf8 by default).
+    out = tmp_path / "out.jsonl"
+    result = runner.invoke(app, ["convert", "-e", engine, str(cp1251_csv), str(out)])
+    assert result.exit_code == 0, result.output
+    rows = [json.loads(line) for line in out.read_text(encoding="utf-8").splitlines()]
+    assert len(rows) == len(ROWS)
+    assert rows[0] == {"inn": ROWS[0][0], "name": "Компания 0", "amount": "0"}
+
+
+def test_convert_honours_an_explicit_encoding(tmp_path, cp1251_csv):
+    out = tmp_path / "out.jsonl"
+    args = ["convert", "-e", "python", "--encoding", "latin-1", str(cp1251_csv), str(out)]
+    result = runner.invoke(app, args)
+    assert result.exit_code == 0, result.output
+    first = json.loads(out.read_text(encoding="utf-8").splitlines()[0])
+    assert first["name"] == "Компания 0".encode("cp1251").decode("latin-1")
+
+
+def test_flatten_split_and_validate_detect_the_encoding(tmp_path, cp1251_csv, monkeypatch):
+    result = runner.invoke(app, ["flatten", str(cp1251_csv)])
+    assert result.exit_code == 0, result.output
+    assert "Компания 0" in result.output
+
+    parts = tmp_path / "parts"
+    parts.mkdir()
+    monkeypatch.chdir(parts)  # split -f writes <value>.csv here
+    result = runner.invoke(app, ["split", str(cp1251_csv), "-f", "amount"])
+    assert result.exit_code == 0, result.output
+    assert len(list(parts.glob("*.csv"))) == len(ROWS)
+    assert "Компания 7" in (parts / "7.csv").read_text(encoding="utf-8")
+
+    out = tmp_path / "valid.csv"
+    args = ["validate", str(cp1251_csv), "-f", "name", "--rule", "common.email", "-o", str(out)]
+    result = runner.invoke(app, args)
+    assert result.exit_code == 0, result.output
+    assert "Компания 0" in out.read_text(encoding="utf-8")

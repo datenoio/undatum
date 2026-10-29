@@ -35,6 +35,7 @@ Upgrading: Python 3.11 or newer is required, and undatum now uses DuckDB 2.0. On
 
 ### Fixed
 
+- **`convert`, `flatten`, `split`, `apply` and `validate` detect the input encoding** — their `--encoding` defaulted to `utf8`, so a Windows-1251 CSV failed with "'utf-8' codec can't decode" unless `--encoding cp1251` was given; like the other commands they now detect it when the option is omitted.
 - **Empty CSV fields on the DuckDB engine** — `head`, `select`, `sort`, `dedup`, `uniq`, `frequency`, `join` and the other commands DuckDB runs read empty CSV fields as missing values: JSON output had `null` where the Python engine writes `""`, `sort` put empty values last instead of first, and `join` dropped the records whose key was empty. Empty fields are now empty strings, as in the Python engine, and CSV files written by DuckDB leave them unquoted (DuckDB wrote `""`). `stats` still counts empty fields as missing values.
 - **CSV with `\r\r\n` line endings on the DuckDB engine** — DuckDB left the `\n` at the start of the next row (`"\n2"` instead of `"2"`); reads now end lines as the Python engine does (`\n`, `\r\n`, `\r` and `\r\r\n`).
 - **`uniq` and `frequency` on the DuckDB engine** listed values in no fixed order (`uniq`) and values with the same count in no fixed order (`frequency`). They now keep the order in which values first appear, as the Python engine and the SDK do. The query runs on one thread unless `--duckdb-threads` is given: on 1M rows it takes about 0.1 s longer and 25-30% less memory (`frequency` of a 1M-value field: 450 MB to 337 MB).
