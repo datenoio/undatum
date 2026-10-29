@@ -462,13 +462,52 @@ Same as `undatum convert --recursive`; `to_ext` is required unless
 Dataset.convert_many("./raw", "./out", to_ext="jsonl")
 ```
 
+### `Dataset.to_arrow(chunksize: int | None = None) -> Any`
+
+Convert to a `pyarrow.Table` (or an iterator of tables with `chunksize`).
+
+A plan DuckDB runs (see the module notes) is read by DuckDB straight into Arrow; other
+plans convert their records in batches. CSV fields stay text, as in the Python reader.
+
+| Parameter | Description |
+|-----------|-------------|
+| `chunksize` | Rows per table; `None` returns one table. |
+
+**Returns:** `pyarrow.Table`, or an iterator of tables of `chunksize` rows (the last may be shorter)
+
+**Raises:**
+
+- `UndatumError`: A field has values Arrow cannot hold in one column (numbers and text, for example); :meth:`to_pandas` accepts them.
+
+```python
+Dataset.read("data.parquet").select(["id", "name"]).to_arrow().num_rows
+1000
+```
+
 ### `Dataset.to_pandas(chunksize: int | None = None) -> Any`
 
 Convert to a pandas DataFrame (or an iterator of them with `chunksize`).
 
+The frames are built from Arrow (see :meth:`to_arrow`); records whose fields mix
+value types that Arrow cannot hold in one column become frames of Python objects.
+
+| Parameter | Description |
+|-----------|-------------|
+| `chunksize` | Rows per frame; `None` returns one frame. |
+
+**Returns:** `pandas.DataFrame`, or an iterator of frames of `chunksize` rows
+
 ### `Dataset.to_polars(chunksize: int | None = None) -> Any`
 
-Convert to a Polars DataFrame (needs `undatum[polars]`).
+Convert to a Polars DataFrame (or an iterator of them with `chunksize`).
+
+Needs `undatum[polars]`. The frames are built from Arrow, as in :meth:`to_pandas`.
+
+| Parameter | Description |
+|-----------|-------------|
+| `chunksize` | Rows per frame; `None` returns one frame. |
+
+**Returns:** `polars.DataFrame`, or an iterator of frames of `chunksize` rows
 
 ### `Dataset.to_dask(chunksize: int = 1000000) -> Any`
 

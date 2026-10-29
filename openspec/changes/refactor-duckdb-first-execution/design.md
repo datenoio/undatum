@@ -76,8 +76,22 @@ Polars stays an optional extra for SDK interchange through Arrow.
   Python values of HUGEINT, UUID, INTERVAL and MAP, so record writers keep `fetchmany`. The cost
   was the JSON conversion of every record, done twice (1.05 s per pass per 1M records); it is now
   done once, with a fast path for records of scalars (0.17 s).
-- **SDK.** `to_arrow()` returns a `pyarrow.Table` or `RecordBatchReader`; `to_polars()` and
-  `to_pandas()` wrap it.
+- **SDK.** `Dataset._sql()` composes the plan with `compose_sql` over
+  `RowSource.duckdb_relation()` (native readers and the Arrow bridge) for `write`, `count`,
+  `head`, `uniq`, `frequency`, `schema` and the exports. Methods that return records must give
+  the Python engine's values, so the relation is adjusted or refused: CSV is wrapped in
+  `COALESCE(column, '')` and used only when DuckDB's column names equal the header the Python
+  reader takes (a byte-order mark, repeated or padded names and misread headers fall back);
+  JSON is refused, because `read_json_auto` types strings as dates and joins integers and
+  floats; Parquet, ORC and Arrow columns must have types whose Python values are the same
+  (checked type by type: nanosecond and zoned timestamps, maps, intervals, UUIDs and Parquet
+  durations are not). `count` needs only the same rows, so JSON counts in DuckDB, and without
+  steps it is `undatum count`. `uniq` and `frequency` keep first-seen order with
+  `row_number() OVER ()` on one thread. `to_arrow()` returns a `pyarrow.Table` (or tables of
+  `chunksize` rows, re-batched to that size); other plans convert their records in batches,
+  and `to_pandas()`/`to_polars()` build a batch Arrow cannot type (a field mixing value types)
+  from its records. 1M CSV rows: `count` 10.2 s to 0.2 s, `uniq`/`frequency` 8 s to 0.2 s,
+  `filter(query=...).count()` 55 s to 0.07 s, `to_pandas()` 20.9 s to 0.9 s.
 
 ### Text and type semantics
 - **CSV stays text.** CSV is read with `all_varchar`. `--where`/`--add` keep their typed shadow

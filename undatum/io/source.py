@@ -167,6 +167,45 @@ class RowSource:
             logger.debug("%s: not readable with pyarrow: %s", self.path, exc)
             return None
 
+    def csv_header(self) -> list[str] | None:
+        """Field names the Python reader takes from the first line of a CSV or TSV file.
+
+        ``None`` when the source is not a local CSV/TSV file or its first line cannot be
+        read (a codec without its module, text that does not decode).
+        """
+        import csv
+        import io
+
+        from ..common.command_utils import resolve_csv_delimiter
+
+        if self._python_only():
+            return None
+        detected_format, codec = self._detected()
+        fmt = self.format_id or detected_format
+        if fmt not in ("csv", "tsv"):
+            return None
+        iterableargs = get_iterable_options(self.options)
+        delimiter = resolve_csv_delimiter(iterableargs, filename=self.path, filetype=fmt) or ","
+        encoding = iterableargs.get("encoding") or "utf-8"
+        try:
+            raw: Any
+            if codec in ("gz", "gzip"):
+                import gzip
+
+                raw = gzip.open(self.path, "rb")
+            elif codec == "zst":
+                import zstandard
+
+                raw = zstandard.ZstdDecompressor().stream_reader(open(self.path, "rb"))
+            else:
+                raw = open(self.path, "rb")
+            with io.TextIOWrapper(raw, encoding=encoding, newline="") as text:
+                quotechar = iterableargs.get("quotechar") or '"'
+                return next(csv.reader(text, delimiter=delimiter, quotechar=quotechar), [])
+        except Exception as exc:  # noqa: BLE001 - any failure leaves the Python reader
+            logger.debug("%s: header not readable: %s", self.path, exc)
+            return None
+
     def duckdb_readable(self) -> bool:
         """Whether DuckDB reads this source, natively or through :meth:`arrow_reader`."""
         if self.duckdb_from() is not None:

@@ -45,10 +45,11 @@
       (`sort`, `sample` and `join` have no SQL form in the registry yet)
 
 ## 7. SDK
-- [ ] 7.1 `count`, `head`, `uniq`, `frequency`, `schema` compile to SQL; reuse
-      `ops.runner.compose_sql` instead of `Dataset._sql_query`
-- [ ] 7.2 `to_arrow()`; `to_polars()` / `to_pandas()` through Arrow
-- [ ] 7.3 SDK reference regenerated (`scripts/generate_sdk_reference.py`)
+- [x] 7.1 `count`, `head`, `uniq`, `frequency`, `schema` compile to SQL through
+      `ops.runner.compose_sql` (`Dataset._sql_query` removed); JSON values, CSV headers DuckDB
+      reads otherwise and typed columns DuckDB returns as other Python values stay on Python
+- [x] 7.2 `to_arrow()`; `to_polars()` / `to_pandas()` through Arrow
+- [x] 7.3 SDK reference regenerated (`scripts/generate_sdk_reference.py`)
 
 ## 8. Verification
 - [ ] 8.1 Benchmarks (`scripts/benchmarks.py`) against the base branch for every step; update

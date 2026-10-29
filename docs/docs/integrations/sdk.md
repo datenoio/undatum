@@ -19,9 +19,16 @@ stream from step to step as Python objects:
   iterate it;
 - values keep their Python types between steps (`datetime.date`, `Decimal`, nested dicts and
   lists); only the final writer converts them;
-- `write()` runs the whole plan as one DuckDB query when the source is CSV/TSV/JSON/JSON
-  Lines/Parquet and every step has a SQL form (`rename`, `fill`, `replace`, `filter(pattern=)`,
-  `select`, `limit`, `slice`); otherwise records stream through Python;
+- `write()`, `count()`, `head()`, `uniq()`, `frequency()`, `schema()`, `to_arrow()` and the
+  DataFrame exports run the whole plan as one DuckDB query when DuckDB reads the source (CSV,
+  TSV, JSON, JSON Lines, Parquet; ORC and Arrow/Feather through pyarrow) and every step has a
+  SQL form (`rename`, `fill`, `replace`, `filter`, `select`, `limit`, `slice`); otherwise
+  records stream through Python. `Dataset.read(path, engine="python")` turns DuckDB off;
+- the results are those of the Python engine. CSV fields stay text, with `''` for empty
+  fields. DuckDB would type JSON values (dates in strings, integers and floats in one column),
+  so on JSON only `count()` and `write()` use it; on Parquet, ORC and Arrow files columns
+  whose values DuckDB returns otherwise (nanosecond or zoned timestamps, maps, durations) keep
+  the Python reader too;
 - invalid arguments (an unknown `keep=`, a bad regular expression) fail when the step is added;
   data errors surface when the plan runs.
 
@@ -158,17 +165,24 @@ result = ds.package(output="datapackage.json", package_dir="out/package", autodo
 
 ### DataFrame and Typed-Row Interop
 
-Datasets can be handed off to DataFrame libraries or iterated as typed objects,
-delegating to iterabledata's adapters:
+Datasets can be handed off to Arrow and DataFrame libraries or iterated as typed objects.
+`to_arrow()`, `to_pandas()` and `to_polars()` build their frames from Arrow: DuckDB reads a
+plan it runs straight into Arrow, and other plans convert their records in batches of
+10,000. A field whose values Arrow cannot hold in one column (numbers and text) makes
+`to_arrow()` raise; `to_pandas()` and `to_polars()` build those batches from the records.
+In pandas, list values are NumPy arrays, as in `pandas.read_parquet()`.
 
 ```python
-# DataFrame conversion (pandas is bundled; Polars/Dask via extras)
+# Arrow and DataFrame conversion (pandas and pyarrow are bundled; Polars/Dask via extras)
+table = Dataset.read("data.csv").select(["id", "name"]).to_arrow()   # pyarrow.Table
 df = Dataset.read("data.jsonl").to_pandas()
 pdf = Dataset.read("data.parquet").to_polars()   # pip install "undatum[polars]"
 ddf = Dataset.read("big.jsonl").to_dask()        # pip install "undatum[dask]"
 
-# Chunked pandas frames for large files
+# Chunks for large files: Arrow tables or frames of 100,000 rows
 for chunk in Dataset.read("big.csv").to_pandas(chunksize=100_000):
+    ...
+for table in Dataset.read("big.parquet").to_arrow(chunksize=100_000):
     ...
 
 # Typed iteration
