@@ -302,7 +302,8 @@ class _CountingConnection:
         self.scans = 0
 
     def execute(self, query, *args):
-        if query.lstrip().startswith("SELECT"):
+        # current_setting() reads a setting, not the input.
+        if query.lstrip().startswith("SELECT") and "current_setting(" not in query:
             self.scans += 1
         return self.conn.execute(query, *args)
 

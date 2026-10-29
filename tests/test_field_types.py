@@ -25,6 +25,16 @@ def _types(columns: dict[str, list[str]], **kwargs) -> dict[str, str]:
     return column_types(conn, "t", text_values=True, **kwargs)
 
 
+def test_sample_keeps_the_connection_threads():
+    import pyarrow as pa
+
+    conn = duckdb.connect()
+    conn.execute("SET threads = 3")
+    conn.register("t", pa.table({"n": pa.array(["1", "2"], pa.string())}))
+    assert column_types(conn, "t", text_values=True) == {"n": "integer"}
+    assert conn.execute("SELECT current_setting('threads')").fetchall() == [(3,)]
+
+
 @pytest.mark.parametrize(
     ("values", "expected"),
     [

@@ -165,7 +165,14 @@ def infer_text_types(
     for name in columns:
         parts += _count_sql(value_sql(quote(name)), None, day_first_dates=day_first_dates)
     sample = f"(SELECT * FROM {relation} LIMIT {SAMPLE_ROWS})"
-    row = conn.execute(f"SELECT {', '.join(parts)} FROM {sample}").fetchall()[0]
+    # One thread: parallel CSV readers buffer far beyond the sample (about 115 MB more for
+    # `schema` on 1M rows with 14 threads), and the sample is small.
+    threads = conn.execute("SELECT current_setting('threads')").fetchall()[0][0]
+    conn.execute("SET threads = 1")
+    try:
+        row = conn.execute(f"SELECT {', '.join(parts)} FROM {sample}").fetchall()[0]
+    finally:
+        conn.execute(f"SET threads = {int(threads)}")
     width = len(TEXT_TYPES) + 2
     types = {}
     for index, name in enumerate(columns):
