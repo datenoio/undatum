@@ -129,18 +129,28 @@ def collect_fieldnames(records: Iterable[dict[str, Any]]) -> list[str]:
     return list(seen)
 
 
-def _open_writer(target: str, format_id: str, args: dict[str, Any]) -> Any:
+def _open_writer(
+    target: str, format_id: str, args: dict[str, Any], codecargs: dict[str, Any] | None = None
+) -> Any:
     """Open an iterabledata writer for ``target``.
 
     ``open_iterable`` passes options through ``options=``, but ``CSVIterable`` reads the
-    delimiter and quote character only from constructor arguments, so CSV output with a
-    non-default delimiter (TSV) is constructed directly.
+    delimiter and quote character only from constructor arguments (it writes the header
+    there), so CSV output with a non-default delimiter (TSV) is constructed directly.
+
+    Args:
+        target: Output path.
+        format_id: Output format id (``csv``, ``tsv``, ``parquet``, ...).
+        args: iterabledata writer options (``keys``, ``delimiter``, ...).
+        codecargs: Compression options (``compression_level``, ...).
     """
     from iterable.helpers.detect import open_iterable
 
     delimiter = args.get("delimiter")
     quotechar = args.get("quotechar")
-    if format_id == "csv" and (delimiter not in (None, ",") or quotechar not in (None, '"')):
+    if format_id in ("csv", "tsv") and (
+        delimiter not in (None, ",") or quotechar not in (None, '"')
+    ):
         from iterable.datatypes.csv import CSVIterable
 
         kwargs: dict[str, Any] = {
@@ -152,7 +162,8 @@ def _open_writer(target: str, format_id: str, args: dict[str, Any]) -> Any:
         }
         codec_cls = _detect(target).get("codec")
         if codec_cls is not None:
-            return CSVIterable(codec=codec_cls(filename=target, mode="w"), **kwargs)
+            codec = codec_cls(filename=target, mode="w", options=dict(codecargs or {}))
+            return CSVIterable(codec=codec, **kwargs)
         return CSVIterable(filename=target, **kwargs)
     return open_iterable(target, mode="w", iterableargs=args)
 
@@ -262,7 +273,9 @@ class RecordSink:
         args: dict[str, Any] = {}
         if self.fieldnames:
             args["keys"] = list(self.fieldnames)
-        if self.format_id == "csv" and _extension(self.path) in TAB_DELIMITED_EXTENSIONS:
+        if self.format_id == "tsv" or (
+            self.format_id == "csv" and _extension(self.path) in TAB_DELIMITED_EXTENSIONS
+        ):
             args["delimiter"] = "\t"
         if self.format_out:
             args["format"] = self.format_id

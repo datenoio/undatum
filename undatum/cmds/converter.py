@@ -252,6 +252,33 @@ def _raise_write_errors(result, tofile) -> None:
     )
 
 
+def _delimited_writer(filename, openargs: dict, csv_args: dict | None, codecargs: dict | None):
+    """A CSV/TSV writer constructed with its delimiter, or ``None`` for ``open_iterable``.
+
+    ``open_iterable`` would open TSV (also compressed) with a comma and write the header at
+    once; setting the delimiter afterwards writes a second header into compressed files.
+    """
+    from ..common.format_names import format_from_name
+    from ..common.writer import _open_writer
+
+    if not isinstance(filename, str):
+        return None
+    named = format_from_name(filename)
+    fmt = str(openargs.get("format") or (named[0] if named else "")).lower()
+    if fmt not in ("csv", "tsv"):
+        return None
+    csv_args = csv_args or {}
+    # Not resolve_csv_delimiter: it would sniff the old file at the output path
+    delimiter = csv_args.get("delimiter") or ("\t" if fmt == "tsv" else None)
+    quotechar = csv_args.get("quotechar")
+    if delimiter in (None, ",") and quotechar in (None, '"'):
+        return None  # plain CSV: open_iterable writes it as is
+    args = {**openargs, "delimiter": delimiter or ","}
+    if quotechar:
+        args["quotechar"] = quotechar
+    return _open_writer(filename, fmt, args, codecargs)
+
+
 def make_flat(item):
     """Flatten nested structures in dictionary by converting to strings."""
     result = {}
@@ -644,11 +671,17 @@ class Converter:
         return _ctx()
 
     @staticmethod
-    def _with_csv_options(iterableargs: dict | None, toiterableargs: dict | None = None):
-        """Apply CSV delimiter/quotechar after iterable.convert opens a file.
+    def _with_csv_options(
+        iterableargs: dict | None,
+        toiterableargs: dict | None = None,
+        codecargs: dict | None = None,
+    ):
+        """Apply CSV delimiter/quotechar to the files iterable.convert opens.
 
         ``open_iterable`` passes those keys via ``options=``; CSVIterable only
-        reads constructor kwargs.
+        reads constructor kwargs. Readers get them after open; CSV and TSV writers
+        are constructed with them, because the writer writes its header when it opens
+        (a compressed file cannot drop a header written with the wrong delimiter).
         """
         from contextlib import contextmanager
 
@@ -665,11 +698,17 @@ class Converter:
                 spreadsheet = _open_spreadsheet(args, kwargs)
                 if spreadsheet is not None:
                     return spreadsheet
-                iterable = original(*args, **kwargs)
                 mode = kwargs.get("mode")
                 if mode is None and len(args) >= 2:
                     mode = args[1]
                 filename = args[0] if args else kwargs.get("filename")
+                if mode in ("w", "wb"):
+                    writer = _delimited_writer(
+                        filename, kwargs.get("iterableargs") or {}, toiterableargs, codecargs
+                    )
+                    if writer is not None:
+                        return writer
+                iterable = original(*args, **kwargs)
                 csv_args = toiterableargs if mode in ("w", "wb") else iterableargs
                 apply_iterable_csv_delimiter(iterable, filename, csv_args)
                 return iterable
@@ -864,6 +903,7 @@ class Converter:
                 with self._with_csv_options(
                     convert_kwargs.get("iterableargs"),
                     convert_kwargs.get("toiterableargs"),
+                    codecargs,
                 ):
                     result = iterable_convert(fromfile, tofile, **convert_kwargs)
             _raise_write_errors(result, tofile)
@@ -1092,6 +1132,7 @@ class Converter:
             with self._with_csv_options(
                 convert_kwargs.get("iterableargs"),
                 convert_kwargs.get("toiterableargs"),
+                codecargs,
             ):
                 result = iterable_bulk_convert(
                     source,
