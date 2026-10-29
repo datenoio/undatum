@@ -599,6 +599,37 @@ def duckdb_copy_keeps_values(
     return True
 
 
+def csv_copy_query(
+    conn: Any, query: str, out_fmt: str | None, types: dict[str, str] | None = None
+) -> str:
+    """``query`` for a DuckDB ``COPY`` to ``out_fmt``, with empty text written as the Python
+    writer writes it.
+
+    DuckDB writes an empty string to CSV as ``""`` (and NULL as an empty field); the Python csv
+    writer writes both as an empty field. For CSV and TSV, text columns become NULL when empty.
+
+    Args:
+        conn: DuckDB connection.
+        query: SELECT query whose rows are written.
+        out_fmt: Output format id.
+        types: Column -> DuckDB type of ``query`` (read with DESCRIBE when omitted).
+    """
+    if out_fmt not in ("csv", "tsv", "tab"):
+        return query
+    if types is None:
+        described = conn.execute(f"DESCRIBE {query}").fetchall()
+        types = {str(row[0]): str(row[1]).upper() for row in described}
+    text = [name for name, kind in types.items() if kind == "VARCHAR"]
+    if not text:
+        return query
+    from .command_utils import quote_sql_identifier
+
+    replaced = ", ".join(
+        f"NULLIF({quote_sql_identifier(name)}, '') AS {quote_sql_identifier(name)}" for name in text
+    )
+    return f"SELECT * REPLACE ({replaced}) FROM ({query})"
+
+
 def duckdb_copy_options(path: str) -> str | None:
     """Return the DuckDB ``COPY`` option string for ``path`` or ``None`` if unsupported."""
     if is_uri(path):
@@ -634,6 +665,7 @@ def duckdb_copy_to_file(conn: Any, query: str, path: str) -> bool:
     options = duckdb_copy_options(path)
     if options is None:
         return False
+    query = csv_copy_query(conn, query, _extension(path))
     with AtomicFileTarget(path) as stage:
         escaped = stage.target.replace("'", "''")
         conn.execute(f"COPY ({query}) TO '{escaped}' ({options})")

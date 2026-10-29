@@ -16,7 +16,6 @@ from ..common.command_utils import (
     get_iterable_options,
     parse_column_list,
     parse_row_range,
-    quote_sql_identifier,
     resolve_csv_delimiter,
     validate_codec_profile,
     validate_write_mode,
@@ -117,9 +116,6 @@ def _skip_duckdb_convert(options: dict) -> bool:
     if options.get("quotechar"):
         return True
     return False
-
-
-_CSV_FORMATS = ("csv", "tsv", "tab")
 
 
 def _filter_bulk_convert_kwargs(bulk_convert_fn, convert_kwargs: dict) -> dict:
@@ -667,6 +663,7 @@ class Converter:
         from ..common.engine_selector import validate_engine
         from ..common.writer import (
             AtomicFileTarget,
+            csv_copy_query,
             duckdb_copy_keeps_values,
             duckdb_copy_options,
             resolve_output_format,
@@ -686,7 +683,6 @@ class Converter:
         source = RowSource(fromfile, options)
         if not source.duckdb_readable():
             return None
-        text_in = source.format_id in ("csv", "tsv")
         # A conversion streams: one thread keeps memory bounded (about 100-150 MB for millions
         # of rows) and is nearly as fast, since COPY preserves the input order.
         conn = duckdb_connection(options, "row")
@@ -701,19 +697,11 @@ class Converter:
             ):
                 logger.debug("convert: column types need the Python writer")
                 return None
-            if text_in and out_fmt not in _CSV_FORMATS:
-                # DuckDB reads empty CSV fields as NULL; the Python reader keeps "".
-                columns = ", ".join(
-                    f"COALESCE({quote_sql_identifier(name)}, '') AS {quote_sql_identifier(name)}"
-                    for name in types
-                )
-            else:
-                columns = "*"
+            # Empty CSV fields are empty strings, which CSV output writes as the Python writer
+            query = csv_copy_query(conn, f"SELECT * FROM {relation}", out_fmt, types)
             with AtomicFileTarget(target) as stage:
                 escaped = stage.target.replace("'", "''")
-                copied = conn.execute(
-                    f"COPY (SELECT {columns} FROM {relation}) TO '{escaped}' ({copy_options})"
-                ).fetchall()
+                copied = conn.execute(f"COPY ({query}) TO '{escaped}' ({copy_options})").fetchall()
                 stage.commit()
         except duckdb.Error as exc:
             logger.warning("DuckDB convert failed, using the Python engine: %s", exc)

@@ -58,6 +58,8 @@
       DuckDB cannot name keep the Python reader
 - [x] 8.6 CLI `uniq` and `frequency` on DuckDB keep first-seen order (ties too), as the Python
       engine and the SDK do
+- [x] 8.7 DuckDB reads empty CSV fields as empty strings (`force_not_null`), and CSV `COPY`
+      writes them unquoted (`csv_copy_query`); profiles still count them as missing
 - [x] 8.1 Benchmarks (`scripts/benchmarks.py`) against the base branch for every step; update
       `tests/benchmarks/budgets.toml` (a `convert-orc` case for the Arrow bridge; `schema`
       samples types on one thread, 346 MB to 271 MB on 1M rows)

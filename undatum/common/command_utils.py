@@ -326,10 +326,13 @@ def duckdb_read_csv_expr(
     header: list[str] | None = None,
     quotechar: str | None = None,
     encoding: str | None = None,
+    empty_strings: bool = False,
 ) -> str:
     """Build a DuckDB ``read_csv('path', ...)`` expression.
 
-    ``encoding`` (other than UTF-8) needs DuckDB's ``encodings`` extension.
+    ``encoding`` (other than UTF-8) needs DuckDB's ``encodings`` extension. With ``header``
+    and ``empty_strings``, empty fields are empty strings, as in the Python reader's records
+    (DuckDB reads them as NULL otherwise).
 
     With ``header`` (names from :func:`duckdb_csv_names`), the first line is the header and
     every column is text with that name, as the Python reader reads the file; DuckDB does not
@@ -347,6 +350,9 @@ def duckdb_read_csv_expr(
         # new_line '\n' also ends lines at '\r\n', '\r' and '\r\r\n', as the csv module does;
         # without it DuckDB left the '\n' of '\r\r\n' at the start of the next row.
         opts += f", header=true, auto_detect=false, columns={{{columns}}}, new_line='\\n'"
+        if empty_strings:
+            names = ", ".join("'" + name.replace("'", "''") + "'" for name in header)
+            opts += f", force_not_null=[{names}]"
     if encoding:
         opts += ", encoding='" + encoding.replace("'", "''") + "'"
     return f"read_csv('{escaped}'{opts})"
@@ -358,6 +364,7 @@ def duckdb_csv_text_expr(
     *,
     filetype: str = "csv",
     ignore_errors: bool = False,
+    empty_strings: bool = False,
 ) -> str | None:
     """A DuckDB ``read_csv`` expression that reads a CSV or TSV file as the Python reader does.
 
@@ -369,6 +376,8 @@ def duckdb_csv_text_expr(
         iterableargs: Reader options (``delimiter``, ``encoding``, ``quotechar``).
         filetype: ``csv`` or ``tsv`` (the delimiter when none is given).
         ignore_errors: Skip rows DuckDB cannot read.
+        empty_strings: Empty fields are empty strings, as in the Python reader's records;
+            otherwise NULL, which profiles (``stats``, ``analyze``) count as missing.
 
     Returns:
         The expression, or ``None`` when DuckDB cannot read the text's encoding, the header
@@ -405,6 +414,7 @@ def duckdb_csv_text_expr(
         header=names,
         quotechar=quotechar,
         encoding=encoding if other else None,
+        empty_strings=empty_strings,
     )
 
 
@@ -417,7 +427,8 @@ def duckdb_read_expr(
 ) -> str:
     """Build a DuckDB read expression for CSV, JSON, or Parquet files.
 
-    With ``all_varchar``, CSV is read by :func:`duckdb_csv_text_expr`.
+    With ``all_varchar``, CSV is read by :func:`duckdb_csv_text_expr`, with the Python reader's
+    records: text, empty fields as empty strings.
 
     Raises:
         ValueError: For other formats, and for CSV text whose header DuckDB cannot read as
@@ -432,7 +443,7 @@ def duckdb_read_expr(
         if not all_varchar:
             delimiter = resolve_csv_delimiter(iterableargs, filename=filename, filetype=source_type)
             return duckdb_read_csv_expr(filename, delimiter)
-        expr = duckdb_csv_text_expr(filename, iterableargs)
+        expr = duckdb_csv_text_expr(filename, iterableargs, empty_strings=True)
         if expr is None:
             raise ValueError(f"DuckDB cannot read the header of {filename} as the Python reader")
         return expr
