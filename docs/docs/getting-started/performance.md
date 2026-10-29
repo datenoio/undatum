@@ -93,8 +93,10 @@ DuckDB reads CSV field names from the first line, as the Python engine does, wit
 text; values beyond the header in a longer row are dropped. A header DuckDB cannot use (an empty
 name, or names that differ only by case, such as `id,ID`) sends the file to the Python engine.
 
-Commands that read and write these formats through DuckDB do not import iterabledata at all,
-which saves about a second per run (`undatum head data.csv` takes 0.7 s). `--engine python`
+Commands that run in DuckDB do not import iterabledata, pyarrow or pandas, which takes 0.5-1.2 s:
+on a small file `count`, `head`, `frequency`, `uniq`, `sort`, `select`, `headers`, `convert`,
+`sample` and `join` start in about 0.25 s, and `stats` and `schema` in about 0.35 s. Commands that
+read through the Python engine import iterabledata when they open the input. `--engine python`
 forces the streaming Python path, for example to compare results.
 
 ## Partitioned output

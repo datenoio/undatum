@@ -132,8 +132,11 @@ def get_file_type(filename: str) -> str | None:
     Returns:
         File extension if supported, None otherwise.
     """
+    from .common.format_names import FAST_FORMATS
+
     ext = filename.rsplit(".", 1)[-1].lower()
-    if ext in constants.SUPPORTED_FILE_TYPES:
+    # Common extensions are known without iterabledata's format list (an import of ~0.5 s)
+    if ext in FAST_FORMATS or ext in constants.SUPPORTED_FILE_TYPES:
         return ext
     return None
 

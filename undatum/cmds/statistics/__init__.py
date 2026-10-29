@@ -7,7 +7,6 @@ engine detection, DuckDB engine, and iterable engine modules.
 import logging
 
 import duckdb
-from qddate import DateParser
 
 from ...common.command_utils import (  # noqa: F401
     ITERABLE_OPTIONS_KEYS,
@@ -31,6 +30,8 @@ class StatProcessor(DuckDBStatsMixin, IterableStatsMixin):
         if nodates:
             self.qd = None
         else:
+            from qddate import DateParser
+
             self.qd = DateParser(generate=True)
         self.types = TypeGuesser(self.qd)
 

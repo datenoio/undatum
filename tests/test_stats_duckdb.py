@@ -333,9 +333,10 @@ def test_stats_reads_the_input_a_few_times_not_per_field(tmp_path, monkeypatch):
         str(source), {"engine": "duckdb", "format_out": "json", "output": str(tmp_path / "s.json")}
     )
     assert profile["count"] == 50
-    # The type sample (first 10,000 records), one profile scan, and dictionaries of four
-    # fields per scan (all fields have 3 values).
-    assert connections[0].scans == 2 + 24 // StatProcessor.DICTIONARY_FIELDS_PER_SCAN
+    # Two samples of the first 10,000 records (types by the shared rules, and the records
+    # for the type distribution), one profile scan, and dictionaries of four fields per scan
+    # (all fields have 3 values).
+    assert connections[0].scans == 3 + 24 // StatProcessor.DICTIONARY_FIELDS_PER_SCAN
 
 
 def test_stats_values_match_direct_counts(tmp_path):

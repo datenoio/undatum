@@ -3,6 +3,8 @@
 import logging
 import os
 import re
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Any, Literal
 
 import duckdb
@@ -123,6 +125,21 @@ def create_duckdb_connection(
             logger.warning(f"Temp directory does not exist or is not a directory: {temp_dir}")
 
     return conn
+
+
+@contextmanager
+def one_thread(conn: Any) -> Iterator[Any]:
+    """Run the queries of the block on one thread of ``conn``, then restore its setting.
+
+    For samples (``LIMIT``): parallel CSV readers buffer far beyond the rows a sample needs
+    (about 115 MB more on 1M rows with 14 threads).
+    """
+    threads = conn.execute("SELECT current_setting('threads')").fetchall()[0][0]
+    conn.execute("SET threads = 1")
+    try:
+        yield conn
+    finally:
+        conn.execute(f"SET threads = {int(threads)}")
 
 
 def load_extension(conn: duckdb.DuckDBPyConnection, name: str) -> None:

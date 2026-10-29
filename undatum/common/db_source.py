@@ -21,7 +21,13 @@ from __future__ import annotations
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
-from iterable.helpers.detect import open_iterable
+
+def open_iterable(*args: Any, **kwargs: Any) -> Any:
+    """iterabledata's ``open_iterable``, imported on first use (the import takes ~0.25 s)."""
+    from iterable.helpers.detect import open_iterable as open_with_iterabledata
+
+    return open_with_iterabledata(*args, **kwargs)
+
 
 # URI scheme -> iterabledata engine name.
 DB_URI_SCHEMES: dict[str, str] = {

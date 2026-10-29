@@ -70,11 +70,19 @@ def detect_engine(
 
     compression = "raw"
     if filetype is None:
-        ftype: Any = detect_file_type(fromfile)
-        if ftype["success"]:
-            filetype = ftype["datatype"].id()
-            if ftype["codec"] is not None:
-                compression = ftype["codec"].id()
+        from .format_names import format_from_name
+
+        # Common extensions are recognised without importing iterabledata (about 0.5 s).
+        named = format_from_name(fromfile)
+        if named is not None:
+            filetype, codec = named
+            compression = codec or "raw"
+        else:
+            ftype: Any = detect_file_type(fromfile)
+            if ftype["success"]:
+                filetype = ftype["datatype"].id()
+                if ftype["codec"] is not None:
+                    compression = ftype["codec"].id()
 
     logger.debug("File filetype %s and compression %s", filetype, compression)
 

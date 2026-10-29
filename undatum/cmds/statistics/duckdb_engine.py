@@ -4,7 +4,6 @@ import logging
 from contextlib import nullcontext
 
 import duckdb
-from iterable.helpers.detect import detect_file_type
 
 from ...common.command_utils import (
     duckdb_csv_text_expr,
@@ -12,8 +11,8 @@ from ...common.command_utils import (
     get_iterable_options,
     resolve_csv_delimiter,
 )
-from ...common.duckdb_config import duckdb_connection
-from ...common.field_types import column_types
+from ...common.duckdb_config import duckdb_connection, one_thread
+from ...common.field_types import column_types, quote
 from ...common.progress import progress
 from ...common.s3_iterable import open_iterable_with_s3
 from ...common.schema_utils import duckdb_decompose
@@ -249,7 +248,36 @@ class DuckDBStatsMixin:
             }
         return type_inference
 
-    def _detect_types_from_sample(self, fromfile, filetype, field_paths, show_progress=False):
+    def _csv_sample(self, fromfile, options, limit):
+        """The first ``limit`` records of a CSV file as the Python reader reads them, or None.
+
+        DuckDB reads the text with the Python reader's header, empty fields as ``''``; None
+        for other formats and files DuckDB does not read (the caller uses iterabledata).
+        """
+        source = RowSource(fromfile, options or {})
+        if source.format_id not in ("csv", "tsv"):
+            return None
+        relation = source.duckdb_from()
+        if relation is None:
+            return None
+        try:
+            names = [
+                str(row[0])
+                for row in self._duckdb.execute(f"DESCRIBE SELECT * FROM {relation}").fetchall()
+            ]
+            values = ", ".join(f"COALESCE({quote(name)}, '')" for name in names)
+            with one_thread(self._duckdb):
+                rows = self._duckdb.execute(
+                    f"SELECT {values} FROM {relation} LIMIT {int(limit)}"
+                ).fetchall()
+        except duckdb.Error as exc:
+            logger.debug("%s: DuckDB sample failed, sampling with iterabledata: %s", fromfile, exc)
+            return None
+        return [dict(zip(names, row, strict=True)) for row in rows]
+
+    def _detect_types_from_sample(
+        self, fromfile, filetype, field_paths, show_progress=False, options=None
+    ):
         """Detect field types by sampling records and using guess_datatype.
 
         This maintains compatibility with iterable engine's type detection logic.
@@ -261,6 +289,7 @@ class DuckDBStatsMixin:
             filetype: File type ('csv', 'jsonl', 'json', etc.)
             field_paths: List of field paths to detect types for
             show_progress: Whether to show progress indication during sampling
+            options: Reader options; CSV samples are read by DuckDB with them
 
         Returns:
             dict: Mapping from field_path to type distribution dictionary
@@ -271,8 +300,11 @@ class DuckDBStatsMixin:
         # Use iterable engine for sampling (handles nested structures correctly)
         # This is fast for small samples (10000 records) and maintains accuracy
         sample_limit = 10000
-        iterableargs = {}
-        iterable_context = open_iterable_with_s3(fromfile, mode="r", iterableargs=iterableargs)
+        sample = self._csv_sample(fromfile, options, sample_limit)
+        if sample is not None:
+            iterable_context = nullcontext(sample)
+        else:
+            iterable_context = open_iterable_with_s3(fromfile, mode="r", iterableargs={})
         iterable = iterable_context.__enter__()
 
         try:
@@ -329,7 +361,8 @@ class DuckDBStatsMixin:
             # If sampling fails, log warning and continue with empty distributions
             logger.warning(f"Failed to sample records for type detection: {e}")
         finally:
-            iterable.close()
+            if sample is None:
+                iterable.close()
             iterable_context.__exit__(None, None, None)
 
         return type_distributions
@@ -446,9 +479,9 @@ class DuckDBStatsMixin:
         # Detect file type if not provided
         filetype = get_option(options, "format_in")
         if filetype is None:
-            ftype = detect_file_type(fromfile)
-            if ftype["success"]:
-                filetype = ftype["datatype"].id()
+            from ...io import RowSource
+
+            filetype = RowSource(fromfile).format_id
 
         if filetype is None:
             raise ValueError(f"Could not detect file type for {fromfile}")
@@ -473,7 +506,7 @@ class DuckDBStatsMixin:
 
         # Types from a sample of records (same rules as the iterable engine)
         type_distributions = self._detect_types_from_sample(
-            fromfile, filetype, field_paths, show_progress
+            fromfile, filetype, field_paths, show_progress, options
         )
         fieldtypes = {
             field_path: {"key": field_path, "types": type_distributions.get(field_path, {})}

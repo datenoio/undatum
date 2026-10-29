@@ -15,16 +15,15 @@ import os
 import sys
 import tempfile
 from collections import OrderedDict
+from typing import Any
 
 import duckdb
-import pandas as pd
 import xlrd
 import xmltodict
 import yaml
-from iterable.helpers.detect import detect_file_type
-from openpyxl import load_workbook
 from pydantic import BaseModel
 
+from .. import constants
 from ..ai import AIService, get_ai_service, get_description, get_fields_info
 from ..common.command_utils import (
     duckdb_can_decode,
@@ -35,12 +34,12 @@ from ..common.command_utils import (
     resolve_csv_delimiter,
 )
 from ..common.duckdb_config import duckdb_connection
-from ..common.engine_selector import is_format_supported_by_duckdb
+from ..common.engine_selector import detect_file_type, is_format_supported_by_duckdb
 from ..common.errors import ValidationError
+from ..common.format_names import format_from_name
 from ..common.s3_iterable import open_iterable_with_s3
 from ..common.schema_utils import duckdb_decompose
 from ..common.tables import format_table
-from ..constants import TEXT_DATA_TYPES
 from ..formats.docx import analyze_docx
 from ..utils import detect_encoding, get_dict_value, get_option
 
@@ -299,6 +298,8 @@ def table_from_objects(
 
     use_frame = use_pandas or _objects_are_dict_records(objects)
     if use_frame:
+        import pandas as pd
+
         df = pd.DataFrame(objects)
         columns_raw = duckdb_decompose(frame=df, path="*", limit=objects_limit, use_summarize=stats)
     else:
@@ -442,11 +443,19 @@ def analyze(
     fileext = filename.rsplit(".", 1)[-1].lower()
     filesize = os.path.getsize(filename)
 
-    ftype = detect_file_type(filename)
-    if filetype is None and ftype["success"]:
-        filetype = ftype["datatype"].id()
-        if ftype["codec"] is not None:
-            compression = ftype["codec"].id()
+    ftype: Any = None  # iterabledata's detection, run only when a format needs its codec
+    if filetype is None:
+        # Common extensions are recognised without importing iterabledata (about 0.5 s)
+        named = format_from_name(filename)
+        if named is not None:
+            filetype = named[0]
+            compression = named[1] or compression
+        else:
+            ftype = detect_file_type(filename)
+            if ftype["success"]:
+                filetype = ftype["datatype"].id()
+                if ftype["codec"] is not None:
+                    compression = ftype["codec"].id()
     if filetype is None and fileext == "docx":
         filetype = "docx"
 
@@ -467,7 +476,8 @@ def analyze(
             logger.warning("AI descriptions skipped: %s", str(e).rstrip("."))
             autodoc = False
 
-    if filetype in TEXT_DATA_TYPES:
+    # Common text formats are known without iterabledata's format lists (~0.3 s to import)
+    if filetype in ("csv", "tsv", "json", "jsonl") or filetype in constants.TEXT_DATA_TYPES:
         if encoding is None:
             encoding_result = detect_encoding(filename)
             report.metadata["encoding"] = (
@@ -615,6 +625,8 @@ def analyze(
                 report.total_records = total
                 report.total_tables = len(report.tables)
             elif filetype == "xlsx":
+                from openpyxl import load_workbook
+
                 wb = load_workbook(filename, read_only=True, data_only=True)
                 total = 0
                 for sheetname in _selected_sheet_names(list(wb.sheetnames), table_name, start_page):
@@ -672,6 +684,8 @@ def analyze(
             elif filetype == "xml":
                 fileobj = None
                 codec = None
+                if ftype is None:
+                    ftype = detect_file_type(filename)
                 if ftype.get("success") and ftype.get("codec") is not None:
                     codec = ftype["codec"](filename, open_it=True)
                     fileobj = codec.fileobj()
@@ -726,6 +740,8 @@ def analyze(
             elif filetype == "json":
                 fileobj = None
                 codec = None
+                if ftype is None:
+                    ftype = detect_file_type(filename)
                 if ftype.get("success") and ftype.get("codec") is not None:
                     codec = ftype["codec"](filename, open_it=True)
                     fileobj = codec.fileobj()

@@ -4,10 +4,14 @@ This module provides common functions used by both schema extraction
 and data analysis commands to eliminate code duplication.
 """
 
-from typing import Any
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
 
 import duckdb
-import pandas as pd
+
+if TYPE_CHECKING:
+    import pandas as pd
 
 from .command_utils import duckdb_csv_text_expr, duckdb_read_csv_expr
 

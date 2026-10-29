@@ -323,6 +323,12 @@ def header_names(fromfile: str, options: dict[str, Any] | None = None) -> list[s
         Field names; nested fields as dotted paths.
     """
     options = options or {}
+    if not options.get("flatten_nested"):
+        # The fields of a CSV file are its header line: no record is read, and iterabledata
+        # (about 0.5 s to import) is not needed.
+        header = RowSource(fromfile, options).csv_header()
+        if header is not None:
+            return list(dict.fromkeys(header))
     limit = get_option(options, "limit")
     iterable = open_iterable(fromfile, mode="r", iterableargs=get_iterable_options(options))
     try:

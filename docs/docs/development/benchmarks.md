@@ -84,6 +84,7 @@ the one before, commands alternated per run (100k rows unless noted):
 | `convert` with `COPY` (#77) | `convert-jsonl` 1.13 s to 0.87 s (3.7 s to 1.2 s on 1M rows); `convert-parquet` peaks at 325 MB instead of 793 MB on 1M rows |
 | One type-inference rule set (#79) | `schema` on 1M rows peaks at 271 MB instead of 231 MB (the type sample runs on one thread; with every core it took 346 MB) |
 | Arrow bridge, `select` through the operations (#81) | `convert-orc` 1.6 s to 0.87 s (4.4 s to 1.1 s on 1M rows, 303 to 496 MB); `select` 0.82 s to 0.52 s |
+| DuckDB path without iterabledata, pyarrow and pandas imports | `frequency` 1.17 s to 0.30 s, `schema` 1.96 s to 0.59 s, `stats` 2.78 s to 1.16 s, `convert-jsonl` 0.89 s to 0.29 s, `headers` 0.81 s to 0.23 s; 26-52% less memory |
 
 Converting Parquet to JSON Lines (5.5 s through the Python writer in the first measurements)
 takes 1.2 s on 1M rows, and converting CSV to Parquet peaks at 331 MB instead of 800 MB.

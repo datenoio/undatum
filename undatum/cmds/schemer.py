@@ -12,12 +12,10 @@ import zipfile
 from typing import IO
 
 import orjson
-import pandas as pd
 import xxhash
 import yaml
 from pydantic import BaseModel
 from pyzstd import ZstdFile
-from qddate import DateParser
 
 from ..ai import get_ai_service, get_description, get_fields_info
 from ..common.command_utils import (
@@ -27,6 +25,8 @@ from ..common.command_utils import (
     resolve_csv_delimiter,
 )
 from ..common.duckdb_config import duckdb_connection
+from ..common.engine_selector import detect_file_type
+from ..common.format_names import format_from_name
 from ..common.progress import progress
 from ..common.schema_utils import duckdb_decompose, duckdb_to_json_schema_type
 from ..common.scheme import generate_scheme_from_file
@@ -36,13 +36,6 @@ from ..io import RowSource
 from ..utils import get_file_type, get_option
 
 logger = logging.getLogger(__name__)
-
-try:
-    from iterable.helpers.detect import detect_file_type
-
-    HAS_ITERABLE_DETECT = True
-except ImportError:
-    HAS_ITERABLE_DETECT = False
 
 
 def get_schema_key(fields):
@@ -100,6 +93,8 @@ def table_from_objects(
         writer.writerows(objects[:MAX_SAMPLE_SIZE])
         table.description = get_description(f.getvalue(), language=lang)
     if use_pandas:
+        import pandas as pd
+
         df = pd.DataFrame(objects)
         columns_raw = duckdb_decompose(frame=df, path="*", limit=objects_limit)
     else:
@@ -239,8 +234,13 @@ def build_schema(
         raise PermissionError(filename, operation="read") from e
 
     try:
-        # Detect file type and compression
-        if HAS_ITERABLE_DETECT and (filetype is None or compression is None):
+        # Detect file type and compression; common extensions are recognised without
+        # importing iterabledata (about 0.5 s)
+        named = format_from_name(filename) if filetype is None or compression is None else None
+        if named is not None:
+            filetype = filetype or named[0]
+            compression = compression or named[1] or "raw"
+        if filetype is None or compression is None:
             ftype = detect_file_type(filename)
             if ftype.get("success"):
                 detected_filetype = (
@@ -264,13 +264,6 @@ def build_schema(
                     filetype = fileext
                 if compression is None:
                     compression = "raw"
-        else:
-            # Fallback to extension-based detection
-            if filetype is None:
-                fileext = filename.rsplit(".", 1)[-1].lower()
-                filetype = fileext
-            if compression is None:
-                compression = "raw"
 
         has_table = bool(options.get("table") or options.get("sheet") or options.get("start_page"))
         if filetype in ANALYZER_SCHEMA_FORMATS and not has_table and not flatten_nested:
@@ -767,8 +760,9 @@ class Schemer:
         if nodates:
             self.qd = None
         else:
+            from qddate import DateParser
+
             self.qd = DateParser(generate=True)
-        pass
 
     def extract_schema(self, fromfile, options):
         """Extract schema from file and output in specified format."""

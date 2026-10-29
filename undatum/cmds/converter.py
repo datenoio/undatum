@@ -1,11 +1,14 @@
 """File format conversion module."""
 
+import functools
 import logging
 import os
 import time
 from collections import defaultdict
+from dataclasses import dataclass, field
 from typing import Any
 
+from .. import constants
 from ..common.chunked_io import chunked_reader
 from ..common.command_utils import (
     apply_iterable_csv_delimiter,
@@ -25,11 +28,11 @@ from ..common.errors import (
     ValidationError,
     find_similar_files,
 )
+from ..common.format_names import FAST_CODECS, FAST_FORMATS, FAST_WRITABLE
 from ..common.parallel import parallel_process_chunks
 from ..common.parallel_workers import transform_convert_chunk
 from ..common.path_utils import validate_file_path
 from ..common.progress import is_tty, wrap_iterable
-from ..constants import COMPRESSED_FILE_TYPES, SUPPORTED_FILE_TYPES
 from ..utils import get_file_type, get_option
 
 logger = logging.getLogger(__name__)
@@ -40,10 +43,12 @@ logger = logging.getLogger(__name__)
 _PREFERRED_WRITABLE_FORMATS = ["csv", "jsonl", "json", "parquet", "orc", "avro", "bson"]
 
 
+@functools.cache
 def _writable_format_suggestions() -> list[str]:
     """Return the preferred writable formats that iterabledata can actually write.
 
-    Falls back to the full preferred list if capability reporting is unavailable.
+    Falls back to the full preferred list if capability reporting is unavailable. Called
+    only for error messages: the capability probe imports every iterabledata format.
     """
     try:
         from iterable.helpers.capabilities import supports_write
@@ -58,9 +63,6 @@ def _writable_format_suggestions() -> list[str]:
             continue
     return writable or list(_PREFERRED_WRITABLE_FORMATS)
 
-
-# Formats commonly suggested as writable conversion targets (capability-filtered).
-WRITABLE_FORMAT_SUGGESTIONS = _writable_format_suggestions()
 
 # Formats that report as writable but require an externally-supplied schema or
 # message class to serialize (e.g. a compiled protobuf message). They cannot be
@@ -259,6 +261,22 @@ def _format_bytes(num_bytes: int | None) -> str:
     return f"{num_bytes / (1024 * 1024):.1f} MB"
 
 
+@dataclass
+class CopyResult:
+    """Metrics of a conversion DuckDB wrote, with the fields of iterabledata's ``ConversionResult``.
+
+    iterabledata's class is not used: importing ``iterable.types`` imports the whole package
+    (about 0.3 s), which the DuckDB path does not need otherwise.
+    """
+
+    rows_in: int
+    rows_out: int
+    elapsed_seconds: float
+    bytes_read: int | None = None
+    bytes_written: int | None = None
+    errors: list[Exception] = field(default_factory=list)
+
+
 def format_conversion_summary(result) -> str:
     """Format a one-line summary from iterabledata's ConversionResult."""
     parts = [f"Converted {result.rows_out:,} rows in {result.elapsed_seconds:.1f}s"]
@@ -298,7 +316,12 @@ class Converter:
             return fmt.lower()
         basename = str(tofile).rsplit("/", 1)[-1]
         parts = basename.split(".")
-        if len(parts) >= 2 and parts[-1].lower() in COMPRESSED_FILE_TYPES:
+        last = parts[-1].lower()
+        # Common extensions are known without iterabledata's codec list (an import of ~0.5 s)
+        if len(parts) >= 2 and (
+            last in FAST_CODECS
+            or (last not in FAST_FORMATS and last in constants.COMPRESSED_FILE_TYPES)
+        ):
             parts = parts[:-1]
         if len(parts) >= 2:
             return parts[-1].lower()
@@ -321,7 +344,7 @@ class Converter:
                 f"generic conversion target. Convert to a self-describing format instead.",
                 field="output",
                 suggestions=[
-                    f for f in WRITABLE_FORMAT_SUGGESTIONS if f not in _SCHEMA_REQUIRED_FORMATS
+                    f for f in _writable_format_suggestions() if f not in _SCHEMA_REQUIRED_FORMATS
                 ],
             )
 
@@ -396,19 +419,21 @@ class Converter:
         out_fmt = self._resolve_output_format(tofile, options)
         if not out_fmt:
             return
+        if out_fmt in FAST_WRITABLE and out_fmt != "parquet":
+            # Known writable without the capability probe, which imports every format
+            return
         if out_fmt == "parquet":
-            try:
-                import pyarrow  # noqa: F401
+            import importlib.util
 
+            if importlib.util.find_spec("pyarrow") is not None:
                 return
-            except ImportError:
-                from ..common.errors import DependencyError
+            from ..common.errors import DependencyError
 
-                raise DependencyError(
-                    "pyarrow",
-                    feature="Parquet write",
-                    install_command="pip install pyarrow",
-                ) from None
+            raise DependencyError(
+                "pyarrow",
+                feature="Parquet write",
+                install_command="pip install pyarrow",
+            )
         try:
             from iterable.helpers.capabilities import supports_write
 
@@ -420,7 +445,7 @@ class Converter:
                 f"Output format '{out_fmt}' is read-only; undatum can read it but cannot "
                 f"write to it.",
                 field="output",
-                suggestions=WRITABLE_FORMAT_SUGGESTIONS,
+                suggestions=_writable_format_suggestions(),
             )
 
     def _build_convert_kwargs(
@@ -631,13 +656,12 @@ class Converter:
         different values (see :func:`duckdb_copy_keeps_values`) use the Python engine.
 
         Returns:
-            iterabledata ``ConversionResult`` when DuckDB wrote ``tofile``, ``None`` to use
-            the iterabledata path.
+            :class:`CopyResult` when DuckDB wrote ``tofile``, ``None`` to use the
+            iterabledata path.
         """
         import time
 
         import duckdb
-        from iterable.types import ConversionResult
 
         from ..common.duckdb_config import duckdb_connection
         from ..common.engine_selector import validate_engine
@@ -698,7 +722,7 @@ class Converter:
             conn.close()
         rows = int(copied[0][0]) if copied else 0
         logger.info("convert: written by DuckDB (%s -> %s)", source.format_id, out_fmt)
-        return ConversionResult(
+        return CopyResult(
             rows_in=rows,
             rows_out=rows,
             elapsed_seconds=time.time() - start,
@@ -723,8 +747,8 @@ class Converter:
             limit: Maximum records to sample for schema detection.
 
         Returns:
-            iterabledata ``ConversionResult`` with row/byte metrics (also when DuckDB
-            wrote the output).
+            iterabledata ``ConversionResult`` with row/byte metrics, or a
+            :class:`CopyResult` with the same fields when DuckDB wrote the output.
 
         Raises:
             FileNotFoundError: If a local input file does not exist.
@@ -820,8 +844,8 @@ class Converter:
         except Exception as e:
             # Surface a helpful error when the input format is not supported.
             file_type = get_file_type(fromfile)
-            if file_type is None or file_type not in SUPPORTED_FILE_TYPES:
-                raise FormatError(fromfile, file_type, SUPPORTED_FILE_TYPES) from e
+            if file_type is None or file_type not in constants.SUPPORTED_FILE_TYPES:
+                raise FormatError(fromfile, file_type, constants.SUPPORTED_FILE_TYPES) from e
             # Actionable hint when Parquet support is missing
             if "pyarrow" in str(e).lower() or "parquet" in str(e).lower():
                 try:
@@ -1017,7 +1041,7 @@ class Converter:
             raise ValidationError(
                 "Bulk conversion requires a target extension (use --to-ext or --format-out).",
                 field="output",
-                suggestions=WRITABLE_FORMAT_SUGGESTIONS,
+                suggestions=_writable_format_suggestions(),
             )
 
         # Fail fast if the requested target format is read-only or schema-required.

@@ -8,8 +8,6 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any
 
-from iterable.helpers.detect import open_iterable
-
 from ..common.command_utils import apply_iterable_csv_delimiter, apply_table_selection
 from ..common.path_utils import (
     is_native_cloud_uri,
@@ -20,6 +18,13 @@ from ..common.path_utils import (
 from ..formats.s3 import get_s3_client, parse_s3_uri
 
 logger = logging.getLogger(__name__)
+
+
+def open_iterable(*args: Any, **kwargs: Any) -> Any:
+    """iterabledata's ``open_iterable``, imported on first use (the import takes ~0.25 s)."""
+    from iterable.helpers.detect import open_iterable as open_with_iterabledata
+
+    return open_with_iterabledata(*args, **kwargs)
 
 
 def _configure_iterable(iterable: Any, path: str, iterableargs: dict) -> None:
