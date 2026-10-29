@@ -168,10 +168,8 @@ def load_extension(conn: duckdb.DuckDBPyConnection, name: str) -> None:
             f"DuckDB extension '{name}' is not installed and could not be downloaded: {exc}",
             config_key=EXTENSION_DIR_ENV,
             fix_hint=(
-                "On a machine with network access run "
-                f"python -c \"import duckdb; duckdb.install_extension('{name}')\", copy "
-                f"~/.duckdb/extensions to this machine and set {EXTENSION_DIR_ENV} to that "
-                "directory."
+                f"On a machine with network access run `undatum extensions install {name} "
+                f"--dir DIR`, copy DIR to this machine and set {EXTENSION_DIR_ENV} to it."
             ),
         ) from exc
 

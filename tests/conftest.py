@@ -27,6 +27,30 @@ def _isolate_cli_defaults(request, monkeypatch):
     monkeypatch.setattr("undatum.common.app_config.get_cli_defaults", lambda: {})
 
 
+@pytest.fixture(scope="session")
+def _empty_extension_dir(tmp_path_factory):
+    return str(tmp_path_factory.mktemp("duckdb-extensions"))
+
+
+@pytest.fixture(autouse=True)
+def _isolate_duckdb_extensions(_empty_extension_dir, monkeypatch):
+    """Tests see no installed DuckDB extensions (``~/.duckdb``) unless they ask for them."""
+    monkeypatch.setenv("UNDATUM_DUCKDB_EXTENSION_DIR", _empty_extension_dir)
+
+
+@pytest.fixture
+def installed_extensions(monkeypatch):
+    """The DuckDB extensions in ``UNDATUM_TEST_DUCKDB_EXTENSION_DIR``; skips without them.
+
+    Prepare the directory with ``undatum extensions install --dir DIR``.
+    """
+    directory = os.environ.get("UNDATUM_TEST_DUCKDB_EXTENSION_DIR")
+    if not directory:
+        pytest.skip("UNDATUM_TEST_DUCKDB_EXTENSION_DIR is not set")
+    monkeypatch.setenv("UNDATUM_DUCKDB_EXTENSION_DIR", directory)
+    return directory
+
+
 try:
     import pytest_benchmark  # noqa: F401
 except ImportError:

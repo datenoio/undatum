@@ -5,6 +5,7 @@ modules: iterable option extraction and the DuckDB-with-iterable-fallback
 execution pattern.
 """
 
+import functools
 import logging
 import os
 from collections.abc import Callable, Iterable, Iterator
@@ -134,28 +135,95 @@ def duckdb_can_decode(path: str, codec: str | None = None, encoding: str | None 
                 return False
         except LookupError:
             return False
-    try:
-        if codec in ("gz", "gzip"):
-            import gzip
-
-            with gzip.open(path, "rb") as fh:
-                data = fh.read(_UTF8_SAMPLE_BYTES)
-        elif codec == "zst":
-            import zstandard
-
-            with open(path, "rb") as raw, zstandard.ZstdDecompressor().stream_reader(raw) as fh:
-                data = fh.read(_UTF8_SAMPLE_BYTES)
-        else:
-            with open(path, "rb") as fh:
-                data = fh.read(_UTF8_SAMPLE_BYTES)
-    except Exception:  # noqa: BLE001 - the reader reports unreadable files
-        return True
+    data = _text_sample(path, codec)
+    if data is None:
+        return True  # the reader reports unreadable files
     try:
         # A multi-byte character may be cut at the end of a full sample.
         codecs.getincrementaldecoder("utf-8")().decode(data, final=len(data) < _UTF8_SAMPLE_BYTES)
     except UnicodeDecodeError:
         return False
     return True
+
+
+def _text_sample(path: str, codec: str | None, size: int = _UTF8_SAMPLE_BYTES) -> bytes | None:
+    """The first ``size`` bytes of a file's text (decompressed for gzip and zstd), or None."""
+    try:
+        if codec in ("gz", "gzip"):
+            import gzip
+
+            with gzip.open(path, "rb") as fh:
+                return fh.read(size)
+        if codec == "zst":
+            import zstandard
+
+            with open(path, "rb") as raw, zstandard.ZstdDecompressor().stream_reader(raw) as fh:
+                return fh.read(size)
+        with open(path, "rb") as fh:
+            return fh.read(size)
+    except Exception:  # noqa: BLE001 - unreadable files are reported by the reader
+        return None
+
+
+def python_reader_encoding(path: str, codec: str | None = None) -> str | None:
+    """The encoding the Python reader detects for a CSV file without ``--encoding``.
+
+    UTF-8 when its first megabyte decodes, else chardet's guess (iterabledata's rule).
+    """
+    import io
+
+    from iterable.datatypes.csv import detect_encoding_raw
+
+    data = _text_sample(path, codec)
+    if data is None:
+        return None
+    encoding = detect_encoding_raw(stream=io.BytesIO(data)).get("encoding")
+    return str(encoding) if encoding else None
+
+
+def duckdb_csv_encoding(
+    path: str, codec: str | None = None, encoding: str | None = None
+) -> str | None:
+    """The encoding DuckDB reads a CSV file in, or ``None`` when only the Python engine can.
+
+    ``utf-8`` for UTF-8 text. Text in another encoding (``encoding``, else the one the Python
+    reader detects) is read with DuckDB's ``encodings`` extension when it is installed (it is
+    never downloaded: ``undatum extensions install encodings``) and reads that encoding (see
+    :func:`~undatum.common.duckdb_extensions.duckdb_encoding_name`).
+
+    Args:
+        path: Local file path.
+        codec: Compression codec id (``gz``, ``gzip``, ``zst``; anything else is read raw).
+        encoding: Encoding given with ``--encoding``, if any.
+    """
+    try:
+        stat = os.stat(path)
+    except OSError:
+        return "utf-8"  # the reader reports a missing file
+    from .duckdb_extensions import extension_directory
+
+    # Detection reads up to a megabyte (and chardet is slow): once per file, options and
+    # extension directory
+    key = (stat.st_size, stat.st_mtime_ns, extension_directory())
+    return _duckdb_csv_encoding(path, key, codec, encoding)
+
+
+@functools.lru_cache(maxsize=64)
+def _duckdb_csv_encoding(
+    path: str, key: tuple[Any, ...], codec: str | None, encoding: str | None
+) -> str | None:
+    import codecs
+
+    if duckdb_can_decode(path, codec, encoding):
+        return "utf-8"
+    try:
+        if encoding and codecs.lookup(encoding).name in _UTF8_ENCODINGS:
+            return None  # not UTF-8 after all: the Python reader reports the error
+    except LookupError:
+        return None
+    from .duckdb_extensions import duckdb_encoding_name
+
+    return duckdb_encoding_name(encoding or python_reader_encoding(path, codec))
 
 
 def read_csv_header(
@@ -257,8 +325,11 @@ def duckdb_read_csv_expr(
     all_varchar: bool = False,
     header: list[str] | None = None,
     quotechar: str | None = None,
+    encoding: str | None = None,
 ) -> str:
     """Build a DuckDB ``read_csv('path', ...)`` expression.
+
+    ``encoding`` (other than UTF-8) needs DuckDB's ``encodings`` extension.
 
     With ``header`` (names from :func:`duckdb_csv_names`), the first line is the header and
     every column is text with that name, as the Python reader reads the file; DuckDB does not
@@ -273,7 +344,11 @@ def duckdb_read_csv_expr(
         opts += f", sample_size={sample_size}"
     if header is not None:
         columns = ", ".join("'" + name.replace("'", "''") + "': 'VARCHAR'" for name in header)
-        opts += f", header=true, auto_detect=false, columns={{{columns}}}"
+        # new_line '\n' also ends lines at '\r\n', '\r' and '\r\r\n', as the csv module does;
+        # without it DuckDB left the '\n' of '\r\r\n' at the start of the next row.
+        opts += f", header=true, auto_detect=false, columns={{{columns}}}, new_line='\\n'"
+    if encoding:
+        opts += ", encoding='" + encoding.replace("'", "''") + "'"
     return f"read_csv('{escaped}'{opts})"
 
 
@@ -286,7 +361,8 @@ def duckdb_csv_text_expr(
 ) -> str | None:
     """A DuckDB ``read_csv`` expression that reads a CSV or TSV file as the Python reader does.
 
-    Every column is text, named by the first line (:func:`read_csv_header`).
+    Every column is text, named by the first line (:func:`read_csv_header`). Text in another
+    encoding than UTF-8 is read in it when DuckDB can (:func:`duckdb_csv_encoding`).
 
     Args:
         filename: Local file path.
@@ -295,28 +371,40 @@ def duckdb_csv_text_expr(
         ignore_errors: Skip rows DuckDB cannot read.
 
     Returns:
-        The expression, or ``None`` when the header cannot be read or DuckDB cannot name its
-        columns (:func:`duckdb_csv_names`).
+        The expression, or ``None`` when DuckDB cannot read the text's encoding, the header
+        cannot be read or DuckDB cannot name its columns (:func:`duckdb_csv_names`).
     """
     from .format_names import format_from_name
 
     iterableargs = iterableargs or {}
-    delimiter = resolve_csv_delimiter(iterableargs, filename=filename, filetype=filetype) or ","
     named = format_from_name(filename)
+    codec = named[1] if named else None
+    encoding = duckdb_csv_encoding(filename, codec, iterableargs.get("encoding"))
+    if encoding is None:
+        logger.debug("%s: DuckDB does not read the encoding of this text", filename)
+        return None
+    other = encoding != "utf-8"
+    text_args = {**iterableargs, "encoding": encoding} if other else iterableargs
+    delimiter = resolve_csv_delimiter(text_args, filename=filename, filetype=filetype) or ","
     quotechar = iterableargs.get("quotechar")
     header = read_csv_header(
         filename,
         delimiter,
-        encoding=iterableargs.get("encoding"),
+        encoding=encoding if other else iterableargs.get("encoding"),
         quotechar=quotechar,
-        codec=named[1] if named else None,
+        codec=codec,
     )
     names = duckdb_csv_names(header)
     if names is None:
         logger.debug("%s: DuckDB cannot read the header %r", filename, header)
         return None
     return duckdb_read_csv_expr(
-        filename, delimiter, ignore_errors=ignore_errors, header=names, quotechar=quotechar
+        filename,
+        delimiter,
+        ignore_errors=ignore_errors,
+        header=names,
+        quotechar=quotechar,
+        encoding=encoding if other else None,
     )
 
 

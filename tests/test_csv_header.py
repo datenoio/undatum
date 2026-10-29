@@ -28,6 +28,8 @@ MESSY = {
     "special_names": 'it\'s,"q""x",back\\slash,é ü\n1,2,3,4\n',
     "short_row": "a,b\n1,2\n3\n",
     "quoted_newline": 'a,b\r\n1,"x\r\ny"\r\n3,4\r\n',
+    "cr_cr_lf_lines": "a,b\r\r\n1,2\r\r\n3,4\r\r\n",
+    "cr_lines": "a,b\r1,2\r3,4\r",
     "only_header": "a,b\n",
     "empty_file": "",
     "repeated_names": "a,a,b\n1,2,3\n",
@@ -113,6 +115,8 @@ def test_read_expression_uses_the_quotechar(tmp_path):
         "quoted_name",
         "special_names",
         "quoted_newline",
+        "cr_cr_lf_lines",
+        "cr_lines",
         "only_header",
     ],
 )

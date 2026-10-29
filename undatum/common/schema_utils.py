@@ -166,6 +166,28 @@ def duckdb_decompose(
     """
     if filename is None and frame is None:
         raise ValueError("Either filename or frame must be provided")
+    if conn is None and filename is not None:
+        # A configured connection: it finds the installed extensions and does not download any
+        from .duckdb_config import create_duckdb_connection
+
+        own = create_duckdb_connection()
+        try:
+            return duckdb_decompose(
+                filename,
+                frame,
+                filetype=filetype,
+                path=path,
+                limit=limit,
+                recursive=recursive,
+                root=root,
+                ignore_errors=ignore_errors,
+                use_summarize=use_summarize,
+                delimiter=delimiter,
+                conn=own,
+                text_types=text_types,
+            )
+        finally:
+            own.close()
 
     json_ignore = ", ignore_errors=true" if ignore_errors else ""
     data: list = []

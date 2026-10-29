@@ -116,8 +116,13 @@ jobs:
     - uses: astral-sh/setup-uv@v6
     - name: Install locked dependencies
       run: uv sync --frozen --extra api --extra dev --python ${{ matrix.python-version }}
+    - name: DuckDB encodings extension for the non-UTF-8 CSV tests
+      if: matrix.python-version == '3.12'
+      run: uv run --frozen --no-sync undatum extensions install encodings --dir "$RUNNER_TEMP/duckdb-extensions"
     - name: Run tests with coverage
       # Coverage only ratchets up: 65 (2026-10) -> 70 -> 75 -> 80.
+      env:
+        UNDATUM_TEST_DUCKDB_EXTENSION_DIR: ${{ matrix.python-version == '3.12' && format('{0}/duckdb-extensions', runner.temp) || '' }}
       run: |
         uv run --frozen --no-sync pytest --cov=undatum --cov-report=term --cov-report=xml --cov-fail-under=65
     - name: Diff coverage for pull requests

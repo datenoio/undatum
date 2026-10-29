@@ -10,7 +10,6 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ..common.command_utils import (
-    duckdb_can_decode,
     duckdb_read_expr,
     get_iterable_options,
     iter_command_rows,
@@ -90,10 +89,11 @@ class RowSource:
 
         DuckDB reads CSV, TSV, JSON, JSON Lines and Parquet (optionally gzip/zstd
         compressed) natively. Options it cannot apply — a named sheet or table, nested
-        flattening, ``--on-error skip|warn``, XML tags — CSV text that is not UTF-8, and CSV
-        headers DuckDB cannot name as the Python reader does (empty, or names that differ
-        only by case) force the Python reader. CSV is read as text with the header the
-        Python reader takes from the first line.
+        flattening, ``--on-error skip|warn``, XML tags — CSV text in an encoding DuckDB does
+        not read (anything but UTF-8 without the ``encodings`` extension), and CSV headers
+        DuckDB cannot name as the Python reader does (empty, or names that differ only by
+        case) force the Python reader. CSV is read as text with the header the Python reader
+        takes from the first line.
         """
         from ..constants import DUCKABLE_CODECS, DUCKABLE_FILE_TYPES
 
@@ -105,8 +105,6 @@ class RowSource:
             return None
         if fmt == "tsv":
             fmt = "csv"
-        if fmt == "csv" and not duckdb_can_decode(self.path, codec, self.options.get("encoding")):
-            return None
         try:
             # CSV is read as text, like the Python reader, so both engines agree.
             return duckdb_read_expr(

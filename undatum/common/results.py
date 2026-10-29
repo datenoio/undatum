@@ -385,6 +385,21 @@ FORMATS = _register(
         ("formats",),
     )
 )
+EXTENSIONS = _register(
+    ResultSchema(
+        "undatum.extensions/1",
+        "extensions list",
+        "DuckDB extensions undatum uses and whether they are installed",
+        {
+            "directory": ("string", "Extension directory"),
+            "extensions": (
+                "array",
+                "Extensions: name, purpose, installed, path, size (bytes); install adds downloaded",
+            ),
+        },
+        ("directory", "extensions"),
+    )
+)
 CONFIG = _register(
     ResultSchema(
         "undatum.config/1",

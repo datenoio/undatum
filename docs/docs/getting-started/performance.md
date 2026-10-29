@@ -84,8 +84,10 @@ its memory limit (about 750 MB for 2M rows), while the default Python engine sta
 (spilling to disk). On 2M CSV rows `dedup --engine duckdb` takes 1.6 s instead of 10.6 s, and
 `reverse --engine duckdb` 2 s instead of about 30 s; both give the same records.
 
-DuckDB reads UTF-8 text only: CSV in another encoding (for example Windows-1251) goes to the
-Python engine, which detects the encoding. A row DuckDB cannot read makes the command fall back
+CSV in another encoding than UTF-8 (for example Windows-1251) goes to the Python engine, which
+detects the encoding, unless DuckDB's `encodings` extension is installed
+([`undatum extensions install encodings`](/commands/extensions)): then DuckDB reads it in the
+encoding the Python engine would use, with the same records. A row DuckDB cannot read makes the command fall back
 to the Python engine; if records were already printed to standard output, the command stops
 with an error instead, and `--engine python` reads the file.
 

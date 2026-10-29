@@ -156,15 +156,19 @@ undatum --show-completion
 
 ### Machines without network access
 
-DuckDB downloads an extension the first time a command needs it. On an offline machine, install
-the extensions on a connected one and point undatum at the copy:
+undatum never downloads a DuckDB extension while a command runs: it uses one only when it is
+installed in the extension directory. Install them on a connected machine with the same undatum
+version, operating system and CPU architecture, and point undatum at the copy:
 
 ```bash norun
-python -c "import duckdb; duckdb.install_extension('excel')"   # on a connected machine
-export UNDATUM_DUCKDB_EXTENSION_DIR=/path/to/copied/.duckdb/extensions
+undatum extensions install --dir /opt/duckdb-extensions   # on a connected machine
+export UNDATUM_DUCKDB_EXTENSION_DIR=/opt/duckdb-extensions  # on the offline machine
 ```
 
-A command that needs a missing extension stops with exit code 2 and names the extension.
+The `-full` container image includes the extensions (`encodings`, `excel`, `httpfs`, `spatial`,
+about 410 MB on Linux); the core image and the single-file binaries do not. A command that needs a missing
+extension uses the Python engine, or stops with exit code 2 and names the extension. See
+[`extensions`](/commands/extensions).
 
 ### Install from source
 

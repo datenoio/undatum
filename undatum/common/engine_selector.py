@@ -4,7 +4,7 @@ import logging
 from typing import Any
 
 from ..constants import DUCKABLE_CODECS, DUCKABLE_FILE_TYPES
-from .command_utils import duckdb_can_decode
+from .command_utils import duckdb_csv_encoding
 
 logger = logging.getLogger(__name__)
 
@@ -92,8 +92,8 @@ def detect_engine(
             if operation and not _is_sql_expressible(operation):
                 logger.debug("Operation %s not SQL-expressible, using iterable engine", operation)
                 return "iterable"
-            if filetype == "csv" and not duckdb_can_decode(fromfile, compression, encoding):
-                logger.debug("%s is not UTF-8 text, using iterable engine", fromfile)
+            if filetype == "csv" and duckdb_csv_encoding(fromfile, compression, encoding) is None:
+                logger.debug("DuckDB does not read the text encoding of %s", fromfile)
                 return "iterable"
             return "duckdb"
         return "iterable"

@@ -336,6 +336,16 @@ Supported formats and their capabilities. Printed by `undatum formats list --jso
 | `schema` | string | yes | `undatum.formats/1` |
 | `formats` | array | yes | Formats: id, readable, writable, ... |
 
+### `undatum.extensions/1`
+
+DuckDB extensions undatum uses and whether they are installed. Printed by `undatum extensions list --json`. [JSON Schema](pathname:///schemas/undatum.extensions.v1.json)
+
+| Key | Type | Always | Description |
+|-----|------|--------|-------------|
+| `schema` | string | yes | `undatum.extensions/1` |
+| `directory` | string | yes | Extension directory |
+| `extensions` | array | yes | Extensions: name, purpose, installed, path, size (bytes); install adds downloaded |
+
 ### `undatum.config/1`
 
 Effective CLI configuration. Printed by `undatum config show --json`. [JSON Schema](pathname:///schemas/undatum.config.v1.json)

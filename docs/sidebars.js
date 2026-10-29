@@ -165,7 +165,7 @@ const sidebars = {
         {
           type: 'category',
           label: 'Extensibility',
-          items: ['commands/plugins', 'commands/config'],
+          items: ['commands/plugins', 'commands/config', 'commands/extensions'],
         },
       ],
     },

@@ -1,7 +1,8 @@
 # undatum container image.
 #
 #   docker build -t undatum .                                  # core install
-#   docker build -t undatum:full --build-arg EXTRAS=full .     # with the common extras
+#   docker build -t undatum:full --build-arg EXTRAS=full .     # with the common extras and
+#                                                              # the DuckDB extensions
 #   docker run --rm -v "$PWD:/data" undatum convert data.csv data.parquet
 #
 # The release workflow builds both variants and publishes them to
@@ -23,6 +24,12 @@ RUN python -m venv /opt/undatum \
          spec=".[api,web,mcp,cloud,postgres,mysql,clickhouse,elastic,phone,plot,frictionless,tui]"; \
        elif [ -n "$EXTRAS" ]; then spec=".[${EXTRAS}]"; else spec="."; fi \
     && /opt/undatum/bin/pip install "$spec"
+# The full image ships the DuckDB extensions undatum uses (about 410 MB), so it never downloads
+# them; in the core image `undatum extensions install` puts them in the same directory.
+RUN mkdir -p /opt/duckdb-extensions \
+    && if [ "$EXTRAS" = "full" ]; then \
+         /opt/undatum/bin/undatum extensions install --dir /opt/duckdb-extensions; \
+       fi
 
 FROM python:${PYTHON_VERSION}-slim
 LABEL org.opencontainers.image.title="undatum" \
@@ -30,8 +37,10 @@ LABEL org.opencontainers.image.title="undatum" \
       org.opencontainers.image.source="https://github.com/datenoio/undatum" \
       org.opencontainers.image.licenses="MIT"
 COPY --from=build /opt/undatum /opt/undatum
+COPY --from=build --chown=1000:1000 /opt/duckdb-extensions /opt/duckdb-extensions
 RUN useradd --create-home --uid 1000 undatum
-ENV PATH="/opt/undatum/bin:$PATH" PYTHONUNBUFFERED=1
+ENV PATH="/opt/undatum/bin:$PATH" PYTHONUNBUFFERED=1 \
+    UNDATUM_DUCKDB_EXTENSION_DIR=/opt/duckdb-extensions
 USER undatum
 WORKDIR /data
 ENTRYPOINT ["undatum"]

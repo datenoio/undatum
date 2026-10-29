@@ -27,6 +27,7 @@ from .cli.common import (
 from .cli.config_cli import config_app
 from .cli.db_cli import db_app
 from .cli.examples_cli import examples_app
+from .cli.extensions_cli import extensions_app
 from .cli.formats_cli import formats_app
 from .cli.mcp_cli import mcp_app
 from .cli.package_cli import package_app
@@ -354,6 +355,7 @@ app.add_typer(config_app, name="config")
 app.add_typer(pipeline_app, name="pipeline")
 app.add_typer(db_app, name="db")
 app.add_typer(examples_app, name="examples")
+app.add_typer(extensions_app, name="extensions")
 app.add_typer(formats_app, name="formats")
 app.add_typer(mcp_app, name="mcp")
 app.add_typer(plugins_app, name="plugins")
