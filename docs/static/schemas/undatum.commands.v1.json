@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://datenoio.github.io/undatum/schemas/undatum.commands.v1.json",
+  "title": "The command-line interface as data",
+  "description": "Printed by `undatum commands --json`.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "const": "undatum.commands/1",
+      "description": "Result layout"
+    },
+    "undatum_version": {
+      "type": "string",
+      "description": "undatum version"
+    },
+    "exit_codes": {
+      "type": "object",
+      "description": "Exit code -> meaning"
+    },
+    "global_options": {
+      "type": "array",
+      "description": "Options of the undatum command itself (see commands)"
+    },
+    "groups": {
+      "type": "array",
+      "description": "Command groups: name, summary"
+    },
+    "commands": {
+      "type": "array",
+      "description": "Commands: name, summary, help, examples, usage, arguments, options (name, flags, negation, type, choices, default, required, multiple, flag, count, deprecated_flags, help), engines, capabilities, results (schema, when), deprecated"
+    }
+  },
+  "required": [
+    "schema",
+    "undatum_version",
+    "exit_codes",
+    "global_options",
+    "groups",
+    "commands"
+  ]
+}

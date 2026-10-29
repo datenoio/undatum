@@ -160,7 +160,7 @@ const sidebars = {
         {
           type: 'category',
           label: 'AI and agents',
-          items: ['commands/ai', 'commands/mcp'],
+          items: ['commands/ai', 'commands/mcp', 'commands/commands'],
         },
         {
           type: 'category',

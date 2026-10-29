@@ -424,6 +424,20 @@ def error_code(error: BaseException) -> str:
     return "internal_error"
 
 
+# Exit codes of every command (``undatum commands --json`` publishes this table).
+EXIT_CODES: dict[int, str] = {
+    0: "Success",
+    1: "User error: missing file, invalid parameter, unsupported or non-writable format",
+    2: (
+        "Invalid command-line usage (unknown option, bad choice), configuration error, "
+        "or missing optional dependency"
+    ),
+    3: "System error: permission denied, database or network failure",
+    4: "Internal error",
+    130: "Interrupted with Ctrl-C",
+}
+
+
 def exit_code_for(error: BaseException) -> int:
     """Exit code of an error: 1 user, 2 configuration or dependency, 3 system, 4 internal."""
     if isinstance(error, UndatumError):

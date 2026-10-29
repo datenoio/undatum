@@ -29,6 +29,7 @@ from .cli.db_cli import db_app
 from .cli.examples_cli import examples_app
 from .cli.extensions_cli import extensions_app
 from .cli.formats_cli import formats_app
+from .cli.manifest_cli import commands as commands_command
 from .cli.mcp_cli import mcp_app
 from .cli.package_cli import package_app
 from .cli.pipeline_cli import pipeline_app, templates_app  # noqa: F401
@@ -345,6 +346,7 @@ def _main_callback(
 
 # Merge top-level data commands into the main app
 app.registered_commands.extend(data_app.registered_commands)
+app.command("commands")(commands_command)
 app.command("tui")(tui_command)
 app.command("web")(web_command)
 

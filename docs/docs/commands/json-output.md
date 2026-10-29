@@ -356,4 +356,17 @@ Effective CLI configuration. Printed by `undatum config show --json`. [JSON Sche
 | `files` | object | yes | Config files read: home, project |
 | `defaults` | object | yes | Merged command defaults |
 
+### `undatum.commands/1`
+
+The command-line interface as data. Printed by `undatum commands --json`. [JSON Schema](pathname:///schemas/undatum.commands.v1.json)
+
+| Key | Type | Always | Description |
+|-----|------|--------|-------------|
+| `schema` | string | yes | `undatum.commands/1` |
+| `undatum_version` | string | yes | undatum version |
+| `exit_codes` | object | yes | Exit code -> meaning |
+| `global_options` | array | yes | Options of the undatum command itself (see commands) |
+| `groups` | array | yes | Command groups: name, summary |
+| `commands` | array | yes | Commands: name, summary, help, examples, usage, arguments, options (name, flags, negation, type, choices, default, required, multiple, flag, count, deprecated_flags, help), engines, capabilities, results (schema, when), deprecated |
+
 <!-- END GENERATED: result-schemas -->

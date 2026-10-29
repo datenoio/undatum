@@ -1,7 +1,7 @@
 """Machine-readable results of informational commands.
 
 Informational commands (``count``, ``headers``, ``sniff``, ``stats``, ``schema``, ``diff``,
-``validate``, ``analyze``, ``formats list``, ``config show``) print one JSON document with
+``validate``, ``analyze``, ``formats list``, ``config show``, ``commands``) print one JSON document with
 ``--json`` or ``--format-out json``. Its ``schema`` key names the layout and its major version,
 for example ``undatum.count/1``; an incompatible change (a removed or renamed key, a changed
 type) raises the version. :data:`SCHEMAS` documents every layout; the documentation site
@@ -410,6 +410,28 @@ CONFIG = _register(
             "defaults": ("object", "Merged command defaults"),
         },
         ("files", "defaults"),
+    )
+)
+
+COMMANDS = _register(
+    ResultSchema(
+        "undatum.commands/1",
+        "commands",
+        "The command-line interface as data",
+        {
+            "undatum_version": ("string", "undatum version"),
+            "exit_codes": ("object", "Exit code -> meaning"),
+            "global_options": ("array", "Options of the undatum command itself (see commands)"),
+            "groups": ("array", "Command groups: name, summary"),
+            "commands": (
+                "array",
+                "Commands: name, summary, help, examples, usage, arguments, options (name, "
+                "flags, negation, type, choices, default, required, multiple, flag, count, "
+                "deprecated_flags, help), engines, capabilities, results (schema, when), "
+                "deprecated",
+            ),
+        },
+        ("undatum_version", "exit_codes", "global_options", "groups", "commands"),
     )
 )
 
