@@ -172,6 +172,14 @@ plan it runs straight into Arrow, and other plans convert their records in batch
 `to_arrow()` raise; `to_pandas()` and `to_polars()` build those batches from the records.
 In pandas, list values are NumPy arrays, as in `pandas.read_parquet()`.
 
+`Dataset.from_frame()` and `to_frame()` work with any DataFrame library
+[Narwhals](https://narwhals-dev.github.io/narwhals/) supports (pandas, Polars, PyArrow, Modin,
+cuDF, DuckDB relations, Ibis and others; Narwhals is installed with undatum). A frame is read
+through Arrow, and lazy frames (a Polars `LazyFrame`, a DuckDB relation) are collected first.
+Plans on a frame run in DuckDB like plans on a file, with the same results as the Python
+engine. `to_frame(backend)` builds a frame of an eager library; the library itself is not
+installed with undatum.
+
 ```python
 # Arrow and DataFrame conversion (pyarrow is bundled; pandas, Polars and Dask via extras)
 table = Dataset.read("data.csv").select(["id", "name"]).to_arrow()   # pyarrow.Table
@@ -183,6 +191,15 @@ ddf = Dataset.read("big.jsonl").to_dask()        # pip install "undatum[dask]"
 for chunk in Dataset.read("big.csv").to_pandas(chunksize=100_000):
     ...
 for table in Dataset.read("big.parquet").to_arrow(chunksize=100_000):
+    ...
+
+# Frames of any library in and out
+import polars as pl
+
+frame = pl.read_parquet("sales.parquet")
+top = Dataset.from_frame(frame).frequency("region")
+cleaned = Dataset.from_frame(frame).filter(query="amount > 0").to_frame("polars")
+for chunk in Dataset.read("big.csv").to_frame("pyarrow", chunksize=100_000):
     ...
 
 # Typed iteration

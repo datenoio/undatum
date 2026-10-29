@@ -4225,6 +4225,15 @@ wheels = [
 ]
 
 [[package]]
+name = "narwhals"
+version = "2.28.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/67/43/e11d75a7fb635c6f63dd6e176cb3e050ec2fee35f2f2267b332a6ad351ec/narwhals-2.28.0.tar.gz", hash = "sha256:2d9860c80d6610820826e94c6e42ce4b1d92d89cdd479586e652a8d211dab345", size = 754977, upload-time = "2026-10-27T12:19:33.777Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/cf/82/8ef9c7e0f50493307a49c09cfa7f00c5a778b6d1921f7b2dabe1d3a5809e/narwhals-2.28.0-py3-none-any.whl", hash = "sha256:1f69d6385ec30e2fa6e1fdeb37c562ecabd0f713f6f3e3b58a668c5c9df9567f", size = 490591, upload-time = "2026-10-27T12:19:31.649Z" },
+]
+
+[[package]]
 name = "nodeenv"
 version = "1.11.0"
 source = { registry = "https://pypi.org/simple" }
@@ -7439,6 +7448,7 @@ dependencies = [
     { name = "fastexcel" },
     { name = "iterabledata" },
     { name = "lz4" },
+    { name = "narwhals" },
     { name = "openpyxl" },
     { name = "orjson" },
     { name = "py7zr" },
@@ -7640,6 +7650,7 @@ requires-dist = [
     { name = "matplotlib", marker = "extra == 'plot'", specifier = ">=3.7,<4" },
     { name = "mcp", marker = "extra == 'mcp'", specifier = ">=1.2,<3" },
     { name = "mypy", marker = "extra == 'dev'", specifier = "==2.4.0" },
+    { name = "narwhals", specifier = ">=2.0,<3" },
     { name = "openpyxl", specifier = ">=3.1.2,<4" },
     { name = "orjson", specifier = ">=3.9.15,<4" },
     { name = "pandas", marker = "extra == 'dev'", specifier = ">=2.2.2,<4" },

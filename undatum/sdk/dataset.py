@@ -69,11 +69,12 @@ BATCH_ROWS = 10_000
 
 @dataclass(frozen=True)
 class SourceSpec:
-    """Where the records of a plan come from: a path/URI or in-memory records."""
+    """Where the records of a plan come from: a path/URI, in-memory records or an Arrow table."""
 
     path: str | None = None
     records: Sequence[Any] | Iterable[Any] | None = None
     options: dict[str, Any] = field(default_factory=dict)
+    table: Any = None  # pyarrow.Table (Dataset.from_frame)
 
 
 @dataclass(frozen=True)
@@ -110,13 +111,15 @@ class Dataset:
         options: dict | None = None,
         *,
         steps: tuple[OperationCall, ...] = (),
+        table: Any = None,
     ):
-        """Create a dataset from a path (``source``) or records (``data``).
+        """Create a dataset from a path (``source``), records (``data``) or a ``pyarrow.Table``.
 
-        Prefer :meth:`read` and :meth:`from_records`. A one-shot iterator passed as
-        ``data`` can be consumed once; pass a list to iterate the dataset several times.
+        Prefer :meth:`read`, :meth:`from_records` and :meth:`from_frame`. A one-shot iterator
+        passed as ``data`` can be consumed once; pass a list to iterate the dataset several
+        times.
         """
-        self._spec = SourceSpec(path=source, records=data, options=dict(options or {}))
+        self._spec = SourceSpec(path=source, records=data, options=dict(options or {}), table=table)
         self._steps = steps
 
     # ------------------------------------------------------------------- sources
@@ -151,11 +154,40 @@ class Dataset:
         """
         return cls(data=records)
 
+    @classmethod
+    def from_frame(cls, frame: Any) -> Dataset:
+        """Wrap a DataFrame or table of any library Narwhals supports.
+
+        pandas, Polars, PyArrow, Modin, cuDF and other eager frames are read through Arrow;
+        lazy frames (a Polars ``LazyFrame``, a DuckDB relation, Ibis, ...) are collected first.
+        Plans on the frame run in DuckDB like plans on a file.
+
+        Args:
+            frame: A DataFrame, a ``pyarrow.Table`` or a Narwhals frame.
+
+        Returns:
+            Dataset instance
+
+        Raises:
+            DependencyError: Narwhals is not installed.
+            UndatumError: The object is not a frame Narwhals supports.
+
+        Example:
+            >>> import pandas as pd
+            >>> Dataset.from_frame(pd.DataFrame({"a": [1, 2]})).count()
+            2
+        """
+        return cls(table=_arrow_table(frame))
+
     def _then(self, name: str, config: Any) -> Dataset:
         get_operation(name)  # unknown names fail when the step is added
         spec = self._spec
         return Dataset(
-            spec.path, spec.records, spec.options, steps=(*self._steps, OperationCall(name, config))
+            spec.path,
+            spec.records,
+            spec.options,
+            steps=(*self._steps, OperationCall(name, config)),
+            table=spec.table,
         )
 
     @property
@@ -170,7 +202,7 @@ class Dataset:
 
     def explain(self) -> str:
         """Describe the plan, one line per step."""
-        source = self._spec.path or "<records>"
+        source = self._spec.path or ("<frame>" if self._spec.table is not None else "<records>")
         lines = [f"read {source}"]
         lines += [f"{call.name} {call.config}" for call in self._steps]
         return "\n".join(lines)
@@ -182,6 +214,8 @@ class Dataset:
         options = {**spec.options, **(extra or {})}
         if spec.path is not None:
             return RowSource(spec.path, options)
+        if spec.table is not None:
+            return _TableSource(spec.table)
         if spec.records is not None:
             from ..common.command_utils import iter_command_rows
 
@@ -235,13 +269,16 @@ class Dataset:
         """
         options = {**self._spec.options, **(extra or {})}
         engine = validate_engine(options.get("engine"))
-        if self._spec.path is None or engine == "python":
+        spec = self._spec
+        if (spec.path is None and spec.table is None) or engine == "python":
             return None
         steps = [(get_operation(call.name), call.config) for call in self._steps]
         holds_all_rows = any(op.sql_holds_all_rows for op, _ in steps)
         if holds_all_rows and engine != "duckdb":
             return None  # the Python forms keep memory bounded
-        source = RowSource(self._spec.path, options)
+        source: Any = (
+            RowSource(spec.path, options) if spec.path is not None else _TableSource(spec.table)
+        )
         if not source.duckdb_readable():
             return None
         try:
@@ -758,6 +795,8 @@ class Dataset:
             from ..cmds.counter import count_records
 
             return count_records(self._spec.path, {**self._spec.options, **options})
+        if not self._steps and self._spec.table is not None:
+            return int(self._spec.table.num_rows)
         counted = self._sql(_count, options or None, matches="rows", workload="aggregate")
         if counted is not None:
             return counted
@@ -1083,6 +1122,39 @@ class Dataset:
             pl.DataFrame,
         )
 
+    def to_frame(self, backend: str, chunksize: int | None = None) -> Any:
+        """Convert to a DataFrame of ``backend`` through Arrow and Narwhals.
+
+        Args:
+            backend: A library Narwhals builds eager frames with: ``"pandas"``, ``"polars"``,
+                ``"pyarrow"``, ``"modin"``, ``"cudf"``, ...
+            chunksize: Rows per frame; ``None`` returns one frame.
+
+        Returns:
+            A native frame of ``backend``, or an iterator of frames of ``chunksize`` rows
+
+        Raises:
+            DependencyError: Narwhals or the backend is not installed.
+            UndatumError: A field mixes value types that Arrow cannot hold in one column
+                (see :meth:`to_arrow`).
+
+        Example:
+            >>> Dataset.read("data.csv").to_frame("polars")
+        """
+        nw = _narwhals("Dataset.to_frame()")
+
+        def frame(table: Any) -> Any:
+            try:
+                return nw.from_arrow(table, backend=backend).to_native()
+            except ModuleNotFoundError as exc:
+                raise DependencyError(
+                    exc.name or backend, feature=f"Dataset.to_frame({backend!r})"
+                ) from exc
+
+        if chunksize:
+            return (frame(table) for table in self.to_arrow(chunksize))
+        return frame(self.to_arrow())
+
     def to_dask(self, chunksize: int = 1000000) -> Any:
         """Convert to a Dask DataFrame (needs ``undatum[dask]``)."""
         from iterable.dataframe_adapters import iterable_to_dask
@@ -1159,7 +1231,68 @@ _SAME_VALUE_TYPES = frozenset(
 _TYPE_WORD = re.compile(r"\b[A-Z][A-Z0-9_]*\b")
 
 
-def _python_relation(conn: Any, relation: str, source: RowSource, matches: str) -> str | None:
+_frame_names = itertools.count()
+
+
+class _TableSource:
+    """An in-memory ``pyarrow.Table`` as the source of a plan (:meth:`Dataset.from_frame`).
+
+    The Python engine reads its rows with ``to_pylist()``; DuckDB scans the table, and the
+    typed-format rules of :func:`_python_relation` (``format_id`` ``arrow``) decide where the
+    two give the same values.
+    """
+
+    format_id = "arrow"
+    path = None
+
+    def __init__(self, table: Any):
+        self.table = table
+
+    def __iter__(self) -> Iterator[dict[str, Any]]:
+        for batch in self.table.to_batches(BATCH_ROWS):
+            yield from batch.to_pylist()
+
+    def duckdb_readable(self) -> bool:
+        return True
+
+    def duckdb_relation(self, conn: Any, columns: list[str] | None = None) -> str:
+        name = f"undatum_frame_{next(_frame_names)}"
+        conn.register(name, self.table if columns is None else self.table.select(columns))
+        return name
+
+
+def _narwhals(feature: str) -> Any:
+    try:
+        import narwhals.stable.v2 as nw
+    except ImportError:
+        raise DependencyError(
+            "narwhals", feature=feature, install_command="pip install narwhals"
+        ) from None
+    return nw
+
+
+def _arrow_table(frame: Any) -> Any:
+    """A ``pyarrow.Table`` of any frame Narwhals supports (lazy frames are collected)."""
+    import pyarrow as pa
+
+    if isinstance(frame, pa.Table):
+        return frame
+    nw = _narwhals("Dataset.from_frame()")
+    try:
+        wrapped = nw.from_native(frame)
+    except TypeError as exc:
+        raise UndatumError(
+            f"Not a DataFrame Narwhals supports: {type(frame).__name__}",
+            context={"type": type(frame).__name__},
+        ) from exc
+    if isinstance(wrapped, nw.LazyFrame):
+        wrapped = wrapped.collect()
+    if not isinstance(wrapped, nw.DataFrame):
+        raise UndatumError(f"Not a DataFrame: {type(frame).__name__}")
+    return wrapped.to_arrow()
+
+
+def _python_relation(conn: Any, relation: str, source: Any, matches: str) -> str | None:
     """``relation`` with the records the Python reader gives, or ``None`` when DuckDB's differ.
 
     CSV is text in both readers, but DuckDB reads empty fields as NULL (the Python reader
