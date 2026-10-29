@@ -89,6 +89,10 @@ Python engine, which detects the encoding. A row DuckDB cannot read makes the co
 to the Python engine; if records were already printed to standard output, the command stops
 with an error instead, and `--engine python` reads the file.
 
+DuckDB reads CSV field names from the first line, as the Python engine does, with every value as
+text; values beyond the header in a longer row are dropped. A header DuckDB cannot use (an empty
+name, or names that differ only by case, such as `id,ID`) sends the file to the Python engine.
+
 Commands that read and write these formats through DuckDB do not import iterabledata at all,
 which saves about a second per run (`undatum head data.csv` takes 0.7 s). `--engine python`
 forces the streaming Python path, for example to compare results.

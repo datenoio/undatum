@@ -94,3 +94,22 @@ Arrow IPC/Feather), and the records SHALL be identical to those of the Python en
 #### Scenario: Format without an Arrow reader
 - **WHEN** pyarrow cannot read the input as Arrow batches (XLSX, Avro, Feather v1)
 - **THEN** the operation runs on the Python engine as before
+
+### Requirement: CSV Header as the Python Reader Reads It
+Every DuckDB read of a CSV or TSV file SHALL take the field names from its first line as the
+Python reader does (names as written, every value text) instead of DuckDB's sniffer. A file whose
+header DuckDB cannot use (an empty name, or names that differ only by case) SHALL be read by the
+Python engine.
+
+#### Scenario: Row longer than the header
+- **WHEN** a CSV file has a row with more values than its header
+- **THEN** `undatum count` reports every record with either engine
+- **AND** DuckDB keeps the header's field names and drops the values beyond them
+
+#### Scenario: Numeric header
+- **WHEN** the first line of a CSV file is `1,2`
+- **THEN** `schema`, `select` and `convert` use the field names `1` and `2` with either engine
+
+#### Scenario: Repeated names
+- **WHEN** a CSV header repeats a name (`a,a,b`)
+- **THEN** the command runs on the Python engine

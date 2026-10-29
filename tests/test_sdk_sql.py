@@ -88,8 +88,10 @@ def test_frequency_ties_keep_first_seen_order(tmp_path):
         "a,a,b\n1,2,3\n",  # repeated names
         "﻿a,b\n1,2\n",  # byte-order mark
         "a, b\n 1 , 2 \n",  # padded names
-        "a,b\n1,2\n3,4,5\n",  # a long row DuckDB takes for the header
         "a,b,c\n1,2,3\n4,5\n",  # a short row
+        "1,2\n3,4\n",  # a numeric header
+        "a,A\n1,2\n",  # names that differ only by case
+        "a,,b\n1,2,3\n",  # an empty name
     ],
 )
 def test_csv_headers_duckdb_reads_otherwise_use_python(tmp_path, text):
@@ -98,6 +100,15 @@ def test_csv_headers_duckdb_reads_otherwise_use_python(tmp_path, text):
     for method in ("head", "schema"):
         results = _both(path, METHODS[method], [("rename", _rename({"zz": "yy"}))])
         assert results["auto"] == results["python"]
+
+
+def test_csv_long_rows_keep_the_header(tmp_path):
+    # DuckDB's sniffer took the long row for the header; values beyond the header are dropped.
+    path = tmp_path / "long.csv"
+    path.write_text("a,b\n1,2\n3,4,5\n6,7\n", encoding="utf8")
+    ds = Dataset.read(str(path)).rename({"zz": "yy"})
+    assert ds.head(10) == [{"a": "1", "b": "2"}, {"a": "3", "b": "4"}, {"a": "6", "b": "7"}]
+    assert ds.count() == 3
 
 
 def _rename(mapping):

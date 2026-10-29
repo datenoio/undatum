@@ -9,7 +9,7 @@ from typing import Any
 import duckdb
 import pandas as pd
 
-from .command_utils import duckdb_read_csv_expr
+from .command_utils import duckdb_csv_text_expr, duckdb_read_csv_expr
 
 # DuckDB type → Frictionless Table Schema type (shared by packager and schemer).
 DUCKDB_FRICTIONLESS_TYPE_MAP = {
@@ -128,6 +128,7 @@ def duckdb_decompose(
     use_summarize: bool = False,
     delimiter: str | None = None,
     conn: Any = None,
+    text_types: bool = True,
 ) -> list[Any]:
     """Decompose file or DataFrame structure using DuckDB.
 
@@ -148,6 +149,9 @@ def duckdb_decompose(
         delimiter: CSV/TSV delimiter (passed to DuckDB read_csv when set).
         conn: DuckDB connection to run the queries on (the module's default connection
             when omitted).
+        text_types: Type the columns of CSV files, which are read as text with the header the
+            Python reader takes, by the shared rules (``field_types``); ``False`` leaves them
+            ``VARCHAR``.
 
     Returns:
         List of lists containing field information:
@@ -163,7 +167,15 @@ def duckdb_decompose(
 
     json_ignore = ", ignore_errors=true" if ignore_errors else ""
     data: list = []
-    if filetype in ["csv", "tsv"]:
+    text_read = None
+    if filetype in ["csv", "tsv"] and filename is not None:
+        # The header the Python reader takes, as text; the types come from the shared rules
+        text_read = duckdb_csv_text_expr(
+            filename, {"delimiter": delimiter}, filetype=filetype, ignore_errors=ignore_errors
+        )
+    if text_read is not None:
+        read_func = text_read
+    elif filetype in ["csv", "tsv"]:
         if filename is not None:
             # For schemer (describe), use sample_size; for analyzer (summarize), don't
             if use_summarize:
@@ -459,4 +471,8 @@ def duckdb_decompose(
                         continue
                     raise
 
+    if text_read is not None and text_types and table:
+        from .field_types import apply_text_types
+
+        apply_text_types(conn or duckdb, text_read, table)
     return table

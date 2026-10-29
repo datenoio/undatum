@@ -7,6 +7,7 @@ import duckdb
 from iterable.helpers.detect import detect_file_type
 
 from ...common.command_utils import (
+    duckdb_csv_text_expr,
     duckdb_read_csv_expr,
     get_iterable_options,
     resolve_csv_delimiter,
@@ -57,6 +58,7 @@ class DuckDBStatsMixin:
             use_summarize=False,
             delimiter=delimiter,
             conn=self._duckdb,
+            text_types=False,  # typed by _duckdb_field_types
         )
         fields = []
         for column in columns:
@@ -193,7 +195,9 @@ class DuckDBStatsMixin:
     def _duckdb_read_func(fromfile, filetype, delimiter=None):
         """Build a DuckDB read function expression for the given file."""
         if filetype in ["csv", "tsv"]:
-            return duckdb_read_csv_expr(fromfile, delimiter)
+            # As text with the header the Python reader takes, when DuckDB can name its columns
+            text = duckdb_csv_text_expr(fromfile, {"delimiter": delimiter}, filetype=filetype)
+            return text or duckdb_read_csv_expr(fromfile, delimiter)
         escaped = fromfile.replace("'", "''")
         if filetype in ["json", "jsonl"]:
             return f"read_json('{escaped}')"

@@ -76,12 +76,19 @@ Polars stays an optional extra for SDK interchange through Arrow.
   Python values of HUGEINT, UUID, INTERVAL and MAP, so record writers keep `fetchmany`. The cost
   was the JSON conversion of every record, done twice (1.05 s per pass per 1M records); it is now
   done once, with a fast path for records of scalars (0.17 s).
+- **CSV headers.** DuckDB's sniffer decides the header itself: it took a later line for the
+  header when a row had more values than the first line, named a numeric header `column0`, ...,
+  and trimmed names. Every DuckDB read of CSV text names the columns from the first line as the
+  csv module reads it (`read_csv(..., header=true, auto_detect=false, columns={...})`, all
+  `VARCHAR`), which also skips sniffing (1M rows: same time). DuckDB rejects empty names and
+  names that differ only by case, so such files keep the Python reader. `schema`, `analyze`,
+  `stats` and `doc` read CSV structure the same way and type it with the shared rules.
 - **SDK.** `Dataset._sql()` composes the plan with `compose_sql` over
   `RowSource.duckdb_relation()` (native readers and the Arrow bridge) for `write`, `count`,
   `head`, `uniq`, `frequency`, `schema` and the exports. Methods that return records must give
   the Python engine's values, so the relation is adjusted or refused: CSV is wrapped in
   `COALESCE(column, '')` and used only when DuckDB's column names equal the header the Python
-  reader takes (a byte-order mark, repeated or padded names and misread headers fall back);
+  reader takes (a byte-order mark, which DuckDB drops, and headers DuckDB cannot name fall back);
   JSON is refused, because `read_json_auto` types strings as dates and joins integers and
   floats; Parquet, ORC and Arrow columns must have types whose Python values are the same
   (checked type by type: nanosecond and zoned timestamps, maps, intervals, UUIDs and Parquet

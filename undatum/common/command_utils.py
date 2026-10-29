@@ -158,8 +158,71 @@ def duckdb_can_decode(path: str, codec: str | None = None, encoding: str | None 
     return True
 
 
+def read_csv_header(
+    path: str,
+    delimiter: str,
+    *,
+    encoding: str | None = None,
+    quotechar: str | None = None,
+    codec: str | None = None,
+) -> list[str] | None:
+    """Field names the Python reader takes from the first line of a CSV file.
+
+    Args:
+        path: Local file path.
+        delimiter: Field delimiter.
+        encoding: Text encoding (UTF-8 when not set).
+        quotechar: Quote character (``"`` when not set).
+        codec: Compression codec id (``gz``, ``gzip``, ``zst``; anything else is read raw).
+
+    Returns:
+        The names as written, ``[]`` for an empty file, or ``None`` when the first line
+        cannot be read (a missing file, a codec without its module, text that does not decode).
+    """
+    import csv
+    import io
+
+    try:
+        raw: Any
+        if codec in ("gz", "gzip"):
+            import gzip
+
+            raw = gzip.open(path, "rb")
+        elif codec == "zst":
+            import zstandard
+
+            raw = zstandard.ZstdDecompressor().stream_reader(open(path, "rb"))
+        else:
+            raw = open(path, "rb")
+        with io.TextIOWrapper(raw, encoding=encoding or "utf-8", newline="") as text:
+            reader = csv.reader(text, delimiter=delimiter, quotechar=quotechar or '"')
+            return next(reader, [])
+    except Exception as exc:  # noqa: BLE001 - any failure leaves the Python reader
+        logger.debug("%s: header not readable: %s", path, exc)
+        return None
+
+
+def duckdb_csv_names(header: list[str] | None) -> list[str] | None:
+    """DuckDB column names for a CSV header, or ``None`` when DuckDB cannot use them.
+
+    DuckDB rejects empty names and names that differ only by case, which the Python reader
+    keeps (the last of repeated names wins). A UTF-8 byte-order mark is dropped, as
+    DuckDB's own reader does.
+    """
+    if not header:
+        return None
+    names = [header[0].removeprefix("\ufeff"), *header[1:]]
+    if not all(names) or len({name.lower() for name in names}) < len(names):
+        return None
+    return names
+
+
 def duckdb_read_csv_options(
-    delimiter: str | None = None, *, ignore_errors: bool = False, all_varchar: bool = False
+    delimiter: str | None = None,
+    *,
+    ignore_errors: bool = False,
+    all_varchar: bool = False,
+    quotechar: str | None = None,
 ) -> str:
     """Build DuckDB ``read_csv`` option suffix (leading comma included).
 
@@ -176,8 +239,9 @@ def duckdb_read_csv_options(
         escaped = delimiter.replace("\\", "\\\\").replace("'", "''")
         parts.append(f"delim='{escaped}'")
         # RFC 4180: a quote inside a quoted field is written twice.
-        parts.append("quote='\"'")
-        parts.append("escape='\"'")
+        quote = (quotechar or '"').replace("'", "''")
+        parts.append(f"quote='{quote}'")
+        parts.append(f"escape='{quote}'")
         parts.append("strict_mode=false")
     if not parts:
         return ""
@@ -191,13 +255,69 @@ def duckdb_read_csv_expr(
     ignore_errors: bool = False,
     sample_size: int | None = None,
     all_varchar: bool = False,
+    header: list[str] | None = None,
+    quotechar: str | None = None,
 ) -> str:
-    """Build a DuckDB ``read_csv('path', ...)`` expression."""
+    """Build a DuckDB ``read_csv('path', ...)`` expression.
+
+    With ``header`` (names from :func:`duckdb_csv_names`), the first line is the header and
+    every column is text with that name, as the Python reader reads the file; DuckDB does not
+    sniff the file then (its sniffer can take a later line for the header, names a numeric
+    header ``column0``, ... and trims names).
+    """
     escaped = filename.replace("'", "''")
-    opts = duckdb_read_csv_options(delimiter, ignore_errors=ignore_errors, all_varchar=all_varchar)
+    opts = duckdb_read_csv_options(
+        delimiter, ignore_errors=ignore_errors, all_varchar=all_varchar, quotechar=quotechar
+    )
     if sample_size is not None:
         opts += f", sample_size={sample_size}"
+    if header is not None:
+        columns = ", ".join("'" + name.replace("'", "''") + "': 'VARCHAR'" for name in header)
+        opts += f", header=true, auto_detect=false, columns={{{columns}}}"
     return f"read_csv('{escaped}'{opts})"
+
+
+def duckdb_csv_text_expr(
+    filename: str,
+    iterableargs: dict | None = None,
+    *,
+    filetype: str = "csv",
+    ignore_errors: bool = False,
+) -> str | None:
+    """A DuckDB ``read_csv`` expression that reads a CSV or TSV file as the Python reader does.
+
+    Every column is text, named by the first line (:func:`read_csv_header`).
+
+    Args:
+        filename: Local file path.
+        iterableargs: Reader options (``delimiter``, ``encoding``, ``quotechar``).
+        filetype: ``csv`` or ``tsv`` (the delimiter when none is given).
+        ignore_errors: Skip rows DuckDB cannot read.
+
+    Returns:
+        The expression, or ``None`` when the header cannot be read or DuckDB cannot name its
+        columns (:func:`duckdb_csv_names`).
+    """
+    from .format_names import format_from_name
+
+    iterableargs = iterableargs or {}
+    delimiter = resolve_csv_delimiter(iterableargs, filename=filename, filetype=filetype) or ","
+    named = format_from_name(filename)
+    quotechar = iterableargs.get("quotechar")
+    header = read_csv_header(
+        filename,
+        delimiter,
+        encoding=iterableargs.get("encoding"),
+        quotechar=quotechar,
+        codec=named[1] if named else None,
+    )
+    names = duckdb_csv_names(header)
+    if names is None:
+        logger.debug("%s: DuckDB cannot read the header %r", filename, header)
+        return None
+    return duckdb_read_csv_expr(
+        filename, delimiter, ignore_errors=ignore_errors, header=names, quotechar=quotechar
+    )
 
 
 def duckdb_read_expr(
@@ -207,15 +327,27 @@ def duckdb_read_expr(
     *,
     all_varchar: bool = False,
 ) -> str:
-    """Build a DuckDB read expression for CSV, JSON, or Parquet files."""
+    """Build a DuckDB read expression for CSV, JSON, or Parquet files.
+
+    With ``all_varchar``, CSV is read by :func:`duckdb_csv_text_expr`.
+
+    Raises:
+        ValueError: For other formats, and for CSV text whose header DuckDB cannot read as
+            the Python reader does.
+    """
     from ..utils import get_file_type
 
     source_type = filetype or get_file_type(filename) or "csv"
     iterableargs = iterableargs or {}
 
     if source_type == "csv":
-        delimiter = resolve_csv_delimiter(iterableargs, filename=filename, filetype=source_type)
-        return duckdb_read_csv_expr(filename, delimiter, all_varchar=all_varchar)
+        if not all_varchar:
+            delimiter = resolve_csv_delimiter(iterableargs, filename=filename, filetype=source_type)
+            return duckdb_read_csv_expr(filename, delimiter)
+        expr = duckdb_csv_text_expr(filename, iterableargs)
+        if expr is None:
+            raise ValueError(f"DuckDB cannot read the header of {filename} as the Python reader")
+        return expr
     if source_type in ("json", "jsonl"):
         escaped = filename.replace("'", "''")
         return f"read_json_auto('{escaped}')"

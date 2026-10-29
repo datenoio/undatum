@@ -53,6 +53,9 @@
 - [x] 7.3 SDK reference regenerated (`scripts/generate_sdk_reference.py`)
 
 ## 8. Verification
+- [x] 8.5 DuckDB reads CSV headers as the Python reader does (first line, names as written) in
+      every command, including the structure `schema`, `analyze`, `stats` and `doc` read; headers
+      DuckDB cannot name keep the Python reader
 - [x] 8.1 Benchmarks (`scripts/benchmarks.py`) against the base branch for every step; update
       `tests/benchmarks/budgets.toml` (a `convert-orc` case for the Arrow bridge; `schema`
       samples types on one thread, 346 MB to 271 MB on 1M rows)

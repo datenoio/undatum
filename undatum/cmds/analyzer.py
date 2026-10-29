@@ -28,6 +28,7 @@ from pydantic import BaseModel
 from ..ai import AIService, get_ai_service, get_description, get_fields_info
 from ..common.command_utils import (
     duckdb_can_decode,
+    duckdb_csv_text_expr,
     duckdb_read_csv_expr,
     get_iterable_options,
     iter_command_rows,
@@ -36,7 +37,6 @@ from ..common.command_utils import (
 from ..common.duckdb_config import duckdb_connection
 from ..common.engine_selector import is_format_supported_by_duckdb
 from ..common.errors import ValidationError
-from ..common.field_types import apply_text_types
 from ..common.s3_iterable import open_iterable_with_s3
 from ..common.schema_utils import duckdb_decompose
 from ..common.tables import format_table
@@ -498,14 +498,19 @@ def analyze(
                     iterableargs, filename=filename, filetype=filetype
                 )
                 text_ignore = ", ignore_errors=true" if ignore_errors else ""
+                csv_read = ""
+                if filetype in ["csv", "tsv"]:
+                    # As text with the header the Python reader takes, when DuckDB can name
+                    # its columns
+                    csv_read = duckdb_csv_text_expr(
+                        filename, iterableargs, filetype=filetype, ignore_errors=ignore_errors
+                    ) or duckdb_read_csv_expr(filename, csv_delimiter, ignore_errors=ignore_errors)
                 if filetype in ["json", "jsonl"]:
                     escaped = filename.replace("'", "''")
                     query_str = f"select count(*) from read_json('{escaped}'{text_ignore})"
                     num_records = conn.execute(query_str).fetchall()[0][0]
                 elif filetype in ["csv", "tsv"]:
-                    read_func = duckdb_read_csv_expr(
-                        filename, csv_delimiter, ignore_errors=ignore_errors
-                    )
+                    read_func = csv_read
                     query_str = f"select count(*) from {read_func}"
                     num_records = conn.execute(query_str).fetchall()[0][0]
                 else:
@@ -528,13 +533,6 @@ def analyze(
                     delimiter=csv_delimiter,
                     conn=conn,
                 )
-                if filetype in ("csv", "tsv"):
-                    # Field types by the shared rules instead of the DuckDB sniffer's guess
-                    from ..io import RowSource
-
-                    text_relation = RowSource(filename, options).duckdb_from()
-                    if text_relation is not None:
-                        apply_text_types(conn, text_relation, columns_raw)
                 is_flat = True
                 table.num_cols = len(columns_raw)
                 for column in columns_raw:
@@ -544,10 +542,7 @@ def analyze(
                         is_flat = False
                 table.is_flat = is_flat
                 if filetype in ["csv", "tsv"]:
-                    read_func = duckdb_read_csv_expr(
-                        filename, csv_delimiter, ignore_errors=ignore_errors
-                    )
-                    query_str = f"select * from {read_func} limit {MAX_SAMPLE_SIZE}"
+                    query_str = f"select * from {csv_read} limit {MAX_SAMPLE_SIZE}"
                 elif filetype in ["json", "jsonl"]:
                     escaped = filename.replace("'", "''")
                     query_str = (
