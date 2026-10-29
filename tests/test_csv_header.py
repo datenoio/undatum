@@ -152,9 +152,6 @@ def test_engines_agree(tmp_path, name, command):
     outputs = {
         engine: _cli(args[0], "-e", engine, path, *args[1:]) for engine in ("python", "auto")
     }
-    if args[0] in ("frequency", "uniq"):
-        # DuckDB does not keep the first-seen order of ties.
-        outputs = {engine: sorted(text.splitlines()) for engine, text in outputs.items()}
     assert outputs["auto"] == outputs["python"]
 
 

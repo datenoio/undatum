@@ -14,7 +14,8 @@
 # than 20% (select, convert-jsonl); memory budgets by the formula where it is lower.
 # convert-orc is new: 100k time as convert-parquet, which takes the same time on the Mac.
 # DuckDB 2.0 connections start about 20 MB larger than 1.5 (66 MB against 44 MB), which
-# head, count, rename, fill and sql show.
+# head, count, rename, fill and sql show. uniq and frequency number the input on one thread
+# to keep first-seen order (1M rows: about 75 MB less, 0.1 s more), so their 1M memory is lower.
 
 # Each [command] in "faster" must stay faster than the second one.
 faster = [["count", "sort"], ["count-jsonl", "sort"], ["head", "sort"]]
@@ -52,8 +53,8 @@ fill = { seconds = 2.1, rss_mb = 200 }
 dedup = { seconds = 7.1, rss_mb = 180 }
 select = { seconds = 2.0, rss_mb = 260 }
 sort = { seconds = 2.5, rss_mb = 1230 }
-frequency = { seconds = 1.8, rss_mb = 410 }
-uniq = { seconds = 1.7, rss_mb = 410 }
+frequency = { seconds = 1.8, rss_mb = 310 }
+uniq = { seconds = 1.7, rss_mb = 310 }
 stats = { seconds = 6.5, rss_mb = 720 }
 schema = { seconds = 3.1, rss_mb = 330 }
 sql = { seconds = 0.9, rss_mb = 320 }

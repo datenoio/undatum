@@ -4,7 +4,8 @@ description: "undatum uniq command reference"
 ---
 # `uniq`
 
-Extracts all unique values from specified field(s). **`--fields` is required.**
+Extracts all unique values from specified field(s). **`--fields` is required.** Values are listed
+in the order they first appear in the input, with either engine.
 
 Default stdout format is CSV. Use `--format-out json` (or an `--output` path ending in `.json`) for JSON.
 

@@ -14,7 +14,11 @@ from ..common.command_utils import (
     iter_command_rows,
     quote_sql_identifier,
 )
-from ..common.duckdb_config import create_duckdb_connection, get_duckdb_config_from_options
+from ..common.duckdb_config import (
+    WORKLOAD_DEFAULTS,
+    create_duckdb_connection,
+    get_duckdb_config_from_options,
+)
 from ..common.engine_selector import detect_engine, engine_for_arrow
 from ..common.errors import (
     FileNotFoundError,
@@ -129,6 +133,33 @@ def _duckdb_input(conn: Any, filename, filetype, iterableargs, source=None, colu
         raise
 
 
+def _first_seen_groups(
+    read_expr: str, fieldstext: str, filter_sql: str | None, *, counts: bool
+) -> str:
+    """Query of the distinct ``fieldstext`` values in the order the Python engine gives.
+
+    Distinct values come in first-seen order; with ``counts`` each ends with its count
+    (``c``), most frequent first and ties in first-seen order. ``row_number() OVER ()``
+    numbers the records in input order.
+    """
+    numbered = f"SELECT {fieldstext}, row_number() OVER () AS __undatum_row FROM {read_expr}"
+    if filter_sql:
+        numbered = f"{numbered} WHERE {filter_sql}"
+    if counts:
+        return (
+            f"SELECT {fieldstext}, count(*) AS c FROM ({numbered}) GROUP BY {fieldstext} "
+            "ORDER BY c DESC, min(__undatum_row)"
+        )
+    return (
+        f"SELECT {fieldstext} FROM ({numbered}) GROUP BY {fieldstext} ORDER BY min(__undatum_row)"
+    )
+
+
+def _ordered_connection(duckdb_config: dict[str, Any] | None) -> Any:
+    """A connection for queries that number the input (``--duckdb-*`` options win)."""
+    return create_duckdb_connection(**{**WORKLOAD_DEFAULTS["ordered"], **(duckdb_config or {})})
+
+
 def _stream_query(conn: Any, query: str) -> Iterator[tuple[Any, ...]]:
     """Run ``query`` on ``conn`` and fetch its rows in batches; ``conn`` is closed after them.
 
@@ -166,22 +197,18 @@ def get_duckdb_fields_uniq(
 ):  # pylint: disable=unused-argument
     """Distinct values of ``fields`` in ``filename`` from DuckDB, as an iterator of tuples.
 
-    The query runs before this returns, so read errors raise here; rows are then fetched in
-    batches while they are written.
+    Values come in first-seen order, as from the Python engine. The query runs before this
+    returns, so read errors raise here; rows are then fetched in batches while they are
+    written.
     """
     # dq_instance parameter kept for backward compatibility (no longer used)
-    if duckdb_config is None:
-        duckdb_config = {}
-
-    conn = create_duckdb_connection(**duckdb_config)
+    conn = _ordered_connection(duckdb_config)
     # Without a filter the query reads only the fields (nested paths need whole columns).
     columns = None if filter_sql or _has_nested_fields(fields) else list(fields)
     read_expr = _duckdb_input(conn, filename, filetype, iterableargs, source, columns)
 
     fieldstext = ",".join(quote_sql_identifier(field) for field in fields)
-    query = f"SELECT DISTINCT {fieldstext} FROM {read_expr}"
-    if filter_sql:
-        query = f"{query} WHERE {filter_sql}"
+    query = _first_seen_groups(read_expr, fieldstext, filter_sql, counts=False)
     if dolog:
         logger.info(query)
 
@@ -266,23 +293,18 @@ def get_duckdb_fields_freq(
 ):  # pylint: disable=unused-argument
     """``fields`` values and their counts, most frequent first, as an iterator of tuples.
 
-    The query runs before this returns, so read errors raise here; rows are then fetched in
-    batches while they are written.
+    Ties come in first-seen order, as from the Python engine. The query runs before this
+    returns, so read errors raise here; rows are then fetched in batches while they are
+    written.
     """
     # dq_instance parameter kept for backward compatibility (no longer used)
-    if duckdb_config is None:
-        duckdb_config = {}
-
-    conn = create_duckdb_connection(**duckdb_config)
+    conn = _ordered_connection(duckdb_config)
     # Without a filter the query reads only the fields (nested paths need whole columns).
     columns = None if filter_sql or _has_nested_fields(fields) else list(fields)
     read_expr = _duckdb_input(conn, filename, filetype, iterableargs, source, columns)
 
     fieldstext = ",".join(quote_sql_identifier(field) for field in fields)
-    query = f"SELECT {fieldstext}, count(*) as c FROM {read_expr}"
-    if filter_sql:
-        query = f"{query} WHERE {filter_sql}"
-    query = f"{query} GROUP BY {fieldstext} ORDER BY c DESC"
+    query = _first_seen_groups(read_expr, fieldstext, filter_sql, counts=True)
     if dolog:
         logger.info(query)
 

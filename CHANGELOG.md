@@ -31,6 +31,7 @@ Upgrading: Python 3.11 or newer is required, and undatum now uses DuckDB 2.0. On
 
 ### Fixed
 
+- **`uniq` and `frequency` on the DuckDB engine** listed values in no fixed order (`uniq`) and values with the same count in no fixed order (`frequency`). They now keep the order in which values first appear, as the Python engine and the SDK do. The query runs on one thread unless `--duckdb-threads` is given: on 1M rows it takes about 0.1 s longer and 25-30% less memory (`frequency` of a 1M-value field: 450 MB to 337 MB).
 - **CSV headers on the DuckDB engine** — DuckDB's CSV sniffer took a later line for the header when a row had more values than the header (`count` reported 1 record instead of 2, `convert` wrote fields `column0`, `column1`, ...), named a numeric header `column0`, `column1`, and trimmed padded names. Every DuckDB read of CSV and TSV, including the structure `schema`, `analyze`, `stats` and `doc` read, now takes the names from the first line as the Python engine does, and values beyond the header are dropped. Headers DuckDB cannot use (empty names, names that differ only by case) are read by the Python engine. `--quotechar` now applies to DuckDB reads as well.
 - **`uniq` and `frequency` with the Python engine** wrote missing values as the text `None`; they are empty CSV fields and JSON `null`, as with DuckDB.
 - **`select` without `--where`** ran its own DuckDB code, which wrote timestamps to CSV with `COPY` (text different from the Python engine's) and filtered typed columns differently; it runs the `select` operation, as with `--where`.
