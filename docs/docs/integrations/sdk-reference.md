@@ -497,6 +497,10 @@ value types that Arrow cannot hold in one column become frames of Python objects
 
 **Returns:** `pandas.DataFrame`, or an iterator of frames of `chunksize` rows
 
+**Raises:**
+
+- `DependencyError`: pandas is not installed (`pip install "undatum[pandas]"`).
+
 ### `Dataset.to_polars(chunksize: int | None = None) -> Any`
 
 Convert to a Polars DataFrame (or an iterator of them with `chunksize`).

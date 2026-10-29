@@ -9,13 +9,13 @@ resolution-markers = [
     "python_full_version == '3.14.*' and sys_platform == 'emscripten'",
     "python_full_version == '3.14.*' and sys_platform != 'emscripten' and sys_platform != 'win32'",
     "python_full_version == '3.13.*' and sys_platform == 'win32'",
-    "python_full_version == '3.12.*' and sys_platform == 'win32'",
-    "python_full_version < '3.12' and sys_platform == 'win32'",
     "python_full_version == '3.13.*' and sys_platform == 'emscripten'",
-    "python_full_version == '3.12.*' and sys_platform == 'emscripten'",
-    "python_full_version < '3.12' and sys_platform == 'emscripten'",
     "python_full_version == '3.13.*' and sys_platform != 'emscripten' and sys_platform != 'win32'",
+    "python_full_version == '3.12.*' and sys_platform == 'win32'",
+    "python_full_version == '3.12.*' and sys_platform == 'emscripten'",
     "python_full_version == '3.12.*' and sys_platform != 'emscripten' and sys_platform != 'win32'",
+    "python_full_version < '3.12' and sys_platform == 'win32'",
+    "python_full_version < '3.12' and sys_platform == 'emscripten'",
     "python_full_version < '3.12' and sys_platform != 'emscripten' and sys_platform != 'win32'",
 ]
 
@@ -1303,10 +1303,10 @@ resolution-markers = [
     "python_full_version == '3.14.*' and sys_platform == 'emscripten'",
     "python_full_version == '3.14.*' and sys_platform != 'emscripten' and sys_platform != 'win32'",
     "python_full_version == '3.13.*' and sys_platform == 'win32'",
-    "python_full_version == '3.12.*' and sys_platform == 'win32'",
     "python_full_version == '3.13.*' and sys_platform == 'emscripten'",
-    "python_full_version == '3.12.*' and sys_platform == 'emscripten'",
     "python_full_version == '3.13.*' and sys_platform != 'emscripten' and sys_platform != 'win32'",
+    "python_full_version == '3.12.*' and sys_platform == 'win32'",
+    "python_full_version == '3.12.*' and sys_platform == 'emscripten'",
     "python_full_version == '3.12.*' and sys_platform != 'emscripten' and sys_platform != 'win32'",
 ]
 dependencies = [
@@ -1825,10 +1825,10 @@ resolution-markers = [
     "python_full_version == '3.14.*' and sys_platform == 'emscripten'",
     "python_full_version == '3.14.*' and sys_platform != 'emscripten' and sys_platform != 'win32'",
     "python_full_version == '3.13.*' and sys_platform == 'win32'",
-    "python_full_version == '3.12.*' and sys_platform == 'win32'",
     "python_full_version == '3.13.*' and sys_platform == 'emscripten'",
-    "python_full_version == '3.12.*' and sys_platform == 'emscripten'",
     "python_full_version == '3.13.*' and sys_platform != 'emscripten' and sys_platform != 'win32'",
+    "python_full_version == '3.12.*' and sys_platform == 'win32'",
+    "python_full_version == '3.12.*' and sys_platform == 'emscripten'",
     "python_full_version == '3.12.*' and sys_platform != 'emscripten' and sys_platform != 'win32'",
 ]
 dependencies = [
@@ -4306,10 +4306,10 @@ resolution-markers = [
     "python_full_version == '3.14.*' and sys_platform == 'emscripten'",
     "python_full_version == '3.14.*' and sys_platform != 'emscripten' and sys_platform != 'win32'",
     "python_full_version == '3.13.*' and sys_platform == 'win32'",
-    "python_full_version == '3.12.*' and sys_platform == 'win32'",
     "python_full_version == '3.13.*' and sys_platform == 'emscripten'",
-    "python_full_version == '3.12.*' and sys_platform == 'emscripten'",
     "python_full_version == '3.13.*' and sys_platform != 'emscripten' and sys_platform != 'win32'",
+    "python_full_version == '3.12.*' and sys_platform == 'win32'",
+    "python_full_version == '3.12.*' and sys_platform == 'emscripten'",
     "python_full_version == '3.12.*' and sys_platform != 'emscripten' and sys_platform != 'win32'",
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/13/01/11703282db468b85f6f7b8c7f22d058de5970d5c7e60a3a8aaa313c3de36/numpy-2.5.3.tar.gz", hash = "sha256:df2d5874ff183595a4ba404edd04f6bd9b5505c1d7708573f6a6c17489a67563", size = 20791231, upload-time = "2026-09-06T16:27:47.073Z" }
@@ -6723,10 +6723,10 @@ resolution-markers = [
     "python_full_version == '3.14.*' and sys_platform == 'emscripten'",
     "python_full_version == '3.14.*' and sys_platform != 'emscripten' and sys_platform != 'win32'",
     "python_full_version == '3.13.*' and sys_platform == 'win32'",
-    "python_full_version == '3.12.*' and sys_platform == 'win32'",
     "python_full_version == '3.13.*' and sys_platform == 'emscripten'",
-    "python_full_version == '3.12.*' and sys_platform == 'emscripten'",
     "python_full_version == '3.13.*' and sys_platform != 'emscripten' and sys_platform != 'win32'",
+    "python_full_version == '3.12.*' and sys_platform == 'win32'",
+    "python_full_version == '3.12.*' and sys_platform == 'emscripten'",
     "python_full_version == '3.12.*' and sys_platform != 'emscripten' and sys_platform != 'win32'",
 ]
 dependencies = [
@@ -7417,7 +7417,6 @@ dependencies = [
     { name = "lz4" },
     { name = "openpyxl" },
     { name = "orjson" },
-    { name = "pandas" },
     { name = "py7zr" },
     { name = "pyarrow" },
     { name = "pydantic" },
@@ -7457,6 +7456,7 @@ all = [
     { name = "langchain-core" },
     { name = "matplotlib" },
     { name = "mcp" },
+    { name = "pandas" },
     { name = "pdf2image" },
     { name = "pdfplumber" },
     { name = "phonenumbers" },
@@ -7499,6 +7499,7 @@ dask = [
 ]
 dev = [
     { name = "mypy" },
+    { name = "pandas" },
     { name = "pre-commit" },
     { name = "pytest" },
     { name = "pytest-benchmark" },
@@ -7512,6 +7513,7 @@ elastic = [
     { name = "elasticsearch" },
 ]
 extract = [
+    { name = "pandas" },
     { name = "pdf2image" },
     { name = "pdfplumber" },
     { name = "pytesseract" },
@@ -7541,6 +7543,9 @@ mssql = [
 ]
 mysql = [
     { name = "pymysql" },
+]
+pandas = [
+    { name = "pandas" },
 ]
 phone = [
     { name = "phonenumbers" },
@@ -7612,7 +7617,9 @@ requires-dist = [
     { name = "mypy", marker = "extra == 'dev'", specifier = "==2.4.0" },
     { name = "openpyxl", specifier = ">=3.1.2,<4" },
     { name = "orjson", specifier = ">=3.9.15,<4" },
-    { name = "pandas", specifier = ">=2.2.2,<4" },
+    { name = "pandas", marker = "extra == 'dev'", specifier = ">=2.2.2,<4" },
+    { name = "pandas", marker = "extra == 'extract'", specifier = ">=2.2.2,<4" },
+    { name = "pandas", marker = "extra == 'pandas'", specifier = ">=2.2.2,<4" },
     { name = "pdf2image", marker = "extra == 'extract'", specifier = ">=1.16,<2" },
     { name = "pdfplumber", marker = "extra == 'extract'", specifier = ">=0.10,<1" },
     { name = "phonenumbers", marker = "extra == 'phone'", specifier = ">=8.13,<10" },
@@ -7646,7 +7653,7 @@ requires-dist = [
     { name = "types-pymysql", marker = "extra == 'dev'" },
     { name = "types-pyyaml", marker = "extra == 'dev'" },
     { name = "types-requests", marker = "extra == 'dev'" },
-    { name = "undatum", extras = ["access", "api", "clickhouse", "cloud", "compression", "dask", "elastic", "extract", "frictionless", "gis", "lakehouse", "langchain", "mcp", "mssql", "mysql", "phone", "plot", "polars", "postgres", "repack", "scientific", "tui", "web"], marker = "extra == 'all'" },
+    { name = "undatum", extras = ["access", "api", "clickhouse", "cloud", "compression", "dask", "elastic", "extract", "frictionless", "gis", "lakehouse", "langchain", "mcp", "mssql", "mysql", "pandas", "phone", "plot", "polars", "postgres", "repack", "scientific", "tui", "web"], marker = "extra == 'all'" },
     { name = "uvicorn", marker = "extra == 'api'", specifier = ">=0.27,<1" },
     { name = "uvicorn", marker = "extra == 'web'", specifier = ">=0.27,<1" },
     { name = "validators", specifier = ">=0.22.0,<1" },
@@ -7655,7 +7662,7 @@ requires-dist = [
     { name = "xxhash", specifier = ">=3.0,<5" },
     { name = "zstandard", specifier = ">=0.22,<1" },
 ]
-provides-extras = ["extract", "api", "plot", "phone", "tui", "web", "mcp", "langchain", "polars", "dask", "s3", "gcs", "azure", "cloud", "frictionless", "elastic", "postgres", "mysql", "mssql", "clickhouse", "lakehouse", "gis", "scientific", "access", "compression", "repack", "all", "dev"]
+provides-extras = ["pandas", "extract", "api", "plot", "phone", "tui", "web", "mcp", "langchain", "polars", "dask", "s3", "gcs", "azure", "cloud", "frictionless", "elastic", "postgres", "mysql", "mssql", "clickhouse", "lakehouse", "gis", "scientific", "access", "compression", "repack", "all", "dev"]
 
 [[package]]
 name = "urllib3"

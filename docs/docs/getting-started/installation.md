@@ -71,7 +71,8 @@ Some features require optional dependencies, installed as extras. This is the ca
 | Extra | Enables |
 |-------|---------|
 | `api` | Data API server (`undatum api`, FastAPI + uvicorn + httpx) |
-| `extract` | Document extraction (`undatum extract`, PDF/DOC/DOCX tables and text) |
+| `pandas` | pandas DataFrames: `Dataset.to_pandas()` and `analyze --use-pandas` |
+| `extract` | Document extraction (`undatum extract`, PDF/DOC/DOCX tables and text; includes pandas) |
 | `plot` | Plotting (`undatum plot`, matplotlib) |
 | `tui` | Interactive terminal UI (`undatum tui`, Textual) |
 | `web` | Local web UI (`undatum web`, FastAPI + Jinja2) |

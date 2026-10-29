@@ -1,7 +1,7 @@
 # Homebrew formula for the datenoio tap, rendered on release by
 # scripts/render_homebrew_formula.py ({{VERSION}}, {{URL}} and {{SHA256}} are filled in).
 #
-# undatum depends on DuckDB, Apache Arrow and pandas, which are impractical to build from
+# undatum depends on DuckDB and Apache Arrow, which are impractical to build from
 # source, so the formula installs the released package and its wheels into a private
 # virtualenv instead of listing every dependency as a resource (fine for a tap, not for
 # homebrew-core).

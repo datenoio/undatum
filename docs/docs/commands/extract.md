@@ -21,6 +21,7 @@ undatum extract report.pdf --method text --pages 1-3 --format-out ndjson --outpu
 
 **Optional extra:** `pip install "undatum[extract]"` installs:
 
+- `pandas` — tables, Excel input and the output writers
 - `pdfplumber` — PDF tables/text
 - `pdf2image` + `pytesseract` — OCR (`--method ocr`; system Tesseract still required)
 - `textract` — legacy `.doc`

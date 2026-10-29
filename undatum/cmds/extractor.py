@@ -1,15 +1,21 @@
-"""Document extraction command module."""
+"""Document extraction command module.
+
+Tables are pandas DataFrames: pandas comes with the ``extract`` extra.
+"""
+
+from __future__ import annotations
 
 import glob
 import os
 import sys
 import tempfile
-from typing import Any
-
-import pandas as pd
+from typing import TYPE_CHECKING, Any
 
 from ..utils import get_option
 from .packager import Packager
+
+if TYPE_CHECKING:
+    import pandas as pd
 
 SUPPORTED_INPUTS = {"pdf", "doc", "docx", "xls", "xlsx"}
 SUPPORTED_OUTPUTS = {"csv", "json", "ndjson", "parquet", "datapackage"}
@@ -94,7 +100,15 @@ def _normalize_headers(values: list[Any]) -> list[str]:
     return headers
 
 
+def _pandas() -> Any:
+    """pandas, or DependencyError naming the ``extract`` extra."""
+    from ..io.arrow import import_pandas
+
+    return import_pandas("undatum extract", extra="extract")
+
+
 def _table_to_dataframe(table: list[list[Any]]) -> pd.DataFrame:
+    pd = _pandas()
     if not table:
         return pd.DataFrame()
     header = _normalize_headers(list(table[0]))
@@ -105,6 +119,7 @@ def _table_to_dataframe(table: list[list[Any]]) -> pd.DataFrame:
 
 
 def _text_to_dataframe(lines: list[str]) -> pd.DataFrame:
+    pd = _pandas()
     cleaned = [line for line in (line.strip() for line in lines) if line]
     return pd.DataFrame({"text": cleaned})
 
@@ -156,6 +171,7 @@ class Extractor:
             options = {}
         if not input_files:
             raise ValueError("No input files provided.")
+        _pandas()  # before any work: tables are DataFrames
 
         output_format = _normalize_output_format(get_option(options, "output_format"))
         if output_format not in SUPPORTED_OUTPUTS:
@@ -240,6 +256,7 @@ class Extractor:
                 df["source_table_index"] = idx
                 df["source_page"] = table.get("page")
                 combined.append(df)
+            pd = _pandas()
             merged = pd.concat(combined, ignore_index=True) if combined else pd.DataFrame()
             return [
                 {
@@ -413,7 +430,7 @@ class Extractor:
 
     def _extract_excel(self, input_path: str) -> list[dict[str, Any]]:
         try:
-            data = pd.read_excel(input_path, sheet_name=None)
+            data = _pandas().read_excel(input_path, sheet_name=None)
         except Exception as exc:
             raise ValueError(f"Failed to read spreadsheet: {exc}") from exc
 

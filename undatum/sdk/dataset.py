@@ -1031,8 +1031,13 @@ class Dataset:
 
         Returns:
             ``pandas.DataFrame``, or an iterator of frames of ``chunksize`` rows
+
+        Raises:
+            DependencyError: pandas is not installed (``pip install "undatum[pandas]"``).
         """
-        import pandas as pd
+        from ..io.arrow import import_pandas
+
+        pd = import_pandas("Dataset.to_pandas()")
 
         def frame(chunk: Any) -> Any:
             return pd.DataFrame(chunk) if isinstance(chunk, list) else chunk.to_pandas()
@@ -1296,18 +1301,9 @@ def _record_chunks(rows: Iterator[Any], size: int, *, strict: bool) -> Iterator[
 
 
 def _records_table(batch: list[dict[str, Any]]) -> Any:
-    import pyarrow as pa
+    from ..io.arrow import records_table
 
-    columns = {}
-    for name in dict.fromkeys(key for row in batch for key in row):
-        try:
-            columns[name] = pa.array([row.get(name) for row in batch])
-        except (pa.ArrowInvalid, pa.ArrowTypeError, pa.ArrowNotImplementedError) as exc:
-            raise UndatumError(
-                f"Field '{name}' has values Arrow cannot hold in one column: {exc}",
-                context={"field": name},
-            ) from exc
-    return pa.table(columns)
+    return records_table(batch)
 
 
 def _concat_tables(tables: list[Any]) -> Any:

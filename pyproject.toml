@@ -40,7 +40,6 @@ dependencies = [
     "lz4>=4.3.2,<5",
     "openpyxl>=3.1.2,<4",
     "orjson>=3.9.15,<4",
-    "pandas>=2.2.2,<4",
     # No upper bound: pyarrow ships a major version every few months without breaking the
     # Parquet/ORC reader and writer API used here (exempt in check_dependency_bounds.py).
     "pyarrow>=16.0.0",
@@ -71,7 +70,12 @@ Changelog = "https://github.com/datenoio/undatum/blob/master/CHANGELOG.md"
 Issues = "https://github.com/datenoio/undatum/issues"
 
 [project.optional-dependencies]
+# DataFrames: `extract`, `analyze --use-pandas` and `Dataset.to_pandas()`.
+pandas = [
+    "pandas>=2.2.2,<4",
+]
 extract = [
+    "pandas>=2.2.2,<4",
     "pdfplumber>=0.10,<1",
     "pdf2image>=1.16,<2",
     "pytesseract>=0.3.10,<1",
@@ -172,7 +176,7 @@ repack = [
 ]
 # Every optional feature (the previous behaviour of a plain install plus all extras).
 all = [
-    "undatum[extract,api,plot,phone,tui,web,mcp,langchain,polars,dask,cloud,frictionless,elastic,postgres,mysql,mssql,clickhouse,lakehouse,gis,scientific,access,compression,repack]",
+    "undatum[pandas,extract,api,plot,phone,tui,web,mcp,langchain,polars,dask,cloud,frictionless,elastic,postgres,mysql,mssql,clickhouse,lakehouse,gis,scientific,access,compression,repack]",
 ]
 # Tool versions are pinned here and mirrored in .pre-commit-config.yaml and CI;
 # scripts/check_tool_versions.py fails CI when they drift.
@@ -188,6 +192,8 @@ dev = [
     "pytest-cov>=5",
     "pytest-benchmark>=4",
     "pre-commit>=3.7",
+    # Tests of the features that build DataFrames.
+    "pandas>=2.2.2,<4",
 ]
 
 [project.scripts]

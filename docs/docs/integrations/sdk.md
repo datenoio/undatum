@@ -173,7 +173,7 @@ plan it runs straight into Arrow, and other plans convert their records in batch
 In pandas, list values are NumPy arrays, as in `pandas.read_parquet()`.
 
 ```python
-# Arrow and DataFrame conversion (pandas and pyarrow are bundled; Polars/Dask via extras)
+# Arrow and DataFrame conversion (pyarrow is bundled; pandas, Polars and Dask via extras)
 table = Dataset.read("data.csv").select(["id", "name"]).to_arrow()   # pyarrow.Table
 df = Dataset.read("data.jsonl").to_pandas()
 pdf = Dataset.read("data.parquet").to_polars()   # pip install "undatum[polars]"

@@ -45,7 +45,7 @@ undatum analyze nested.jsonl --flatten-nested
 - `--table` / `--sheet` — named Excel sheet or multi-table source
 - `--limit` — max records to scan (default 10000)
 - `--no-scan` / `--no-stats` — skip structure scan or uniqueness stats
-- `--use-pandas` — use pandas for the analysis path
+- `--use-pandas` — describe the records through a pandas DataFrame (needs `pip install "undatum[pandas]"`); by default records undatum reads itself (XML, JSON) are described through Arrow
 - `--format-out` / `-O` — `text`, `json`, `yaml`, or `markdown` (also inferred from `--output`); `--json` is short for `-O json`
 - `--lang` — language for `--autodoc` text (default `English`)
 
@@ -103,7 +103,7 @@ undatum analyze [OPTIONS] INPUT_FILE
 |--------|-------------|---------|
 | `--verbose` / `--no-verbose` | Enable verbose logging output. | `--no-verbose` |
 | `-e`, `--engine` [auto\|duckdb\|python] | Processing engine: auto (default), duckdb, or python. |  |
-| `--use-pandas` / `--no-use-pandas` | Use pandas for data processing (may use more memory). | `--no-use-pandas` |
+| `--use-pandas` / `--no-use-pandas` | Describe records through a pandas DataFrame (needs "undatum[pandas]"). | `--no-use-pandas` |
 | `-O`, `--format-out` TEXT | Output format: 'text' (default), 'json', 'yaml', or 'markdown'. Also inferred from --output (.json/.yaml/.yml/.md). |  |
 | `-o`, `--output` TEXT | Optional output file path. If not specified, prints to stdout. |  |
 | `--autodoc` / `--no-autodoc` | Enable AI-powered automatic field and dataset documentation. | `--no-autodoc` |

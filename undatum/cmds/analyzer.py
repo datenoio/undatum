@@ -41,6 +41,7 @@ from ..common.s3_iterable import open_iterable_with_s3
 from ..common.schema_utils import duckdb_decompose
 from ..common.tables import format_table
 from ..formats.docx import analyze_docx
+from ..io.arrow import import_pandas, records_table
 from ..utils import detect_encoding, get_dict_value, get_option
 
 logger = logging.getLogger(__name__)
@@ -236,10 +237,12 @@ def _field_from_column(column: list, include_stats: bool = True) -> FieldSchema:
 
 def _duckdb_sample_as_csv(conn, query_str: str, limit: int = MAX_SAMPLE_SIZE) -> str:
     """Run a DuckDB query and return sample rows as CSV text with column headers."""
-    df = conn.execute(query_str).fetchdf()
-    if len(df) > limit:
-        df = df.head(limit)
-    return df.to_csv(index=False)
+    result = conn.execute(query_str)
+    f = io.StringIO()
+    writer = csv.writer(f, lineterminator="\n")
+    writer.writerow([column[0] for column in result.description])
+    writer.writerows(result.fetchmany(limit))
+    return f.getvalue()
 
 
 def _objects_are_dict_records(objects: list) -> bool:
@@ -296,12 +299,16 @@ def table_from_objects(
             writer.writerows(sample)
         table.description = get_description(f.getvalue(), language=lang, ai_service=ai_service)
 
-    use_frame = use_pandas or _objects_are_dict_records(objects)
-    if use_frame:
-        import pandas as pd
-
-        df = pd.DataFrame(objects)
-        columns_raw = duckdb_decompose(frame=df, path="*", limit=objects_limit, use_summarize=stats)
+    if use_pandas or _objects_are_dict_records(objects):
+        if use_pandas:
+            frame = import_pandas("analyze --use-pandas").DataFrame(objects)
+        else:
+            # Records as Arrow: integers with missing values stay integers, nested objects
+            # become structs (a pandas frame made them DOUBLE and MAP(VARCHAR, VARCHAR))
+            frame = records_table(objects, mixed_as_text=True)
+        columns_raw = duckdb_decompose(
+            frame=frame, path="*", limit=objects_limit, use_summarize=stats
+        )
     else:
         tfile_name = _write_objects_tempfile(objects, filetype, objects_limit)
         try:

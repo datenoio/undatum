@@ -55,7 +55,7 @@ undatum db query "" --db "elasticsearch://host:9200?index=logs&limit=100"
 **Output Formats:**
 - `jsonl` (default) - JSON Lines format, one record per line
 - `csv` - Comma-separated values format
-- `parquet` - Parquet format (requires pandas and pyarrow)
+- `parquet` - Parquet format (written with pyarrow)
 
 **Features:**
 - **Streaming support**: Results are streamed in batches for efficient memory usage

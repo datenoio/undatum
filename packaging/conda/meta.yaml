@@ -35,7 +35,6 @@ requirements:
     - lz4 >=4.3.2,<5
     - openpyxl >=3.1.2,<4
     - orjson >=3.9.15,<4
-    - pandas >=2.2.2,<4
     - pyarrow >=16.0.0
     - py7zr >=0.20.6,<2
     - pydantic >=2.5,<3

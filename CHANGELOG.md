@@ -13,6 +13,7 @@ Upgrading: Python 3.11 or newer is required, and undatum now uses DuckDB 2.0. On
 
 - **Python 3.11 is the minimum version.** Python 3.10 reached end of life in October 2026; the current DuckDB, pandas, pyarrow and Polars releases need 3.11 as well.
 - **DuckDB 2.0** — `duckdb>=2.0,<3` (the 2.0 LTS line, supported until October 2027; the 1.5 line ends on 2027-03-01). Queries that return one row now read their result to the end, as DuckDB 2.0 requires before the next query on a connection, and streamed results use `execute()` instead of relations, which no longer have `fetchone()`/`fetchmany()`. The `lakehouse` extra still installs, but pyducklake has no release for DuckDB 2.0 yet, so pip picks pyducklake 1.0.12, the newest one that accepts it.
+- **pandas is an optional extra** — `pip install undatum` no longer installs pandas (about 70 MB with its dependencies; the base install is 249 MB instead of 318 MB). `undatum[pandas]` adds it for `Dataset.to_pandas()` and `analyze --use-pandas`, and `undatum[extract]` and `undatum[all]` include it. Without it these exit with code 2 and the `pip install` command. `analyze` and `schema --flatten-nested` describe the records undatum reads itself through an Arrow table instead of a DataFrame: integers with missing values stay integers and nested objects are structures, where a pandas frame gave `DOUBLE` and `MAP(VARCHAR, VARCHAR)`. `db query --format-out parquet` writes Parquet with pyarrow.
 
 ### Added
 

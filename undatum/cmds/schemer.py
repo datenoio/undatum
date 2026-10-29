@@ -79,12 +79,16 @@ def table_from_objects(
     objects: list,
     id: str,
     objects_limit: int,
-    use_pandas: bool = False,
+    in_memory: bool = False,
     filetype="csv",
     autodoc: bool = False,
     lang: str = "English",
 ):
-    """Reconstruct a table schema from a list of objects."""
+    """Reconstruct a table schema from a list of objects.
+
+    With ``in_memory``, DuckDB describes an Arrow table of the (dict) records instead of a
+    temporary file.
+    """
     table = TableSchema(id=id)
     table.num_records = len(objects)
     if autodoc:
@@ -92,11 +96,11 @@ def table_from_objects(
         writer = csv.writer(f)
         writer.writerows(objects[:MAX_SAMPLE_SIZE])
         table.description = get_description(f.getvalue(), language=lang)
-    if use_pandas:
-        import pandas as pd
+    if in_memory:
+        from ..io.arrow import records_table
 
-        df = pd.DataFrame(objects)
-        columns_raw = duckdb_decompose(frame=df, path="*", limit=objects_limit)
+        frame = records_table(objects, mixed_as_text=True)
+        columns_raw = duckdb_decompose(frame=frame, path="*", limit=objects_limit)
     else:
         tfile = tempfile.NamedTemporaryFile(
             suffix="." + filetype, mode="w", encoding="utf8", delete=False
@@ -187,7 +191,7 @@ def _schema_columns_from_iterable(filename: str, objects_limit: int, options: di
         id=os.path.basename(filename),
         objects_limit=objects_limit,
         filetype="jsonl",
-        use_pandas=flatten_nested,
+        in_memory=flatten_nested,
     )
     return [[field.name, field.ftype, field.is_array] for field in sampled.fields]
 

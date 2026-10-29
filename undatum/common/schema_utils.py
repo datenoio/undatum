@@ -6,12 +6,9 @@ and data analysis commands to eliminate code duplication.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import duckdb
-
-if TYPE_CHECKING:
-    import pandas as pd
 
 from .command_utils import duckdb_csv_text_expr, duckdb_read_csv_expr
 
@@ -122,7 +119,7 @@ def field_to_frictionless_schema(field: Any) -> dict[str, Any]:
 
 def duckdb_decompose(
     filename: str | None = None,
-    frame: pd.DataFrame | None = None,
+    frame: Any = None,
     filetype: str | None = None,
     path: str = "*",
     limit: int = 10000000,
@@ -142,7 +139,8 @@ def duckdb_decompose(
 
     Args:
         filename: Path to input file. If None, frame must be provided.
-        frame: Pandas DataFrame. Used when filename is None.
+        frame: Records DuckDB scans (a ``pyarrow.Table`` from ``undatum.io.arrow.records_table``
+            or a pandas DataFrame). Used when filename is None.
         filetype: File type ('csv', 'tsv', 'json', 'jsonl'). Determines read function.
         path: Path expression for nested fields (default: '*' for all fields).
         limit: Maximum records to process (default: 10000000).

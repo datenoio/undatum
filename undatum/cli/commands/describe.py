@@ -85,7 +85,8 @@ def analyze(
         typer.Option(help="Processing engine: 'auto' (default), 'duckdb', or 'iterable'."),
     ] = None,
     use_pandas: Annotated[
-        bool, typer.Option(help="Use pandas for data processing (may use more memory).")
+        bool,
+        typer.Option(help='Describe records through a pandas DataFrame (needs "undatum[pandas]").'),
     ] = False,
     outtype: Annotated[
         str,

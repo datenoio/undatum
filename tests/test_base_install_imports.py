@@ -17,6 +17,7 @@ import pytest
 
 # Top-level packages that are only installed through optional extras.
 EXTRA_ONLY_PACKAGES = [
+    "pandas",
     "fastapi",
     "starlette",
     "uvicorn",
@@ -171,3 +172,68 @@ def test_command_needing_missing_extra_exits_2(argv):
     )
     assert result.returncode == 2, result.stdout + result.stderr
     assert "pip install" in (result.stdout + result.stderr)
+
+
+FIXTURES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures")
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["analyze", os.path.join(FIXTURES, "books.xml"), "--outtype", "json"],
+        ["schema", os.path.join(FIXTURES, "books.jsonl"), "--flatten-nested"],
+        ["schema", os.path.join(FIXTURES, "books.xml")],
+    ],
+)
+def test_structure_of_records_without_pandas(argv):
+    """Records undatum reads itself are described through Arrow, not pandas."""
+    result = _run(
+        f"""
+        import sys
+        from undatum.__main__ import main
+        sys.argv = ["undatum", *{argv!r}]
+        try:
+            main()
+        finally:
+            assert "pandas" not in sys.modules
+        """
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "title" in result.stdout
+
+
+@pytest.mark.parametrize(
+    "argv,extra",
+    [
+        (["analyze", os.path.join(FIXTURES, "books.xml"), "--use-pandas"], "pandas"),
+        (["extract", os.path.join(FIXTURES, "2cols6rows.xlsx")], "extract"),
+    ],
+)
+def test_commands_that_need_pandas_exit_2(argv, extra):
+    result = _run(
+        f"""
+        import sys
+        from undatum.__main__ import main
+        sys.argv = ["undatum", *{argv!r}]
+        main()
+        """
+    )
+    assert result.returncode == 2, result.stdout + result.stderr
+    assert f'pip install "undatum[{extra}]"' in result.stdout + result.stderr
+
+
+def test_sdk_to_pandas_without_pandas():
+    path = os.path.join(FIXTURES, "2cols6rows.csv")
+    result = _run(
+        f"""
+        from undatum import Dataset
+        from undatum.common.errors import DependencyError
+        try:
+            Dataset.read({path!r}).to_pandas()
+        except DependencyError as exc:
+            assert 'pip install "undatum[pandas]"' in str(exc), str(exc)
+        else:
+            raise AssertionError("to_pandas() worked without pandas")
+        """
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
