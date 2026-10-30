@@ -65,6 +65,10 @@ Upgrading: Python 3.11 or newer is required, and undatum now uses DuckDB 2.0. On
 - **`dedup` and `reverse` honour `--engine`** — the option was accepted but ignored. With `--engine duckdb`, CSV, JSON and Parquet inputs are processed in DuckDB with the same records as the Python engine (2M rows: `dedup` 1.6 s instead of 10.6 s, `reverse` 2 s instead of about 30 s); without it `reverse` stays on the Python engine, whose memory does not grow with the input, and `dedup` uses DuckDB only when its keys fit (see Changed).
 - **Parse error hints** show command-line options (`--delimiter`, `--encoding`, `--on-error`, `--format-in`) instead of iterabledata's Python calls, and point to `undatum sniff` for the encoding instead of suggesting UTF-8 again.
 
+### Security
+
+- **Locked dependency versions** — `uv.lock`, which the CI and the PyInstaller binaries install, moves the packages with GitHub security advisories to their fixed versions: certifi 2026.10.23, brotli 1.2.1, brotlicffi 1.2.1.0, Pillow 13.0.0 (advisories rated critical), pymongo 4.19.0, dnspython 2.9.1, filelock 4.2.4, virtualenv 21.15.1 (high) and setuptools 84.2.1 (low). `pip install undatum` resolves its own versions and does not use the lock.
+
 ## [1.9.1](https://github.com/datenoio/undatum/compare/v1.9.0...v1.9.1) - 2026-10-15
 
 This is the first GitHub/PyPI release of the 1.9 series and includes all features and fixes listed under 1.9.0 below. The 1.9.0 release workflow stopped at its Windows verification gate before GitHub/PyPI publication.
