@@ -230,8 +230,8 @@ def write_query(conn: Any, query: str, output: str | None, format_out: str | Non
     if output and "://" not in output:
         fmt = resolve_output_format(output, format_out)
         native = resolve_output_format(output) if format_out else fmt
-        # COPY is used for CSV and Parquet; JSON goes through the Python writer so the
-        # text is the same on both engines (DuckDB writes compact JSON).
+        # COPY is used for CSV and Parquet; JSON goes through the Python writer, so its text
+        # is the iterabledata writer's on both engines.
         if fmt == native and fmt in _COPY_FORMATS:
             described = conn.sql(f"DESCRIBE {query}").fetchall()
             if duckdb_copy_keeps_values((row[1] for row in described), fmt) and (

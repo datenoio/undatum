@@ -38,7 +38,7 @@ dependencies = [
     "duckdb>=2.0,<3",
     # Reads xlsx, xlsm, xls, xlsb and ods into Arrow (Rust, calamine).
     "fastexcel>=0.21,<1",
-    "iterabledata>=1.0.22,<1.1",
+    "iterabledata>=1.1.0,<1.2",
     "lz4>=4.3.2,<5",
     # DataFrames of any library in and out of the SDK (Dataset.from_frame/to_frame); no dependencies.
     "narwhals>=2.28,<3",

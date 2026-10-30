@@ -6,7 +6,25 @@ from unittest.mock import patch
 import orjson
 import pytest
 
-from undatum.cmds.converter import Converter
+from undatum.cmds.converter import Converter, _native_bulk_pair
+
+
+@pytest.mark.parametrize(
+    ("fmt_in", "fmt_out", "expected"),
+    [
+        ("csv", "parquet", True),
+        ("parquet", "arrow", True),
+        ("orc", "parquet", True),
+        ("csv", "jsonl", False),
+        ("csv", "csv", False),
+        ("jsonl", "parquet", False),
+        ("nosuch", "parquet", False),
+    ],
+)
+def test_native_batch_pairs(fmt_in, fmt_out, expected):
+    # iterabledata 1.1 marks CSV and JSON Lines as native bulk (their own read_bulk and
+    # write_bulk); batches go only between formats with batch readers and writers.
+    assert _native_bulk_pair(fmt_in, fmt_out) is expected
 
 
 @pytest.fixture

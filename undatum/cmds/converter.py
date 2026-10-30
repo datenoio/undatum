@@ -78,19 +78,36 @@ _SCHEMA_REQUIRED_FORMATS: dict[str, str] = {
 
 
 def _native_bulk_pair(format_in: str | None, format_out: str | None) -> bool:
-    """Return True when both formats advertise native bulk read/write."""
+    """Return True when iterabledata can convert between the formats in batches.
+
+    As in ``iterable.convert.batch``, the reader needs ``read_batches`` and the writer
+    ``write_batch``, or ``read_arrow_batches`` and ``write_arrow_batch``. ORC and Lance decide
+    per file whether they take part, so the methods are enough. The capability flags
+    ``native_bulk_read``/``native_bulk_write`` only say that a format has its own
+    ``read_bulk``/``write_bulk`` (CSV and JSON Lines have since iterabledata 1.1).
+    """
     if not format_in or not format_out:
         return False
     try:
-        from iterable.helpers.capabilities import get_format_capabilities
-    except Exception:  # noqa: BLE001
+        import importlib
+
+        from iterable.helpers.detect import DATATYPE_REGISTRY
+
+        reader, writer = (
+            getattr(importlib.import_module(module), name)
+            for module, name in (
+                DATATYPE_REGISTRY[str(fmt).lower()] for fmt in (format_in, format_out)
+            )
+        )
+    except Exception:  # noqa: BLE001 - unknown format or missing optional backend
         return False
-    try:
-        cin = get_format_capabilities(str(format_in).lower()) or {}
-        cout = get_format_capabilities(str(format_out).lower()) or {}
-    except Exception:  # noqa: BLE001
-        return False
-    return bool(cin.get("native_bulk_read") and cout.get("native_bulk_write"))
+
+    def has(cls: Any, method: str) -> bool:
+        return callable(getattr(cls, method, None))
+
+    return (has(reader, "read_batches") and has(writer, "write_batch")) or (
+        has(reader, "read_arrow_batches") and has(writer, "write_arrow_batch")
+    )
 
 
 def _skip_duckdb_convert(options: dict) -> bool:

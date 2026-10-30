@@ -574,8 +574,8 @@ _COPY_TEXT_UNSAFE_TYPES = (
     "BLOB",
 )
 # ... in CSV also booleans (Python writes True/False), nested values and times (DuckDB
-# shortens fractional seconds: "10:30:00.5" for "10:30:00.500000"). In JSON, DuckDB keeps
-# times that the iterabledata JSON writers (up to 1.0.23) write as null.
+# shortens fractional seconds: "10:30:00.5" for "10:30:00.500000"). In JSON both write times
+# as ISO text (iterabledata writers before 1.1 wrote null).
 _COPY_CSV_UNSAFE_TYPES = ("BOOLEAN", "STRUCT", "MAP", "UNION", "JSON", "TIME")
 # ... and in Parquet the types DuckDB stores differently: intervals (Python: durations), UUIDs
 # (Python: strings) and times with a zone (DuckDB: UTC).

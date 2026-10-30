@@ -2832,15 +2832,15 @@ wheels = [
 
 [[package]]
 name = "iterabledata"
-version = "1.0.23"
+version = "1.1.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "chardet" },
     { name = "tqdm" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/39/72/e82520dc1c8f27c25b8ef84e25f6eb841f17bf1eeeeda8852aa8db822db6/iterabledata-1.0.23.tar.gz", hash = "sha256:51416017963547393e35942dcc919784a047b5691ce31c8b413a957658129eb1", size = 422557, upload-time = "2026-08-18T16:51:48.922Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/09/4d/470faff130a93bf5bbe4cbb2523e95d3222b19f061945d56ebae1c0d1721/iterabledata-1.1.0.tar.gz", hash = "sha256:a8a672c5ef409d36e8cfa0df5205745a0b560645fd00415d4ed400788fd9571f", size = 484394, upload-time = "2026-10-29T11:50:59.689Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/da/ff/c64826a4644faed56a8025be2b5bdc57435c5cff563b2bdac8b752092f14/iterabledata-1.0.23-py3-none-any.whl", hash = "sha256:654c4d2fe253c3d83ef9d840be86c4015dde6d43f9ae6e248d594d3a68570c83", size = 541030, upload-time = "2026-08-18T16:51:46.858Z" },
+    { url = "https://files.pythonhosted.org/packages/0c/90/e5621794d0a6dcc522f8799b5ef24c5a7f7ccaef1cc8e8f28ade5c2b6ff8/iterabledata-1.1.0-py3-none-any.whl", hash = "sha256:f5974e4b45eb7a6ffe932a75b05bbff37b5fd95fae04f0ae2e6fd780fc237295", size = 615040, upload-time = "2026-10-29T11:50:57.823Z" },
 ]
 
 [package.optional-dependencies]
@@ -2868,6 +2868,7 @@ geospatial = [
     { name = "geojson" },
     { name = "mapbox-vector-tile" },
     { name = "pyshp" },
+    { name = "shapely" },
     { name = "topojson" },
 ]
 hdf5 = [
@@ -7635,7 +7636,7 @@ requires-dist = [
     { name = "gcsfs", marker = "extra == 'gcs'", specifier = ">=2024.2" },
     { name = "httpx", marker = "extra == 'api'", specifier = ">=0.27,<1" },
     { name = "httpx", marker = "extra == 'web'", specifier = ">=0.27,<1" },
-    { name = "iterabledata", specifier = ">=1.0.22,<1.1" },
+    { name = "iterabledata", specifier = ">=1.1.0,<1.2" },
     { name = "iterabledata", extras = ["access"], marker = "extra == 'access'" },
     { name = "iterabledata", extras = ["compression"], marker = "extra == 'compression'" },
     { name = "iterabledata", extras = ["geophysical"], marker = "extra == 'scientific'" },
