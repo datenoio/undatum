@@ -2,7 +2,6 @@
 
 import logging
 import os
-import shutil
 import tempfile
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -133,45 +132,6 @@ def _s3fs_available() -> bool:
     )
 
 
-def _codec_safe_source(path: str, iterableargs: dict[str, Any]) -> tuple[str, dict[str, Any]]:
-    """Keep the compression codec when ``--format-in`` is given for a compressed file.
-
-    iterabledata 1.0.x drops the codec detected from the extension when an explicit
-    format is passed, so ``data.csv.gz`` or ``data.zip`` read with ``format=csv`` would be
-    parsed as raw bytes. For a compressed local file the explicit format is removed and,
-    when the name does not already say it (``data.zip``), the file is opened through a
-    temporary link named ``data.<format>.zip``.
-
-    Returns:
-        ``(path to open, reader options)``; the path differs from ``path`` only for a link,
-        which the caller removes when the iterable is closed.
-    """
-    fmt = str(iterableargs.get("format") or "").lower()
-    name = os.path.basename(path)
-    if not fmt or "." not in name or not os.path.isfile(path):
-        return path, iterableargs
-    stem, codec = name.rsplit(".", 1)
-    try:
-        from iterable.helpers.open_iterable import _get_codec_registry
-
-        codecs = set(_get_codec_registry())
-    except Exception:  # pragma: no cover - private helper moved or renamed
-        return path, iterableargs
-    if codec.lower() not in codecs:
-        return path, iterableargs
-    args = {k: v for k, v in iterableargs.items() if k != "format"}
-    if stem.lower().endswith(f".{fmt}"):
-        return path, args
-    fd, alias = tempfile.mkstemp(prefix="undatum-", suffix=f"-{stem}.{fmt}.{codec}")
-    os.close(fd)
-    os.remove(alias)
-    try:
-        os.symlink(os.path.abspath(path), alias)
-    except OSError:  # no symlink support (e.g. Windows without privileges)
-        shutil.copyfile(path, alias)
-    return alias, args
-
-
 class _TempFileCleanupIterable:
     """Wraps an iterable so close() also removes the backing temp file."""
 
@@ -280,18 +240,7 @@ def open_path(
             )
             if delimiter:
                 iterableargs = {**iterableargs, "delimiter": delimiter}
-        source, source_args = (
-            _codec_safe_source(path, iterableargs) if mode in ("r", "rb") else (path, iterableargs)
-        )
-        if source != path:
-            try:
-                inner = open_iterable(source, mode=mode, iterableargs=source_args, **extra)
-            except Exception:
-                os.remove(source)
-                raise
-            _configure_iterable(inner, source, iterableargs)
-            return _TempFileCleanupIterable(inner, source)
-        iterableargs = source_args
+        # iterabledata 1.1 keeps the codec of data.csv.gz or data.zip with an explicit format
         inner = open_iterable(path, mode=mode, iterableargs=iterableargs, **extra)
         _configure_iterable(inner, path, iterableargs)
         return inner
