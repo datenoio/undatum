@@ -44,7 +44,8 @@ Python engine; `--sheet`, `--table` and `--start-page` of a spreadsheet are appl
 | `stats`, `schema`, `analyze`, `join`, `sample` | DuckDB | Python reader |
 | `quality`, `schema-drift` | DuckDB; inputs DuckDB cannot read are loaded into it by the Python reader | Python reader |
 | `sql` | DuckDB, with each file as a view (formats DuckDB reads by name) | not read |
-| `dedup`, `reverse` | Python (bounded memory); DuckDB with `--engine duckdb` | DuckDB with `--engine duckdb` |
+| `dedup` | DuckDB when the keys have at most 100,000 distinct values, otherwise Python (bounded memory) | DuckDB with `--engine duckdb` |
+| `reverse` | Python (bounded memory); DuckDB with `--engine duckdb` | DuckDB with `--engine duckdb` |
 | `cat`, `enum`, `explode`, `exclude`, `fixlengths`, `mask`, `tail`, `transpose`, `validate` | Python, streaming | Python |
 
 The [Python SDK](/integrations/sdk) runs `count()`, `head()`, `uniq()`, `frequency()`,
@@ -82,10 +83,18 @@ Details:
 - A spreadsheet's sheet is read whole by fastexcel, for either engine (100k rows: `convert` to
   Parquet 0.36 s and 152 MB, `frequency` 0.5 s; the previous openpyxl reader took 1.6-1.9 s).
 
-`dedup` and `reverse` use DuckDB only with `--engine duckdb`: DuckDB holds the records up to
-its memory limit (about 750 MB for 2M rows), while the default Python engine stays bounded
-(spilling to disk). On 2M CSV rows `dedup --engine duckdb` takes 1.6 s instead of 10.6 s, and
-`reverse --engine duckdb` 2 s instead of about 30 s; both give the same records.
+`dedup` keeps one record per key in DuckDB. It first estimates the number of distinct keys
+(`approx_count_distinct`, one scan); up to 100,000 it deduplicates in DuckDB, and above that, or
+with `--low-memory`, the Python engine indexes the keys in memory and then on disk, so memory
+stays bounded. With few keys DuckDB is about three times faster: 0.49 s instead of 1.79 s for
+1M CSV rows with 500 keys, and 0.77 s instead of 2.23 s for UK Price Paid 2024 by town (1,144
+keys; see [Benchmarks](/getting-started/benchmarks)). `--engine duckdb` always uses DuckDB, which
+then holds a record per key whatever their number.
+
+`reverse` uses DuckDB only with `--engine duckdb`: DuckDB holds the records up to its memory
+limit (about 750 MB for 2M rows), while the default Python engine stays bounded (spilling to
+disk). On 2M CSV rows `reverse --engine duckdb` takes 2 s instead of about 30 s, with the same
+records.
 
 CSV in another encoding than UTF-8 (for example Windows-1251) goes to the Python engine, which
 detects the encoding, unless DuckDB's `encodings` extension is installed

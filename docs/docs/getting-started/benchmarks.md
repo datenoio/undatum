@@ -60,7 +60,7 @@ once per session, and one that takes over three minutes is stopped (timeout). "�
 has no such command.
 
 <!-- BEGIN GENERATED: comparison -->
-Measured 2026-10-29 on Apple M4 Max, 14 cores, 36 GB RAM (macOS-26.5.1-arm64-arm-64bit); fastest of up to 14 runs in 4 sessions, peak resident memory.
+Measured 2026-10-30 on Apple M4 Max, 14 cores, 36 GB RAM (macOS-26.5.1-arm64-arm-64bit); fastest of up to 39 runs in 9 sessions, peak resident memory.
 
 | Tool | Version |
 |---|---|
@@ -83,7 +83,7 @@ Measured 2026-10-29 on Apple M4 Max, 14 cores, 36 GB RAM (macOS-26.5.1-arm64-arm
 | sort | 0.40 s · 638 MB | 103.22 s · 1357 MB | 1.82 s · 1911 MB | 0.58 s · 321 MB | 1.44 s · 310 MB | 0.15 s · 472 MB |
 | frequency | 0.51 s · 204 MB | 101.08 s · 2097 MB | 0.22 s · 132 MB | 0.11 s · 192 MB | 0.07 s · 13 MB | 0.07 s · 118 MB |
 | stats | 2.52 s · 634 MB | 111.59 s · 1878 MB | 2.81 s · 1162 MB | 0.22 s · 29 MB | 0.52 s · 12 MB | 0.15 s · 137 MB |
-| dedup | 1.79 s · 110 MB | — | 0.22 s · 271 MB | 0.26 s · 322 MB | 0.10 s · 12 MB | 0.11 s · 378 MB |
+| dedup | 0.49 s · 147 MB | — | 0.22 s · 386 MB | 0.24 s · 322 MB | 0.10 s · 12 MB | 0.11 s · 372 MB |
 | join | 0.26 s · 211 MB | 99.03 s · 1437 MB | 0.47 s · 515 MB | 0.68 s · 21 MB | 0.36 s · 303 MB | 0.12 s · 166 MB |
 | to-jsonl | 0.70 s · 155 MB | 102.34 s · 1329 MB | 0.99 s · 568 MB | 0.68 s · 115 MB | 0.43 s · 12 MB | 0.14 s · 552 MB |
 | to-parquet | 2.27 s · 186 MB | — | — | 0.63 s · 286 MB | — | 0.73 s · 329 MB |
@@ -100,7 +100,7 @@ Measured 2026-10-29 on Apple M4 Max, 14 cores, 36 GB RAM (macOS-26.5.1-arm64-arm
 | sort | 0.37 s · 1114 MB | 147.17 s · 1219 MB | 1.88 s · 3247 MB | 0.57 s · 366 MB | 1.04 s · 430 MB | 0.26 s · 1000 MB |
 | frequency | 0.65 s · 202 MB | 149.65 s · 2537 MB | 0.74 s · 791 MB | 0.20 s · 200 MB | 0.16 s · 13 MB | 0.14 s · 216 MB |
 | stats | 3.48 s · 979 MB | 153.83 s · 1670 MB | 4.38 s · 1581 MB | 0.32 s · 31 MB | 1.04 s · 12 MB | 0.21 s · 253 MB |
-| dedup | 2.23 s · 112 MB | — | 0.75 s · 781 MB | 0.33 s · 366 MB | 0.22 s · 12 MB | 0.21 s · 730 MB |
+| dedup | 0.77 s · 144 MB | — | 0.73 s · 764 MB | 0.32 s · 366 MB | 0.21 s · 12 MB | 0.20 s · 730 MB |
 | join | 0.33 s · 330 MB | 146.87 s · 1264 MB | 1.30 s · 843 MB | 0.76 s · 21 MB | 0.49 s · 424 MB | 0.22 s · 285 MB |
 | to-jsonl | 1.16 s · 176 MB | 152.17 s · 1187 MB | 1.97 s · 921 MB | 1.77 s · 361 MB | 2.01 s · 13 MB | 0.50 s · 1091 MB |
 | to-parquet | 0.82 s · 358 MB | — | — | 0.27 s · 689 MB | — | 0.28 s · 853 MB |
@@ -112,7 +112,8 @@ Notes:
 <!-- END GENERATED: comparison -->
 
 The machine was in everyday use, and its load changed the same command's time up to fivefold
-within minutes. Treat differences under about 20% as noise.
+within minutes. Treat differences under about 20% as noise. The `dedup` row comes from five later
+sessions, measured after undatum started deduplicating in DuckDB.
 
 ## Datasets
 

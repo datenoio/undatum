@@ -89,6 +89,14 @@ def test_write_runs_sql_plan_when_every_step_has_one(csv_file, tmp_path, caplog)
     assert out.read_text().splitlines() == ["id,who,age", "1,Alice,34", "2,,28"]
 
 
+def test_dedup_plan_runs_in_duckdb_when_its_keys_fit(csv_file, tmp_path, caplog):
+    out = tmp_path / "out.csv"
+    with caplog.at_level(logging.DEBUG, logger="undatum.sdk.dataset"):
+        Dataset.read(str(csv_file)).fill("name", value="-").dedup().write(str(out))
+    assert any("DuckDB plan" in message for message in caplog.messages)
+    assert out.read_text().splitlines() == ["id,name,age", "1,Alice,34", "2,-,28", "3,Carol,45"]
+
+
 def test_sql_and_python_plans_agree(csv_file, tmp_path):
     plan = Dataset.read(str(csv_file)).fill("name", value="-").select(["id", "name"]).slice(1, 3)
     sql_out = tmp_path / "sql.csv"

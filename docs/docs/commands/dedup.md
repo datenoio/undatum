@@ -32,7 +32,7 @@ Also accepts `--table`, `--flatten-nested`, `--on-error`, `--error-log`, and `--
 
 ## Reference
 
-**Reads:** any readable format · **Writes:** any writable format; CSV/TSV/JSON/JSON Lines on stdout · **Memory:** streaming; up to 100,000 keys in memory, then a disk index (`--low-memory` uses the disk index from the start) · **Engines:** auto, duckdb, python
+**Reads:** any readable format · **Writes:** any writable format; CSV/TSV/JSON/JSON Lines on stdout · **Memory:** one record per key in DuckDB up to 100,000 keys; otherwise streaming, with up to 100,000 keys in memory, then a disk index (`--low-memory` uses the disk index from the start) · **Engines:** auto, duckdb, python
 
 ```text
 undatum dedup [OPTIONS] INPUT_FILE

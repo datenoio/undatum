@@ -54,6 +54,7 @@ from ..ops import (
     write_rows,
 )
 from ..ops.base import quote
+from ..ops.runner import may_fit
 from .results import QueryResult, StatsResult
 
 if TYPE_CHECKING:
@@ -252,9 +253,10 @@ class Dataset:
         """Run the plan as one DuckDB query: ``fetch(conn, query)``, or ``None`` to use Python.
 
         DuckDB runs the plan when the source is DuckDB-readable (natively or through Arrow),
-        every step has a SQL form and the ``engine`` option is not ``python``; steps whose SQL
-        form holds every record (``dedup``, ``reverse``) need ``engine="duckdb"``, as in the
-        CLI. ``fetch`` may return ``None`` to use Python as well.
+        every step has a SQL form and the ``engine`` option is not ``python``. As in the CLI,
+        ``reverse`` needs ``engine="duckdb"`` (its SQL form holds every record), and ``dedup``
+        runs in DuckDB when its input has at most ``memory_keys`` distinct keys. ``fetch`` may
+        return ``None`` to use Python as well.
 
         Args:
             fetch: Runs the query on the connection and returns the result.
@@ -274,7 +276,7 @@ class Dataset:
             return None
         steps = [(get_operation(call.name), call.config) for call in self._steps]
         holds_all_rows = any(op.sql_holds_all_rows for op, _ in steps)
-        if holds_all_rows and engine != "duckdb":
+        if holds_all_rows and engine != "duckdb" and not may_fit(steps):
             return None  # the Python forms keep memory bounded
         source: Any = (
             RowSource(spec.path, options) if spec.path is not None else _TableSource(spec.table)
@@ -294,7 +296,11 @@ class Dataset:
             relation = source.duckdb_relation(conn, None if steps else columns)
             if relation is not None and matches is not None:
                 relation = _python_relation(conn, relation, source, matches)
-            query = compose_sql(conn, relation, steps) if relation is not None else None
+            query = (
+                compose_sql(conn, relation, steps, bounded=engine != "duckdb")
+                if relation is not None
+                else None
+            )
             if query is None:
                 return None
             logger.debug("Dataset: DuckDB plan: %s", query)

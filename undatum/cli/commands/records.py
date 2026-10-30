@@ -577,9 +577,9 @@ def dedup(
     """Remove duplicate rows.
 
     Can deduplicate by all fields or specified key fields. Supports keeping first or last occurrence.
-    Large unique-key sets automatically spill to disk; use --low-memory to force that path.
-    --engine duckdb deduplicates CSV, JSON and Parquet in DuckDB: faster, but it holds the
-    records in memory up to DuckDB's limit.
+    CSV, JSON and Parquet with up to 100,000 distinct keys are deduplicated in DuckDB. More keys
+    are indexed in memory and then on disk; use --low-memory for the disk index from the start.
+    --engine duckdb always uses DuckDB, which holds one record per key.
     """
     from ...cmds.deduplicator import Deduplicator
 

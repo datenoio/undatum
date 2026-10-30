@@ -32,7 +32,8 @@ class Operation(Generic[C]):
     name: ClassVar[str]
     streaming: ClassVar[Streaming] = Streaming.ROW
     # The SQL form holds every record (a window or a sort), so DuckDB's memory grows with
-    # the input up to its limit while apply() stays bounded: it runs only on request.
+    # the input up to its limit while apply() stays bounded: it runs on request, or when
+    # sql_fits() says this input keeps it small.
     sql_holds_all_rows: ClassVar[bool] = False
 
     def apply(self, rows: Iterable[Any], cfg: C) -> Iterator[Any]:
@@ -52,6 +53,21 @@ class Operation(Generic[C]):
             cfg: Operation configuration.
         """
         return None
+
+    def sql_fits(self, conn: Any, source: str, schema: dict[str, str], cfg: C) -> bool:
+        """Whether the SQL form of an operation that holds every record stays small on ``source``.
+
+        The ``auto`` engine asks before it runs such a form; ``False`` (the default) keeps the
+        bounded Python form. Operations that do not override it never open a connection for
+        the question.
+
+        Args:
+            conn: The DuckDB connection the query would run on.
+            source: DuckDB table expression of the operation's input.
+            schema: Column name -> DuckDB type, in column order.
+            cfg: Operation configuration.
+        """
+        return False
 
 
 REGISTRY: dict[str, Operation[Any]] = {}

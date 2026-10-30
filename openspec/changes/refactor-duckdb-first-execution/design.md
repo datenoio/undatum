@@ -133,7 +133,9 @@ Polars stays an optional extra for SDK interchange through Arrow.
   DuckDB's default memory limit.
 - **Operations that hold every record** (`sql_holds_all_rows`: dedup, reverse) use DuckDB only
   with `--engine duckdb`. Under the 256 MiB runner limit, DuckDB 1.5 failed the window/sort these
-  need with an out-of-memory error.
+  need with an out-of-memory error. Later (DuckDB 2.0) dedup became one `GROUP BY` that holds a
+  record per key, and `auto` runs it when `approx_count_distinct` estimates at most
+  `memory_keys` keys (`Operation.sql_fits`).
 
 ### `stats` query plan
 1. **One aggregate query over all columns:** `count(*)`, `count(col)`, `approx_count_distinct`

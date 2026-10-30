@@ -104,8 +104,18 @@ def run_steps(
     return write_rows(iter(rows), output, format_out=format_out, fieldnames=fieldnames)
 
 
-def compose_sql(conn: Any, relation: str, steps: list[tuple[Operation[Any], Any]]) -> str | None:
-    """One DuckDB query applying ``steps`` to ``relation``, or ``None`` without a SQL form."""
+def compose_sql(
+    conn: Any,
+    relation: str,
+    steps: list[tuple[Operation[Any], Any]],
+    *,
+    bounded: bool = False,
+) -> str | None:
+    """One DuckDB query applying ``steps`` to ``relation``, or ``None`` without a SQL form.
+
+    With ``bounded`` a step whose SQL form holds every record is used only when
+    :meth:`~undatum.ops.base.Operation.sql_fits` says so for its input (``None`` otherwise).
+    """
     query = f"SELECT * FROM {relation}"
     source = relation
     for op, cfg in steps:
@@ -114,9 +124,19 @@ def compose_sql(conn: Any, relation: str, steps: list[tuple[Operation[Any], Any]
         sql = op.to_sql(source, schema, cfg)
         if sql is None:
             return None
+        if bounded and op.sql_holds_all_rows and not op.sql_fits(conn, source, schema, cfg):
+            logger.debug("%s: bounded-memory Python engine (--engine duckdb uses DuckDB)", op.name)
+            return None
         query = sql
         source = f"({query})"
     return query
+
+
+def may_fit(steps: Sequence[tuple[Operation[Any], Any]]) -> bool:
+    """Whether every step that holds all records can decide by its input to run in DuckDB."""
+    return all(
+        not op.sql_holds_all_rows or type(op).sql_fits is not Operation.sql_fits for op, _ in steps
+    )
 
 
 def write_rows(
@@ -161,7 +181,7 @@ def _run_sql(
             logger.info("%s: input is not DuckDB-readable; using the Python engine", names)
         return None
     holds_all_rows = any(op.sql_holds_all_rows for op, _ in steps)
-    if holds_all_rows and not required:
+    if holds_all_rows and not required and not may_fit(steps):
         logger.debug("%s: bounded-memory Python engine (--engine duckdb uses DuckDB)", names)
         return None
     try:
@@ -169,14 +189,14 @@ def _run_sql(
 
         from ..common.duckdb_config import duckdb_connection
 
-        # Queries that hold every record were requested with --engine duckdb and rely on the
-        # input order; row transforms are bounded (see WORKLOAD_DEFAULTS).
+        # Queries that hold every record (--engine duckdb, or an input sql_fits() accepts)
+        # rely on the input order; row transforms are bounded (see WORKLOAD_DEFAULTS).
         conn = duckdb_connection(source.options, "ordered" if holds_all_rows else "row")
         try:
             relation = source.duckdb_relation(conn)
             if relation is None:
                 return None
-            query = compose_sql(conn, relation, steps)
+            query = compose_sql(conn, relation, steps, bounded=not required)
             if query is None:
                 if required:
                     logger.info("%s has no DuckDB form; using the Python engine", names)
