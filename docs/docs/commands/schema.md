@@ -22,6 +22,9 @@ undatum schema data.jsonl --format parquet
 # Generate Cerberus schema (for backward compatibility with deprecated `scheme` command)
 undatum schema data.jsonl --format cerberus
 
+# Draft an ODCS data contract (YAML), to check files with validate --rules
+undatum schema data.csv --format odcs --output contract.odcs.yaml
+
 # Save to file
 undatum schema data.jsonl --output schema.yaml
 
@@ -60,6 +63,7 @@ they take those commands' options.
 - `jsonschema` - JSON Schema (W3C/IETF standard) - Use for API validation, OpenAPI specs, and tool integration
 - `avro` - Apache Avro schema format - Use for Kafka message schemas and Hadoop data pipelines
 - `parquet` - Parquet schema format - Use for data lake schemas and Parquet file metadata
+- `odcs` - [Open Data Contract Standard](https://bitol-io.github.io/open-data-contract-standard/) v3.2.0 contract (YAML): one schema object with a `logicalType` and `physicalType` per field, status `draft`. Add constraints and quality checks, then check files with [`validate --rules`](/commands/validate#data-contracts-odcs)
 
 **Use cases:**
 - **JSON Schema**: API documentation, data validation in web applications, OpenAPI specifications
@@ -104,7 +108,7 @@ undatum schema [OPTIONS] INPUT_FILE
 |--------|-------------|---------|
 | `--verbose` / `--no-verbose` | Enable verbose logging output. | `--no-verbose` |
 | `-O`, `--format-out` TEXT | Output format: 'text' (default), 'json', or 'yaml'. | `text` |
-| `--format` TEXT | Schema format: 'yaml' (default), 'json', 'cerberus', 'jsonschema', 'avro', or 'parquet'. Overrides outtype when specified. |  |
+| `--format` TEXT | Schema format: 'yaml' (default), 'json', 'cerberus', 'jsonschema', 'avro', 'parquet', or 'odcs' (an Open Data Contract Standard contract). Overrides outtype when specified. |  |
 | `-o`, `--output` TEXT | Optional output file path. If not specified, prints to stdout. |  |
 | `--autodoc` / `--no-autodoc` | Enable AI-powered automatic field documentation. | `--no-autodoc` |
 | `--lang` TEXT | Language for AI-generated documentation (default: 'English'). | `English` |
@@ -125,7 +129,11 @@ undatum schema [OPTIONS] INPUT_FILE
 | `--validate` | Validate rows against an inferred schema (iterabledata schema.validate). Use `undatum validate` for rule packs. |  |
 | `--strict` | With --validate, flag extra fields not present in the inferred schema. |  |
 | `--sample-size` INTEGER | With --validate, rows to sample when inferring the schema (engine default 10000). |  |
+| `--duckdb-threads` INTEGER | Number of threads for DuckDB engine. |  |
+| `--duckdb-memory` TEXT | Memory limit for DuckDB (e.g., '4GB', '512MB'). |  |
+| `--duckdb-temp-dir` TEXT | Temporary directory for DuckDB. |  |
 | `--json` | Print the result as one JSON document (same as --format-out json). |  |
+| `--cache` / `--no-cache` | Reuse the result kept in ~/.undatum/cache for an unchanged file (default: on; UNDATUM_CACHE=0 or 'defaults: cache: false' in a config file turn it off). |  |
 
 Deprecated spellings (removed in 2.0): `--outtype` → `--format-out`.
 

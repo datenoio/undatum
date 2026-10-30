@@ -5,6 +5,7 @@ import random
 
 from ..common.command_utils import (
     ITERABLE_OPTIONS_KEYS,  # noqa: F401
+    duckdb_read_expr,
     force_iterable_if_table,
     get_iterable_options,
     iter_command_rows,
@@ -88,20 +89,11 @@ class Sampler:
 
         if detected_engine == "duckdb":
             try:
+                read_expr = duckdb_read_expr(
+                    fromfile, filetype, get_iterable_options(options), all_varchar=True
+                )
                 duckdb_config = get_duckdb_config_from_options(options)
                 conn = create_duckdb_connection(**duckdb_config)
-
-                # Determine input format and build appropriate read expression
-                source_type = filetype or get_file_type(fromfile) or "csv"
-                if source_type == "csv":
-                    read_expr = f"read_csv_auto('{fromfile}', all_varchar=true)"
-                elif source_type in ("json", "jsonl"):
-                    read_expr = f"read_json_auto('{fromfile}')"
-                elif source_type == "parquet":
-                    read_expr = f"read_parquet('{fromfile}')"
-                else:
-                    conn.close()
-                    raise ValueError(f"Unsupported file type for DuckDB: {source_type}")
 
                 # Build sampling query
                 if n:
@@ -112,7 +104,7 @@ class Sampler:
                     # Percentage-based sampling
                     # First count total rows
                     count_query = f"SELECT COUNT(*) FROM {read_expr}"
-                    total_count = conn.execute(count_query).fetchone()[0]
+                    total_count = conn.execute(count_query).fetchall()[0][0]
                     limit_value = max(1, int(total_count * float(percent) / 100))
                     query = f"SELECT * FROM {read_expr} ORDER BY RANDOM() LIMIT {limit_value}"
 

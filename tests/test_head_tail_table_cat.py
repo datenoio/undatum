@@ -28,7 +28,8 @@ class TestHead:
         source.write_text("".join(f'{{"id": {i}}}\n' for i in range(1, 6)), encoding="utf8")
         out = tmp_path / "out.jsonl"
         Head().head(str(source), {"n": 3, "output": str(out), "engine": engine})
-        assert out.read_text().splitlines() == ['{"id": 1}', '{"id": 2}', '{"id": 3}']
+        # Compact JSON on both engines (DuckDB, and iterabledata 1.1 writers)
+        assert out.read_text().splitlines() == ['{"id":1}', '{"id":2}', '{"id":3}']
 
 
 class TestTail:
@@ -39,7 +40,7 @@ class TestTail:
         source.write_text("".join(f'{{"id": {i}}}\n' for i in range(1, 6)), encoding="utf8")
         out = tmp_path / "out.jsonl"
         Tail().tail(str(source), {"n": 3, "output": str(out)})
-        assert out.read_text().splitlines() == ['{"id": 3}', '{"id": 4}', '{"id": 5}']
+        assert out.read_text().splitlines() == ['{"id":3}', '{"id":4}', '{"id":5}']
 
 
 class TestTableFormatter:

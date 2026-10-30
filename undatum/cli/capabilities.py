@@ -36,8 +36,9 @@ CAPABILITIES: dict[str, Capability] = {
     "convert": Capability(),
     "count": Capability(writes="a number"),
     "dedup": Capability(
-        memory="streaming; up to 100,000 keys in memory, then a disk index "
-        "(`--low-memory` uses the disk index from the start)"
+        memory="one record per key in DuckDB up to 100,000 keys; otherwise streaming, with up "
+        "to 100,000 keys in memory, then a disk index (`--low-memory` uses the disk index from "
+        "the start)"
     ),
     "diff": Capability(writes=REPORT, memory="keys of both files in memory"),
     "doc": Capability(writes=REPORT, memory="bounded: a sample plus streaming statistics"),

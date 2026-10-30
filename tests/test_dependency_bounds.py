@@ -15,7 +15,7 @@ def _checker():
     module = importlib.util.module_from_spec(spec)
     try:
         spec.loader.exec_module(module)
-    except ModuleNotFoundError as exc:  # Python 3.10 without tomli
+    except ModuleNotFoundError as exc:  # packaging is a dev dependency
         pytest.skip(f"needs {exc.name}")
     return module
 

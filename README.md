@@ -144,7 +144,7 @@ undatum --show-completion      # print the script instead of installing it
 
 ### Requirements
 
-- Python 3.10 or greater (CI tests 3.10–3.13)
+- Python 3.11 or greater (CI tests 3.11–3.13)
 
 ### Install from source
 

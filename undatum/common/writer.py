@@ -129,18 +129,28 @@ def collect_fieldnames(records: Iterable[dict[str, Any]]) -> list[str]:
     return list(seen)
 
 
-def _open_writer(target: str, format_id: str, args: dict[str, Any]) -> Any:
+def _open_writer(
+    target: str, format_id: str, args: dict[str, Any], codecargs: dict[str, Any] | None = None
+) -> Any:
     """Open an iterabledata writer for ``target``.
 
     ``open_iterable`` passes options through ``options=``, but ``CSVIterable`` reads the
-    delimiter and quote character only from constructor arguments, so CSV output with a
-    non-default delimiter (TSV) is constructed directly.
+    delimiter and quote character only from constructor arguments (it writes the header
+    there), so CSV output with a non-default delimiter (TSV) is constructed directly.
+
+    Args:
+        target: Output path.
+        format_id: Output format id (``csv``, ``tsv``, ``parquet``, ...).
+        args: iterabledata writer options (``keys``, ``delimiter``, ...).
+        codecargs: Compression options (``compression_level``, ...).
     """
     from iterable.helpers.detect import open_iterable
 
     delimiter = args.get("delimiter")
     quotechar = args.get("quotechar")
-    if format_id == "csv" and (delimiter not in (None, ",") or quotechar not in (None, '"')):
+    if format_id in ("csv", "tsv") and (
+        delimiter not in (None, ",") or quotechar not in (None, '"')
+    ):
         from iterable.datatypes.csv import CSVIterable
 
         kwargs: dict[str, Any] = {
@@ -152,7 +162,8 @@ def _open_writer(target: str, format_id: str, args: dict[str, Any]) -> Any:
         }
         codec_cls = _detect(target).get("codec")
         if codec_cls is not None:
-            return CSVIterable(codec=codec_cls(filename=target, mode="w"), **kwargs)
+            codec = codec_cls(filename=target, mode="w", options=dict(codecargs or {}))
+            return CSVIterable(codec=codec, **kwargs)
         return CSVIterable(filename=target, **kwargs)
     return open_iterable(target, mode="w", iterableargs=args)
 
@@ -262,7 +273,9 @@ class RecordSink:
         args: dict[str, Any] = {}
         if self.fieldnames:
             args["keys"] = list(self.fieldnames)
-        if self.format_id == "csv" and _extension(self.path) in TAB_DELIMITED_EXTENSIONS:
+        if self.format_id == "tsv" or (
+            self.format_id == "csv" and _extension(self.path) in TAB_DELIMITED_EXTENSIONS
+        ):
             args["delimiter"] = "\t"
         if self.format_out:
             args["format"] = self.format_id
@@ -536,16 +549,98 @@ def emit_records(
 
 
 # DuckDB COPY options per output extension (after stripping the compression suffix).
+# CSV lines end in CRLF, as the Python csv writer ends them.
 _DUCKDB_COPY_FORMATS = {
-    "csv": "FORMAT CSV, HEADER",
-    "tsv": "FORMAT CSV, HEADER, DELIMITER '\t'",
-    "tab": "FORMAT CSV, HEADER, DELIMITER '\t'",
+    "csv": "FORMAT CSV, HEADER, NEW_LINE '\r\n'",
+    "tsv": "FORMAT CSV, HEADER, DELIMITER '\t', NEW_LINE '\r\n'",
+    "tab": "FORMAT CSV, HEADER, DELIMITER '\t', NEW_LINE '\r\n'",
     "jsonl": "FORMAT JSON",
     "ndjson": "FORMAT JSON",
     "json": "FORMAT JSON, ARRAY true",
     "parquet": "FORMAT PARQUET",
 }
 _DUCKDB_COPY_CODECS = {None: None, "gz": "gzip", "gzip": "gzip", "zst": "zstd", "zstd": "zstd"}
+
+
+# DuckDB writes these as different text than the Python writers: timestamps (a space where
+# isoformat() has "T"), intervals, times with a zone, decimals, 32-bit floats, UUIDs, binary.
+_COPY_TEXT_UNSAFE_TYPES = (
+    "TIMESTAMP",
+    "INTERVAL",
+    "TIME WITH TIME ZONE",
+    "DECIMAL",
+    "FLOAT",
+    "UUID",
+    "BLOB",
+)
+# ... in CSV also booleans (Python writes True/False), nested values and times (DuckDB
+# shortens fractional seconds: "10:30:00.5" for "10:30:00.500000"). In JSON both write times
+# as ISO text (iterabledata writers before 1.1 wrote null).
+_COPY_CSV_UNSAFE_TYPES = ("BOOLEAN", "STRUCT", "MAP", "UNION", "JSON", "TIME")
+# ... and in Parquet the types DuckDB stores differently: intervals (Python: durations), UUIDs
+# (Python: strings) and times with a zone (DuckDB: UTC).
+_COPY_PARQUET_UNSAFE_TYPES = ("INTERVAL", "UUID", "TIME WITH TIME ZONE")
+# DuckDB turns date-like JSON strings into dates and times, which may change their text.
+_JSON_INFERRED_TYPES = ("DATE", "TIME")
+
+
+def duckdb_copy_keeps_values(
+    types: Iterable[str], out_fmt: str, *, from_json: bool = False
+) -> bool:
+    """Whether a DuckDB ``COPY`` of columns of ``types`` writes what the Python writer writes.
+
+    Text outputs must have the same text, Parquet the same values when read back.
+
+    Args:
+        types: DuckDB column types of the result.
+        out_fmt: Output format id (``csv``, ``tsv``, ``jsonl``, ``json``, ``parquet``).
+        from_json: The columns were read from JSON by DuckDB, which infers dates from strings
+            that the Python reader keeps as strings.
+    """
+    text_out = out_fmt != "parquet"
+    for column_type in (str(kind).upper() for kind in types):
+        if from_json and column_type.startswith(_JSON_INFERRED_TYPES):
+            return False
+        if (text_out or from_json) and column_type.startswith(_COPY_TEXT_UNSAFE_TYPES):
+            return False
+        if not text_out and column_type.startswith(_COPY_PARQUET_UNSAFE_TYPES):
+            return False
+        if out_fmt in ("csv", "tsv", "tab") and (
+            column_type.startswith(_COPY_CSV_UNSAFE_TYPES) or column_type.endswith("]")
+        ):
+            return False
+    return True
+
+
+def csv_copy_query(
+    conn: Any, query: str, out_fmt: str | None, types: dict[str, str] | None = None
+) -> str:
+    """``query`` for a DuckDB ``COPY`` to ``out_fmt``, with empty text written as the Python
+    writer writes it.
+
+    DuckDB writes an empty string to CSV as ``""`` (and NULL as an empty field); the Python csv
+    writer writes both as an empty field. For CSV and TSV, text columns become NULL when empty.
+
+    Args:
+        conn: DuckDB connection.
+        query: SELECT query whose rows are written.
+        out_fmt: Output format id.
+        types: Column -> DuckDB type of ``query`` (read with DESCRIBE when omitted).
+    """
+    if out_fmt not in ("csv", "tsv", "tab"):
+        return query
+    if types is None:
+        described = conn.execute(f"DESCRIBE {query}").fetchall()
+        types = {str(row[0]): str(row[1]).upper() for row in described}
+    text = [name for name, kind in types.items() if kind == "VARCHAR"]
+    if not text:
+        return query
+    from .command_utils import quote_sql_identifier
+
+    replaced = ", ".join(
+        f"NULLIF({quote_sql_identifier(name)}, '') AS {quote_sql_identifier(name)}" for name in text
+    )
+    return f"SELECT * REPLACE ({replaced}) FROM ({query})"
 
 
 def duckdb_copy_options(path: str) -> str | None:
@@ -583,6 +678,7 @@ def duckdb_copy_to_file(conn: Any, query: str, path: str) -> bool:
     options = duckdb_copy_options(path)
     if options is None:
         return False
+    query = csv_copy_query(conn, query, _extension(path))
     with AtomicFileTarget(path) as stage:
         escaped = stage.target.replace("'", "''")
         conn.execute(f"COPY ({query}) TO '{escaped}' ({options})")

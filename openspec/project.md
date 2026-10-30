@@ -14,15 +14,15 @@
 ## Tech Stack
 
 ### Core Technologies
-- **Python 3.10+** - Primary programming language
+- **Python 3.11+** - Primary programming language
 - **Typer** - CLI framework for command definitions
 - **Rich** - Terminal output formatting and progress bars
 - **Pydantic** - Data validation and settings management
 
 ### Data Processing
 - **Pandas** - Data manipulation and analysis
-- **DuckDB** - In-memory analytics database for statistics
-- **iterabledata** - Streaming multi-format engine (140+ formats; lakehouse/open-data packs in 1.0.18+; prefer ≥1.0.18 on Python 3.10+)
+- **DuckDB** (2.0 LTS line) - In-memory analytics database for SQL, statistics and pushdown
+- **iterabledata** - Streaming multi-format engine (140+ formats; lakehouse/open-data packs in 1.0.18+; prefer ≥1.0.18)
 - **orjson** - Fast JSON parsing
 
 ### Format Support
@@ -205,7 +205,7 @@ make test                 # Via Makefile
 ## Important Constraints
 
 **Technical Constraints:**
-- **Python 3.10+** required; versions are dropped in the first minor release after their end of life
+- **Python 3.11+** required; versions are dropped in the first minor release after their end of life
 - **Memory efficiency**: Must handle large files without loading entire dataset into memory
 - **Streaming**: All operations should support streaming for scalability
 - **Format compatibility**: Support for legacy formats (XLS, older Excel) via xlrd

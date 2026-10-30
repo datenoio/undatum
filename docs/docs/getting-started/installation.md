@@ -71,7 +71,8 @@ Some features require optional dependencies, installed as extras. This is the ca
 | Extra | Enables |
 |-------|---------|
 | `api` | Data API server (`undatum api`, FastAPI + uvicorn + httpx) |
-| `extract` | Document extraction (`undatum extract`, PDF/DOC/DOCX tables and text) |
+| `pandas` | pandas DataFrames: `Dataset.to_pandas()` and `analyze --use-pandas` |
+| `extract` | Document extraction (`undatum extract`, PDF/DOC/DOCX tables and text; includes pandas) |
 | `plot` | Plotting (`undatum plot`, matplotlib) |
 | `tui` | Interactive terminal UI (`undatum tui`, Textual) |
 | `web` | Local web UI (`undatum web`, FastAPI + Jinja2) |
@@ -150,7 +151,24 @@ undatum --show-completion
 
 ### Requirements
 
-- Python 3.10 or greater (CI tests 3.10–3.13)
+- Python 3.11 or greater (CI tests 3.11–3.13)
+- DuckDB 2.0 (installed with undatum)
+
+### Machines without network access
+
+undatum never downloads a DuckDB extension while a command runs: it uses one only when it is
+installed in the extension directory. Install them on a connected machine with the same undatum
+version, operating system and CPU architecture, and point undatum at the copy:
+
+```bash norun
+undatum extensions install --dir /opt/duckdb-extensions   # on a connected machine
+export UNDATUM_DUCKDB_EXTENSION_DIR=/opt/duckdb-extensions  # on the offline machine
+```
+
+The `-full` container image includes the extensions (`encodings`, `excel`, `httpfs`, `spatial`,
+about 410 MB on Linux); the core image and the single-file binaries do not. A command that needs a missing
+extension uses the Python engine, or stops with exit code 2 and names the extension. See
+[`extensions`](/commands/extensions).
 
 ### Install from source
 

@@ -10,6 +10,7 @@ passes (``fixlengths``, ``transpose``) iterate the source twice, which works bec
 from __future__ import annotations
 
 import itertools
+import logging
 import uuid
 from collections import deque
 from collections.abc import Callable, Iterable, Iterator
@@ -22,8 +23,15 @@ from .base import Operation, Streaming, quote, register
 from .rows import TEXT_TYPES
 from .spill import reversed_rows
 
+logger = logging.getLogger(__name__)
+
 # Position of each record in the input, added to DuckDB queries that reorder or group rows.
 _ROW = "__undatum_row"
+# Columns of the dedup query: a key's first position, its kept record and the record struct.
+_FIRST = "__undatum_first"
+_KEPT = "__undatum_kept"
+_RECORD = "__undatum_record"
+_DEDUP_COLUMNS = (_ROW, _FIRST, _KEPT, _RECORD)
 
 
 def _numbered(source: str) -> str:
@@ -346,8 +354,9 @@ class DedupConfig:
         keys: Key fields (dotted paths allowed); every non-null field when empty.
         keep: ``first`` keeps the first record of each key, ``last`` the last one (output
             stays in order of first appearance).
-        memory_keys: Unique keys kept in memory before moving to a disk index.
-        low_memory: Use the disk index from the start.
+        memory_keys: Unique keys kept in memory before moving to a disk index; the ``auto``
+            engine deduplicates in DuckDB when the input has at most this many keys.
+        low_memory: Use the disk index from the start (and the Python engine).
         temp_dir: Directory for the disk index.
     """
 
@@ -395,18 +404,37 @@ class Dedup(Operation[DedupConfig]):
 
     def to_sql(self, source: str, schema: dict[str, str], cfg: DedupConfig) -> str | None:
         keys = list(cfg.keys) or list(schema)
-        if _ROW in schema or any(schema.get(key) not in TEXT_TYPES for key in keys):
+        if any(name in schema for name in _DEDUP_COLUMNS):
+            return None
+        if any(schema.get(key) not in TEXT_TYPES for key in keys):
             return None  # dotted paths and typed values compare differently in Python
-        partition = ", ".join(quote(key) for key in keys)
-        order = f"{_ROW} DESC" if cfg.keep == "last" else _ROW
-        # Kept records stay in the order in which their key first appeared.
+        group = ", ".join(quote(key) for key in keys)
+        pick = "arg_max" if cfg.keep == "last" else "arg_min"
+        # One scan: per key the kept record (as a struct of the whole row) and the position of
+        # its first record, so the kept records stay in the order in which their key appeared.
+        # The query holds one record per key, not the input.
         return (
-            f"SELECT * EXCLUDE ({_ROW}, __undatum_first) FROM ("
-            f"SELECT *, min({_ROW}) OVER (PARTITION BY {partition}) AS __undatum_first "
-            f"FROM {_numbered(source)} "
-            f"QUALIFY row_number() OVER (PARTITION BY {partition} ORDER BY {order}) = 1"
-            ") ORDER BY __undatum_first"
+            f"SELECT * EXCLUDE ({_ROW}, {_FIRST}) FROM ("
+            f"SELECT unnest({_KEPT}), {_FIRST} FROM ("
+            f"SELECT min({_ROW}) AS {_FIRST}, {pick}({_RECORD}, {_ROW}) AS {_KEPT} "
+            f"FROM {_numbered(source)} AS {_RECORD} GROUP BY {group})"
+            f") ORDER BY {_FIRST}"
         )
+
+    def sql_fits(self, conn: Any, source: str, schema: dict[str, str], cfg: DedupConfig) -> bool:
+        """Whether the input has at most ``memory_keys`` keys (estimated in one scan).
+
+        The SQL form holds one record per key; the Python form keeps that many keys in memory
+        before it moves to a disk index, so up to there both stay small.
+        """
+        if cfg.low_memory:
+            return False
+        keys = [quote(key) for key in cfg.keys or schema]
+        value = keys[0] if len(keys) == 1 else f"hash({', '.join(keys)})"
+        rows = conn.execute(f"SELECT approx_count_distinct({value}) FROM {source}").fetchall()
+        estimate = int(rows[0][0]) if rows else 0
+        logger.debug("dedup: about %d distinct keys (DuckDB up to %d)", estimate, cfg.memory_keys)
+        return estimate <= cfg.memory_keys
 
 
 def key_of_fn(fields: tuple[str, ...]) -> Callable[[Any], Any]:

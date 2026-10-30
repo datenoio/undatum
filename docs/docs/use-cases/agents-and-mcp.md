@@ -51,6 +51,24 @@ undatum headers data.csv --json
 
 See [JSON output](/commands/json-output).
 
+## Describe the CLI to an agent
+
+Agents that run shell commands can read the whole command line as data instead of `--help` text:
+
+```bash
+# Every command with its arguments, options, engines and JSON layouts (undatum.commands/1)
+undatum commands --json
+
+# One tool definition per command, with JSON Schema parameters
+undatum commands --tools
+
+# Find the command for a task
+undatum commands --search "remove duplicate"
+```
+
+`undatum.cli.manifest.tool_argv()` turns a tool call into the command line. See
+[`commands`](/commands/commands).
+
 ## Generate assisted dataset documentation
 
 ```bash

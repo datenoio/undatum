@@ -19,6 +19,7 @@ from typer.core import TyperGroup
 from . import __version__
 from .cli.ai_cli import ai_app
 from .cli.api_cli import api_app
+from .cli.cache_cli import cache_app
 from .cli.commands import data_app
 from .cli.common import (
     configure_logging,
@@ -27,7 +28,9 @@ from .cli.common import (
 from .cli.config_cli import config_app
 from .cli.db_cli import db_app
 from .cli.examples_cli import examples_app
+from .cli.extensions_cli import extensions_app
 from .cli.formats_cli import formats_app
+from .cli.manifest_cli import commands as commands_command
 from .cli.mcp_cli import mcp_app
 from .cli.package_cli import package_app
 from .cli.pipeline_cli import pipeline_app, templates_app  # noqa: F401
@@ -344,16 +347,19 @@ def _main_callback(
 
 # Merge top-level data commands into the main app
 app.registered_commands.extend(data_app.registered_commands)
+app.command("commands")(commands_command)
 app.command("tui")(tui_command)
 app.command("web")(web_command)
 
 app.add_typer(ai_app, name="ai")
 app.add_typer(package_app, name="package")
 app.add_typer(api_app, name="api")
+app.add_typer(cache_app, name="cache")
 app.add_typer(config_app, name="config")
 app.add_typer(pipeline_app, name="pipeline")
 app.add_typer(db_app, name="db")
 app.add_typer(examples_app, name="examples")
+app.add_typer(extensions_app, name="extensions")
 app.add_typer(formats_app, name="formats")
 app.add_typer(mcp_app, name="mcp")
 app.add_typer(plugins_app, name="plugins")

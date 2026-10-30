@@ -256,9 +256,16 @@ def duckdb_partitioned_copy(
     text_keys = [f for f in fields if types[f] == "VARCHAR"]
     if text_keys:
         sentinel = " OR ".join(f"{_quote(f)} = '{HIVE_NULL}'" for f in text_keys)
-        if conn.sql(f"SELECT EXISTS (SELECT 1 FROM ({query}) WHERE {sentinel})").fetchone()[0]:
+        if conn.execute(f"SELECT EXISTS (SELECT 1 FROM ({query}) WHERE {sentinel})").fetchall()[0][
+            0
+        ]:
             return False  # COPY uses the same directory for NULL and literal sentinel text.
-        replaced = ", ".join(f"nullif({_quote(f)}, '') AS {_quote(f)}" for f in text_keys)
+    # ... and in CSV every empty text is an empty field, as the Python csv writer writes it
+    empty_as_null = (
+        [f for f, kind in types.items() if kind == "VARCHAR"] if native == "CSV" else text_keys
+    )
+    if empty_as_null:
+        replaced = ", ".join(f"nullif({_quote(f)}, '') AS {_quote(f)}" for f in empty_as_null)
         query = f"SELECT * REPLACE ({replaced}) FROM ({query})"
     options = [f"FORMAT {native}", f"PARTITION_BY ({', '.join(_quote(f) for f in fields)})"]
     if native == "CSV":

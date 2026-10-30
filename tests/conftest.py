@@ -17,6 +17,9 @@ def pytest_configure(config):
     config.addinivalue_line(
         "markers", "use_cli_config: allow reading undatum.yaml / env CLI defaults"
     )
+    config.addinivalue_line(
+        "markers", "result_cache: let CLI commands cache results (in a temporary directory)"
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -25,6 +28,38 @@ def _isolate_cli_defaults(request, monkeypatch):
     if request.node.get_closest_marker("use_cli_config"):
         return
     monkeypatch.setattr("undatum.common.app_config.get_cli_defaults", lambda: {})
+
+
+@pytest.fixture(autouse=True)
+def _isolate_result_cache(request, monkeypatch, tmp_path):
+    """Commands never write ~/.undatum/cache in tests, and cache only in tests that opt in."""
+    monkeypatch.setenv("UNDATUM_CACHE_DIR", str(tmp_path / "undatum-cache"))
+    if not request.node.get_closest_marker("result_cache"):
+        monkeypatch.setattr("undatum.common.cache.cli_cache_option", bool)
+
+
+@pytest.fixture(scope="session")
+def _empty_extension_dir(tmp_path_factory):
+    return str(tmp_path_factory.mktemp("duckdb-extensions"))
+
+
+@pytest.fixture(autouse=True)
+def _isolate_duckdb_extensions(_empty_extension_dir, monkeypatch):
+    """Tests see no installed DuckDB extensions (``~/.duckdb``) unless they ask for them."""
+    monkeypatch.setenv("UNDATUM_DUCKDB_EXTENSION_DIR", _empty_extension_dir)
+
+
+@pytest.fixture
+def installed_extensions(monkeypatch):
+    """The DuckDB extensions in ``UNDATUM_TEST_DUCKDB_EXTENSION_DIR``; skips without them.
+
+    Prepare the directory with ``undatum extensions install --dir DIR``.
+    """
+    directory = os.environ.get("UNDATUM_TEST_DUCKDB_EXTENSION_DIR")
+    if not directory:
+        pytest.skip("UNDATUM_TEST_DUCKDB_EXTENSION_DIR is not set")
+    monkeypatch.setenv("UNDATUM_DUCKDB_EXTENSION_DIR", directory)
+    return directory
 
 
 try:

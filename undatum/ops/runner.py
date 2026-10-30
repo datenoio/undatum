@@ -14,7 +14,6 @@ from .base import REGISTRY, Operation
 logger = logging.getLogger(__name__)
 
 BATCH_ROWS = 10_000
-DEFAULT_DUCKDB_MEMORY = "256MB"
 
 
 def get_operation(name: str) -> Operation[Any]:
@@ -105,8 +104,18 @@ def run_steps(
     return write_rows(iter(rows), output, format_out=format_out, fieldnames=fieldnames)
 
 
-def compose_sql(conn: Any, relation: str, steps: list[tuple[Operation[Any], Any]]) -> str | None:
-    """One DuckDB query applying ``steps`` to ``relation``, or ``None`` without a SQL form."""
+def compose_sql(
+    conn: Any,
+    relation: str,
+    steps: list[tuple[Operation[Any], Any]],
+    *,
+    bounded: bool = False,
+) -> str | None:
+    """One DuckDB query applying ``steps`` to ``relation``, or ``None`` without a SQL form.
+
+    With ``bounded`` a step whose SQL form holds every record is used only when
+    :meth:`~undatum.ops.base.Operation.sql_fits` says so for its input (``None`` otherwise).
+    """
     query = f"SELECT * FROM {relation}"
     source = relation
     for op, cfg in steps:
@@ -115,9 +124,19 @@ def compose_sql(conn: Any, relation: str, steps: list[tuple[Operation[Any], Any]
         sql = op.to_sql(source, schema, cfg)
         if sql is None:
             return None
+        if bounded and op.sql_holds_all_rows and not op.sql_fits(conn, source, schema, cfg):
+            logger.debug("%s: bounded-memory Python engine (--engine duckdb uses DuckDB)", op.name)
+            return None
         query = sql
         source = f"({query})"
     return query
+
+
+def may_fit(steps: Sequence[tuple[Operation[Any], Any]]) -> bool:
+    """Whether every step that holds all records can decide by its input to run in DuckDB."""
+    return all(
+        not op.sql_holds_all_rows or type(op).sql_fits is not Operation.sql_fits for op, _ in steps
+    )
 
 
 def write_rows(
@@ -127,17 +146,15 @@ def write_rows(
     format_out: str | None = None,
     fieldnames: list[str] | None = None,
 ) -> int:
-    """Write ``rows`` in batches to ``output`` (or stdout); remove a partial file on error."""
-    from ..utils import normalize_for_json
+    """Write ``rows`` in batches to ``output`` (or stdout); remove a partial file on error.
 
+    The sinks convert values for JSON (``normalize_for_json``).
+    """
     sink = open_sink(output, format_out=format_out, fieldnames=fieldnames)
     count = 0
     try:
         while True:
-            batch = [
-                normalize_for_json(row) if isinstance(row, dict) else row
-                for row in itertools.islice(rows, BATCH_ROWS)
-            ]
+            batch = list(itertools.islice(rows, BATCH_ROWS))
             if not batch:
                 break
             sink.write_batch(batch)
@@ -159,32 +176,27 @@ def _run_sql(
 ) -> int | None:
     """Run ``steps`` in DuckDB; return the record count, or ``None`` to use Python."""
     names = " | ".join(op.name for op, _ in steps)
-    relation = source.duckdb_from()
-    if relation is None:
+    if not source.duckdb_readable():
         if required:
             logger.info("%s: input is not DuckDB-readable; using the Python engine", names)
         return None
     holds_all_rows = any(op.sql_holds_all_rows for op, _ in steps)
-    if holds_all_rows and not required:
+    if holds_all_rows and not required and not may_fit(steps):
         logger.debug("%s: bounded-memory Python engine (--engine duckdb uses DuckDB)", names)
         return None
     try:
         import duckdb
 
-        from ..common.duckdb_config import create_duckdb_connection, get_duckdb_config_from_options
+        from ..common.duckdb_config import duckdb_connection
 
-        config = get_duckdb_config_from_options(source.options)
-        # Row transforms are I/O bound: one thread is nearly as fast and, with insertion
-        # order preserved, avoids per-thread buffers that grow with the input. DuckDB
-        # spills to disk above the memory limit.
-        config.setdefault("threads", 1)
-        # Queries that hold every record were requested with --engine duckdb: they keep
-        # DuckDB's own limit, as a small one makes its windows and sorts fail.
-        if not config.get("memory") and not holds_all_rows:
-            config["memory"] = DEFAULT_DUCKDB_MEMORY
-        conn = create_duckdb_connection(**config)
+        # Queries that hold every record (--engine duckdb, or an input sql_fits() accepts)
+        # rely on the input order; row transforms are bounded (see WORKLOAD_DEFAULTS).
+        conn = duckdb_connection(source.options, "ordered" if holds_all_rows else "row")
         try:
-            query = compose_sql(conn, relation, steps)
+            relation = source.duckdb_relation(conn)
+            if relation is None:
+                return None
+            query = compose_sql(conn, relation, steps, bounded=not required)
             if query is None:
                 if required:
                     logger.info("%s has no DuckDB form; using the Python engine", names)
@@ -198,39 +210,45 @@ def _run_sql(
         return None
 
 
-# DuckDB's COPY formats these differently from Python's isoformat(); such results are
-# fetched and written by the Python writer so both engines produce the same text.
-_TEMPORAL = ("DATE", "TIME", "TIMESTAMP", "INTERVAL")
 _COPY_FORMATS = ("csv", "parquet")
 
 
 def write_query(conn: Any, query: str, output: str | None, format_out: str | None = None) -> int:
     """Write the result of a DuckDB ``query`` to ``output`` (or stdout) in batches.
 
-    CSV and Parquet files are written with ``COPY`` (returns ``-1``: count not reported);
-    other outputs are fetched in batches and written by the Python writer.
+    CSV and Parquet files are written with ``COPY`` (returns ``-1``: count not reported)
+    when DuckDB writes the same values as the Python writer (see
+    :func:`~undatum.common.writer.duckdb_copy_keeps_values`); other outputs are fetched in
+    batches and written by the Python writer.
     """
-    from ..common.writer import duckdb_copy_to_file, resolve_output_format
+    from ..common.writer import (
+        duckdb_copy_keeps_values,
+        duckdb_copy_to_file,
+        resolve_output_format,
+    )
 
-    result_types = [str(row[1]).upper() for row in conn.sql(f"DESCRIBE {query}").fetchall()]
-    temporal = any(t.startswith(_TEMPORAL) for t in result_types)
-    if output and "://" not in output and not temporal:
+    if output and "://" not in output:
         fmt = resolve_output_format(output, format_out)
         native = resolve_output_format(output) if format_out else fmt
-        # COPY is used for CSV and Parquet; JSON goes through the Python writer so the
-        # text is the same on both engines (DuckDB writes compact JSON).
-        if fmt == native and fmt in _COPY_FORMATS and duckdb_copy_to_file(conn, query, output):
-            return -1
+        # COPY is used for CSV and Parquet; JSON goes through the Python writer, so its text
+        # is the iterabledata writer's on both engines.
+        if fmt == native and fmt in _COPY_FORMATS:
+            described = conn.sql(f"DESCRIBE {query}").fetchall()
+            if duckdb_copy_keeps_values((row[1] for row in described), fmt) and (
+                duckdb_copy_to_file(conn, query, output)
+            ):
+                return -1
     import duckdb
 
-    relation = conn.sql(query)
-    names = relation.columns
+    # execute() streams its result; relations lost fetchmany() in DuckDB 2.0.
+    result = conn.execute(query)
+    names = [column[0] for column in result.description]
     fetched = 0
 
     def rows() -> Iterator[dict[str, Any]]:
         nonlocal fetched
         while True:
-            chunk = relation.fetchmany(BATCH_ROWS)
+            chunk = result.fetchmany(BATCH_ROWS)
             if not chunk:
                 return
             fetched += len(chunk)

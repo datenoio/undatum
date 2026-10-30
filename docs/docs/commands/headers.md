@@ -52,6 +52,7 @@ undatum headers [OPTIONS] INPUT_FILE
 | `--max-nested-depth` INTEGER | With --flatten-nested, maximum nest depth to unfold (engine default 5). |  |
 | `--keep-nested-parents` / `--no-keep-nested-parents` | With --flatten-nested, keep parent dict/array fields alongside dotted children. | `--keep-nested-parents` |
 | `--json` | Print the result as one JSON document (same as --format-out json). |  |
+| `--cache` / `--no-cache` | Reuse the result kept in ~/.undatum/cache for an unchanged file (default: on; UNDATUM_CACHE=0 or 'defaults: cache: false' in a config file turn it off). |  |
 
 See also [shared options](/commands/shared-options).
 <!-- END GENERATED: reference -->

@@ -3,10 +3,30 @@
 import logging
 import os
 import re
+from collections.abc import Iterator
+from contextlib import contextmanager
+from typing import Any, Literal
 
 import duckdb
 
 logger = logging.getLogger(__name__)
+
+# Defaults per kind of work; explicit --duckdb-* options always win.
+# - row: row-wise and window transforms are I/O bound; one thread is nearly as fast and, with
+#   insertion order preserved, per-thread buffers would otherwise grow with the input.
+# - ordered: queries that hold every record and rely on input order (row_number() over the
+#   input); one thread, and DuckDB's own memory limit since a small one fails their sorts.
+# - aggregate: aggregations, sorts and profiling use every core and DuckDB's memory limit.
+Workload = Literal["row", "ordered", "aggregate"]
+WORKLOAD_DEFAULTS: dict[str, dict[str, Any]] = {
+    "row": {"threads": 1, "memory": "256MB"},
+    "ordered": {"threads": 1},
+    "aggregate": {},
+}
+
+# Directory with preinstalled DuckDB extensions (DuckDB's extension_directory), so commands
+# that need an extension work without network access.
+EXTENSION_DIR_ENV = "UNDATUM_DUCKDB_EXTENSION_DIR"
 
 
 def parse_memory_size(memory_str: str) -> int:
@@ -66,6 +86,11 @@ def create_duckdb_connection(
 
     conn = duckdb.connect(database=database)
 
+    extension_dir = os.environ.get(EXTENSION_DIR_ENV)
+    if extension_dir:
+        escaped = extension_dir.replace("'", "''")
+        conn.execute(f"SET extension_directory='{escaped}'")
+
     # Configure threads
     if threads is not None:
         if threads < 1:
@@ -102,6 +127,53 @@ def create_duckdb_connection(
     return conn
 
 
+@contextmanager
+def one_thread(conn: Any) -> Iterator[Any]:
+    """Run the queries of the block on one thread of ``conn``, then restore its setting.
+
+    For samples (``LIMIT``): parallel CSV readers buffer far beyond the rows a sample needs
+    (about 115 MB more on 1M rows with 14 threads).
+    """
+    threads = conn.execute("SELECT current_setting('threads')").fetchall()[0][0]
+    conn.execute("SET threads = 1")
+    try:
+        yield conn
+    finally:
+        conn.execute(f"SET threads = {int(threads)}")
+
+
+def load_extension(conn: duckdb.DuckDBPyConnection, name: str) -> None:
+    """Load the DuckDB extension ``name``, downloading it first when it is not installed.
+
+    Args:
+        conn: Connection made by :func:`create_duckdb_connection`.
+        name: Extension name, such as ``excel``.
+
+    Raises:
+        ConfigurationError: The extension is not installed and cannot be downloaded (exit
+            code 2); the message says how to install it for offline use.
+    """
+    try:
+        conn.load_extension(name)
+        return
+    except duckdb.Error:
+        pass
+    try:
+        conn.install_extension(name)
+        conn.load_extension(name)
+    except duckdb.Error as exc:
+        from .errors import ConfigurationError
+
+        raise ConfigurationError(
+            f"DuckDB extension '{name}' is not installed and could not be downloaded: {exc}",
+            config_key=EXTENSION_DIR_ENV,
+            fix_hint=(
+                f"On a machine with network access run `undatum extensions install {name} "
+                f"--dir DIR`, copy DIR to this machine and set {EXTENSION_DIR_ENV} to it."
+            ),
+        ) from exc
+
+
 def get_duckdb_config_from_options(options: dict) -> dict:
     """Extract DuckDB configuration from options dictionary.
 
@@ -126,3 +198,24 @@ def get_duckdb_config_from_options(options: dict) -> dict:
     if "duckdb_temp_dir" in options:
         config["temp_dir"] = options["duckdb_temp_dir"]
     return config
+
+
+def duckdb_connection(
+    options: dict[str, Any] | None = None, workload: Workload = "aggregate"
+) -> duckdb.DuckDBPyConnection:
+    """A DuckDB connection for one command, configured from its ``--duckdb-*`` options.
+
+    Args:
+        options: Command options (``duckdb_threads``, ``duckdb_memory``, ``duckdb_temp_dir``;
+            ``threads`` when ``duckdb_threads`` is not given).
+        workload: ``row``, ``ordered`` or ``aggregate`` (see ``WORKLOAD_DEFAULTS``); fills the
+            settings the options leave unset.
+
+    Returns:
+        A new connection; the caller closes it.
+    """
+    config = get_duckdb_config_from_options(options or {})
+    for key, value in WORKLOAD_DEFAULTS[workload].items():
+        if not config.get(key):
+            config[key] = value
+    return create_duckdb_connection(**config)

@@ -198,7 +198,7 @@ def restore_source_filename(
         try:
             from iterable.ai import blocks as blocks_module
 
-            general["markdown"] = blocks_module._render_general_md(data, language)
+            general["markdown"] = blocks_module.render_general_md(data, language)
         except Exception:
             md = general.get("markdown")
             if isinstance(md, str):
@@ -251,7 +251,7 @@ def enrich_blocks_result(
     try:
         from iterable.ai import blocks as blocks_module
 
-        schema_block["markdown"] = blocks_module._render_schema_md(enriched, language)
+        schema_block["markdown"] = blocks_module.render_schema_md(enriched, language)
     except Exception:
         # Best effort: never fail the command because of this step.
         logging.getLogger(__name__).debug(

@@ -121,12 +121,19 @@ class Select(Operation[SelectConfig]):
         from ..common.filter import match_filter
 
         paths = [field.split(".") for field in cfg.fields]
+        dotted = [field for field in cfg.fields if "." in field]
         for row in rows:
             if not isinstance(row, dict):
                 continue
             if cfg.filter and not match_filter(row, cfg.filter):
                 continue
-            yield select_fields(row, paths) if paths else row
+            if not paths:
+                yield row
+            elif dotted and all(field in row for field in dotted):
+                # Flattened records (--flatten-nested) hold dotted names as keys.
+                yield {field: row[field] for field in cfg.fields if field in row}
+            else:
+                yield select_fields(row, paths)
 
     def to_sql(self, source: str, schema: dict[str, str], cfg: SelectConfig) -> str | None:
         from ..common.filter import translate_filter_to_sql

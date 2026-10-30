@@ -22,7 +22,6 @@ import logging
 import pathlib
 import re
 import sys
-from collections.abc import Iterator
 from typing import Any
 
 logging.disable(logging.CRITICAL)
@@ -30,6 +29,7 @@ logging.disable(logging.CRITICAL)
 import typer.main  # noqa: E402
 
 from undatum.cli.capabilities import CAPABILITIES  # noqa: E402
+from undatum.cli.manifest import walk  # noqa: E402
 from undatum.core import app  # noqa: E402
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -152,26 +152,12 @@ def command_block(command: Any, path: str, ctx: Any, heading: str) -> str:
     return "\n".join(lines)
 
 
-def _walk(command: Any, path: str, ctx: Any) -> Iterator[tuple[str, Any, Any]]:
-    """Yield ``(path, command, ctx)`` for every visible leaf command."""
-    if hasattr(command, "list_commands"):
-        for name in command.list_commands(ctx):
-            sub = command.get_command(ctx, name)
-            if sub is None or sub.hidden:
-                continue
-            sub_path = f"{path} {name}".strip()
-            sub_ctx = sub.context_class(sub, info_name=name, parent=ctx)
-            yield from _walk(sub, sub_path, sub_ctx)
-    else:
-        yield path, command, ctx
-
-
 def render_pages() -> dict[pathlib.Path, str]:
     """Return the generated block for each command page."""
     root = typer.main.get_command(app)
     root_ctx = root.context_class(root, info_name="undatum")
     blocks: dict[str, list[str]] = {}
-    for path, command, ctx in _walk(root, "", root_ctx):
+    for path, command, ctx in walk(root, "", root_ctx):
         page = path.split()[0]
         nested = " " in path
         blocks.setdefault(page, []).append(
@@ -205,8 +191,10 @@ def apply_block(text: str, block: str) -> str:
 
 def new_page(path: pathlib.Path) -> str:
     name = path.stem
+    # Docusaurus serves a page named like its folder at the folder's URL; keep /commands/<name>.
+    slug = f"slug: {name}\n" if name == path.parent.name else ""
     return (
-        f'---\ntitle: "{name}"\ndescription: "undatum {name} command reference"\n---\n'
+        f'---\ntitle: "{name}"\ndescription: "undatum {name} command reference"\n{slug}---\n'
         f"# `{name}`\n\n"
     )
 

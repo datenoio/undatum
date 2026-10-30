@@ -15,31 +15,33 @@ import os
 import sys
 import tempfile
 from collections import OrderedDict
+from typing import Any
 
 import duckdb
-import pandas as pd
-import xlrd
 import xmltodict
 import yaml
-from iterable.helpers.detect import detect_file_type
-from openpyxl import load_workbook
 from pydantic import BaseModel
 
+from .. import constants
 from ..ai import AIService, get_ai_service, get_description, get_fields_info
 from ..common.command_utils import (
     duckdb_can_decode,
+    duckdb_csv_text_expr,
     duckdb_read_csv_expr,
     get_iterable_options,
     iter_command_rows,
     resolve_csv_delimiter,
 )
-from ..common.engine_selector import is_format_supported_by_duckdb
+from ..common.duckdb_config import duckdb_connection
+from ..common.engine_selector import detect_file_type, is_format_supported_by_duckdb
 from ..common.errors import ValidationError
+from ..common.format_names import format_from_name
 from ..common.s3_iterable import open_iterable_with_s3
 from ..common.schema_utils import duckdb_decompose
 from ..common.tables import format_table
-from ..constants import TEXT_DATA_TYPES
 from ..formats.docx import analyze_docx
+from ..io.arrow import import_pandas, records_table
+from ..io.excel import EXCEL_FORMATS
 from ..utils import detect_encoding, get_dict_value, get_option
 
 logger = logging.getLogger(__name__)
@@ -183,8 +185,8 @@ class FieldSchema(BaseModel):
     unique_count: int | None = None
     total_count: int | None = None
     uniqueness_pct: float | None = None
-    sem_type: str = None
-    sem_url: str = None
+    sem_type: str | None = None
+    sem_url: str | None = None
     semantic_types: list[dict] | None = None
     pii: bool | None = None
 
@@ -206,13 +208,13 @@ class ReportSchema(BaseModel):
     filename: str
     file_size: int
     file_type: str
-    compression: str = None
+    compression: str | None = None
     total_tables: int = 1
     total_records: int = -1
     tables: list[TableSchema] | None = []
     metadata: dict = {}
     success: bool = False
-    error: str = None
+    error: str | None = None
 
 
 MAX_SAMPLE_SIZE = 200
@@ -233,12 +235,14 @@ def _field_from_column(column: list, include_stats: bool = True) -> FieldSchema:
     return field
 
 
-def _duckdb_sample_as_csv(query_str: str, limit: int = MAX_SAMPLE_SIZE) -> str:
+def _duckdb_sample_as_csv(conn, query_str: str, limit: int = MAX_SAMPLE_SIZE) -> str:
     """Run a DuckDB query and return sample rows as CSV text with column headers."""
-    df = duckdb.sql(query_str).fetchdf()
-    if len(df) > limit:
-        df = df.head(limit)
-    return df.to_csv(index=False)
+    result = conn.execute(query_str)
+    f = io.StringIO()
+    writer = csv.writer(f, lineterminator="\n")
+    writer.writerow([column[0] for column in result.description])
+    writer.writerows(result.fetchmany(limit))
+    return f.getvalue()
 
 
 def _objects_are_dict_records(objects: list) -> bool:
@@ -295,10 +299,16 @@ def table_from_objects(
             writer.writerows(sample)
         table.description = get_description(f.getvalue(), language=lang, ai_service=ai_service)
 
-    use_frame = use_pandas or _objects_are_dict_records(objects)
-    if use_frame:
-        df = pd.DataFrame(objects)
-        columns_raw = duckdb_decompose(frame=df, path="*", limit=objects_limit, use_summarize=stats)
+    if use_pandas or _objects_are_dict_records(objects):
+        if use_pandas:
+            frame = import_pandas("analyze --use-pandas").DataFrame(objects)
+        else:
+            # Records as Arrow: integers with missing values stay integers, nested objects
+            # become structs (a pandas frame made them DOUBLE and MAP(VARCHAR, VARCHAR))
+            frame = records_table(objects, mixed_as_text=True)
+        columns_raw = duckdb_decompose(
+            frame=frame, path="*", limit=objects_limit, use_summarize=stats
+        )
     else:
         tfile_name = _write_objects_tempfile(objects, filetype, objects_limit)
         try:
@@ -440,11 +450,19 @@ def analyze(
     fileext = filename.rsplit(".", 1)[-1].lower()
     filesize = os.path.getsize(filename)
 
-    ftype = detect_file_type(filename)
-    if filetype is None and ftype["success"]:
-        filetype = ftype["datatype"].id()
-        if ftype["codec"] is not None:
-            compression = ftype["codec"].id()
+    ftype: Any = None  # iterabledata's detection, run only when a format needs its codec
+    if filetype is None:
+        # Common extensions are recognised without importing iterabledata (about 0.5 s)
+        named = format_from_name(filename)
+        if named is not None:
+            filetype = named[0]
+            compression = named[1] or compression
+        else:
+            ftype = detect_file_type(filename)
+            if ftype["success"]:
+                filetype = ftype["datatype"].id()
+                if ftype["codec"] is not None:
+                    compression = ftype["codec"].id()
     if filetype is None and fileext == "docx":
         filetype = "docx"
 
@@ -465,7 +483,8 @@ def analyze(
             logger.warning("AI descriptions skipped: %s", str(e).rstrip("."))
             autodoc = False
 
-    if filetype in TEXT_DATA_TYPES:
+    # Common text formats are known without iterabledata's format lists (~0.3 s to import)
+    if filetype in ("csv", "tsv", "json", "jsonl") or filetype in constants.TEXT_DATA_TYPES:
         if encoding is None:
             encoding_result = detect_encoding(filename)
             report.metadata["encoding"] = (
@@ -489,26 +508,32 @@ def analyze(
 
         duckdb_failed = False
         if use_duckdb:
+            conn = duckdb_connection(options)
             try:
                 iterableargs = {"delimiter": delimiter, "encoding": encoding}
                 csv_delimiter = resolve_csv_delimiter(
                     iterableargs, filename=filename, filetype=filetype
                 )
                 text_ignore = ", ignore_errors=true" if ignore_errors else ""
+                csv_read = ""
+                if filetype in ["csv", "tsv"]:
+                    # As text with the header the Python reader takes, when DuckDB can name
+                    # its columns
+                    csv_read = duckdb_csv_text_expr(
+                        filename, iterableargs, filetype=filetype, ignore_errors=ignore_errors
+                    ) or duckdb_read_csv_expr(filename, csv_delimiter, ignore_errors=ignore_errors)
                 if filetype in ["json", "jsonl"]:
                     escaped = filename.replace("'", "''")
                     query_str = f"select count(*) from read_json('{escaped}'{text_ignore})"
-                    num_records = duckdb.sql(query_str).fetchall()[0][0]
+                    num_records = conn.execute(query_str).fetchall()[0][0]
                 elif filetype in ["csv", "tsv"]:
-                    read_func = duckdb_read_csv_expr(
-                        filename, csv_delimiter, ignore_errors=ignore_errors
-                    )
+                    read_func = csv_read
                     query_str = f"select count(*) from {read_func}"
-                    num_records = duckdb.sql(query_str).fetchall()[0][0]
+                    num_records = conn.execute(query_str).fetchall()[0][0]
                 else:
                     escaped = filename.replace("'", "''")
                     query_str = f"select count(*) from '{escaped}'"
-                    num_records = duckdb.sql(query_str).fetchall()[0][0]
+                    num_records = conn.execute(query_str).fetchall()[0][0]
                 table = TableSchema(id=os.path.basename(filename))
                 table.num_records = num_records
                 report.tables = [table]
@@ -523,6 +548,7 @@ def analyze(
                     use_summarize=stats,
                     ignore_errors=ignore_errors,
                     delimiter=csv_delimiter,
+                    conn=conn,
                 )
                 is_flat = True
                 table.num_cols = len(columns_raw)
@@ -533,10 +559,7 @@ def analyze(
                         is_flat = False
                 table.is_flat = is_flat
                 if filetype in ["csv", "tsv"]:
-                    read_func = duckdb_read_csv_expr(
-                        filename, csv_delimiter, ignore_errors=ignore_errors
-                    )
-                    query_str = f"select * from {read_func} limit {MAX_SAMPLE_SIZE}"
+                    query_str = f"select * from {csv_read} limit {MAX_SAMPLE_SIZE}"
                 elif filetype in ["json", "jsonl"]:
                     escaped = filename.replace("'", "''")
                     query_str = (
@@ -547,7 +570,7 @@ def analyze(
                     query_str = f"select * from '{escaped}' limit {MAX_SAMPLE_SIZE}"
                 if autodoc:
                     table.description = get_description(
-                        _duckdb_sample_as_csv(query_str),
+                        _duckdb_sample_as_csv(conn, query_str),
                         language=lang,
                         ai_service=ai_service,
                     )
@@ -559,6 +582,8 @@ def analyze(
                 logger.warning("DuckDB analyze failed, falling back to iterable path: %s", exc)
                 duckdb_failed = True
                 report.tables = []
+            finally:
+                conn.close()
 
         if not use_duckdb or duckdb_failed:
             if engine == "duckdb" and not duckdb_failed:
@@ -606,64 +631,36 @@ def analyze(
                     report.tables.append(table)
                 report.total_records = total
                 report.total_tables = len(report.tables)
-            elif filetype == "xlsx":
-                wb = load_workbook(filename, read_only=True, data_only=True)
-                total = 0
-                for sheetname in _selected_sheet_names(list(wb.sheetnames), table_name, start_page):
-                    sheet = wb[sheetname]
-                    objects = []
-                    max_num = min(objects_limit, sheet.max_row or 0)
-                    for row in sheet.iter_rows(max_row=max_num, values_only=True):
-                        objects.append([str(cell) if cell is not None else "" for cell in row])
-                    table = table_from_objects(
-                        objects,
-                        table_id=sheetname,
-                        objects_limit=objects_limit,
-                        use_pandas=use_pandas,
-                        filetype="csv",
-                        autodoc=autodoc,
-                        lang=lang,
-                        ai_service=ai_service,
-                        stats=stats,
-                    )
-                    total += table.num_records
-                    report.tables.append(table)
-                report.total_records = total
-                report.total_tables = len(report.tables)
-            elif filetype == "xls":
-                wb = xlrd.open_workbook(filename)
+            elif filetype in EXCEL_FORMATS:
+                # Typed records of each sheet, read by fastexcel as in the other commands
+                from ..io.excel import excel_table, sheet_names
+
                 total = 0
                 for sheetname in _selected_sheet_names(
-                    list(wb.sheet_names()), table_name, start_page
+                    sheet_names(filename), table_name, start_page
                 ):
-                    sheet = wb.sheet_by_name(sheetname)
-                    objects = []
-                    max_num = objects_limit if objects_limit < sheet.nrows else sheet.nrows
-                    for n in range(0, max_num):
-                        tmp = []
-                        for i in range(0, sheet.ncols):
-                            cell_value = sheet.cell_value(n, i)
-                            get_col = str(cell_value)
-                            tmp.append(get_col)
-                        objects.append(tmp)
+                    sheet = excel_table(filename, {"table": sheetname})
                     table = table_from_objects(
-                        objects,
+                        sheet.slice(0, objects_limit).to_pylist(),
                         table_id=sheetname,
                         objects_limit=objects_limit,
                         use_pandas=use_pandas,
-                        filetype="csv",
+                        filetype="jsonl",
                         autodoc=autodoc,
                         lang=lang,
                         ai_service=ai_service,
                         stats=stats,
                     )
-                    report.tables.append(table)
+                    table.num_records = sheet.num_rows
                     total += table.num_records
+                    report.tables.append(table)
                 report.total_records = total
                 report.total_tables = len(report.tables)
             elif filetype == "xml":
                 fileobj = None
                 codec = None
+                if ftype is None:
+                    ftype = detect_file_type(filename)
                 if ftype.get("success") and ftype.get("codec") is not None:
                     codec = ftype["codec"](filename, open_it=True)
                     fileobj = codec.fileobj()
@@ -718,6 +715,8 @@ def analyze(
             elif filetype == "json":
                 fileobj = None
                 codec = None
+                if ftype is None:
+                    ftype = detect_file_type(filename)
                 if ftype.get("success") and ftype.get("codec") is not None:
                     codec = ftype["codec"](filename, open_it=True)
                     fileobj = codec.fileobj()
@@ -1008,25 +1007,40 @@ class Analyzer:
         except PermissionError as e:
             raise PermissionError(filename, operation="read") from e
 
-        report = analyze(
-            filename,
-            encoding=options.get("encoding"),
-            delimiter=options.get("delimiter"),
-            objects_limit=options.get("objects_limit", OBJECTS_ANALYZE_LIMIT),
-            scan=options.get("scan", True),
-            stats=options.get("stats", True),
-            engine=get_option(options, "engine") or "auto",
-            use_pandas=options.get("use_pandas") or False,
-            ignore_errors=options.get("ignore_errors", True),
-            autodoc=options.get("autodoc") or False,
-            lang=options.get("lang") or "English",
-            ai_provider=options.get("ai_provider"),
-            ai_config=options.get("ai_config"),
-            table_name=options.get("table"),
-            start_page=options.get("start_page") or 0,
-            trust=bool(options.get("trust")),
-            options=options,
-        )
+        def compute():
+            return analyze(
+                filename,
+                encoding=options.get("encoding"),
+                delimiter=options.get("delimiter"),
+                objects_limit=options.get("objects_limit", OBJECTS_ANALYZE_LIMIT),
+                scan=options.get("scan", True),
+                stats=options.get("stats", True),
+                engine=get_option(options, "engine") or "auto",
+                use_pandas=options.get("use_pandas") or False,
+                ignore_errors=options.get("ignore_errors", True),
+                autodoc=options.get("autodoc") or False,
+                lang=options.get("lang") or "English",
+                ai_provider=options.get("ai_provider"),
+                ai_config=options.get("ai_config"),
+                table_name=options.get("table"),
+                start_page=options.get("start_page") or 0,
+                trust=bool(options.get("trust")),
+                options=options,
+            )
+
+        from ..common.cache import cached
+
+        if options.get("autodoc"):  # the AI documentation is written anew every time
+            report = compute()
+        else:
+            report = cached(
+                "analyze",
+                filename,
+                options,
+                compute,
+                load=ReportSchema.model_validate,
+                dump=lambda result: result.model_dump(),
+            )
 
         options = dict(options)
         options["outtype"] = _resolve_analyze_outtype(options)

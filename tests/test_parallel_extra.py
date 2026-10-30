@@ -207,14 +207,14 @@ class TestFrequencyWorkersExtra:
         ]
         # Exercise None filter path thoroughly
         counts = frequency_chunk((chunk, ["city"], None))
-        assert counts["X"] == 2
-        assert counts["Y"] == 1
+        assert counts[("X",)] == 2
+        assert counts[("Y",)] == 1
 
     def test_multi_field_key(self):
         chunk = [{"a": "1", "b": "x"}, {"a": "1", "b": "x"}, {"a": "2", "b": "y"}]
         counts = frequency_chunk((chunk, ["a", "b"], None))
-        assert counts["1\tx"] == 2
-        assert counts["2\ty"] == 1
+        assert counts[("1", "x")] == 2
+        assert counts[("2", "y")] == 1
 
     def test_merge_empty(self):
         assert merge_frequency_partials([]) == {}

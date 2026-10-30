@@ -19,13 +19,9 @@ from __future__ import annotations
 
 import pathlib
 import sys
+import tomllib
 
 from packaging.requirements import Requirement
-
-try:
-    import tomllib
-except ModuleNotFoundError:  # Python 3.10
-    import tomli as tomllib  # type: ignore[no-redef]
 
 # Released as YYYY.M.x; there is no semantic major version to stay below.
 CALVER = {"dask", "fsspec", "gcsfs", "adlfs", "s3fs"}

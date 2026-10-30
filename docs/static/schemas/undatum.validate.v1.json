@@ -11,7 +11,7 @@
     },
     "statistics": {
       "type": "object",
-      "description": "total_records, total_violations, errors, warnings, info, passed"
+      "description": "total_records, total_violations, errors, warnings, info, passed; with a data contract also failed_checks (error, warning, info)"
     },
     "violations_by_field": {
       "type": "object",
@@ -24,6 +24,10 @@
     "violations": {
       "type": "array",
       "description": "Violations (at most --max-violations)"
+    },
+    "contract": {
+      "type": "object",
+      "description": "With an ODCS data contract: object, checks (name, fields, metric, value, unit, operator, limit, expected, passed, severity, description), not_checked (name, reason)"
     }
   },
   "required": [

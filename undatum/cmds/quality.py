@@ -225,21 +225,24 @@ def profile(
         expected: Field -> normalized type to measure conformance against (else the type
             most values have).
     """
-    import duckdb
-
+    from ..common.duckdb_config import duckdb_connection
+    from ..common.field_types import infer_text_types, normalize_type, text_condition, value_sql
     from ..io import RowSource
-    from ..ops.expr import _value_sql, infer_types
-    from .drift import normalize_type
 
     options = options or {}
     source = RowSource(path, options)
-    conn = duckdb.connect()
+    # CSV and records read by undatum hold text; JSON and Parquet keep their types.
+    text_values = source.duckdb_from() is None or source.format_id in ("csv", "tsv")
+    conn = duckdb_connection(options)
     try:
         _load(conn, source)
         described = conn.sql("DESCRIBE SELECT * FROM data").fetchall()
         schema = {str(r[0]): str(r[1]).upper() for r in described if str(r[0]) != "__empty"}
-        dominant = infer_types(conn, "data", schema)
-        rows = int(conn.sql("SELECT count(*) FROM data").fetchone()[0])  # type: ignore[index]
+        dominant = {name: normalize_type(kind) for name, kind in schema.items()}
+        if text_values:
+            columns = [name for name, kind in schema.items() if kind == "VARCHAR"]
+            dominant.update(infer_text_types(conn, "data", columns))
+        rows = int(conn.execute("SELECT count(*) FROM data").fetchall()[0][0])
         fields: list[FieldQuality] = []
         sql_types = {
             "integer": "BIGINT",
@@ -252,8 +255,8 @@ def profile(
         for name, kind in schema.items():
             column = '"' + name.replace('"', '""') + '"'
             text = f"CAST({column} AS VARCHAR)"
-            value = _value_sql(text) if kind == "VARCHAR" else column
-            actual = normalize_type(dominant[name])
+            value = value_sql(text) if kind == "VARCHAR" else column
+            actual = dominant[name]
             target = (expected or {}).get(name) or actual
             native = normalize_type(kind)
             if kind != "VARCHAR":
@@ -269,17 +272,17 @@ def profile(
                     f"count_if(regexp_matches({value}, '^[+-]?[0-9]+$')"
                     f" AND TRY_CAST({value} AS HUGEINT) IS NOT NULL)"
                 )
-            elif target == "boolean":
-                fits = f"count_if(lower({value}) IN ('true', 'false'))"
+            elif target in ("boolean", "date", "datetime"):
+                fits = f"count_if({text_condition(value, target)})"
             elif target in sql_types:
                 fits = f"count(TRY_CAST({value} AS {sql_types[target]}))"
             elif target == "string":
                 fits = f"count({value})"
             else:
                 fits = "0"
-            present, conforming, distinct = conn.sql(
+            present, conforming, distinct = conn.execute(
                 f"SELECT count({value}), {fits}, count(DISTINCT {value}) FROM data"
-            ).fetchone()  # type: ignore[misc]
+            ).fetchall()[0]
             top = conn.sql(
                 f"SELECT {text} AS v, count(*) AS n FROM data WHERE ({value}) IS NOT NULL "
                 f"GROUP BY 1 ORDER BY n DESC, v LIMIT {TOP_VALUES}"
@@ -313,15 +316,27 @@ def _violations(
     severities = {"error": 0, "warning": 0, "info": 0}
     by_rule: dict[str, int] = {}
     sample: list[dict[str, Any]] = []
+
+    def count(violation: dict[str, Any]) -> None:
+        severities[violation["severity"]] = severities.get(violation["severity"], 0) + 1
+        by_rule[violation["rule"]] = by_rule.get(violation["rule"], 0) + 1
+        if len(sample) < SAMPLE_VIOLATIONS:
+            sample.append(violation)
+
+    from ..validate.sql import sql_violations
+
+    checked = sql_violations(path, rule_set, options)
+    if checked is not None:
+        rule_set.close()
+        for violation in checked[1]:
+            count(violation)
+        return severities, sample, by_rule
     try:
         for index, record in enumerate(RowSource(path, options)):
             if not isinstance(record, dict):
                 continue
             for violation in rule_set.validate_record(record, index):
-                severities[violation["severity"]] = severities.get(violation["severity"], 0) + 1
-                by_rule[violation["rule"]] = by_rule.get(violation["rule"], 0) + 1
-                if len(sample) < SAMPLE_VIOLATIONS:
-                    sample.append(violation)
+                count(violation)
     finally:
         rule_set.close()
     return severities, sample, by_rule

@@ -1,20 +1,26 @@
 """DuckDB-backed statistics computations (mixin)."""
 
 import logging
+import math
+from contextlib import nullcontext
 
 import duckdb
-from iterable.helpers.detect import detect_file_type
 
 from ...common.command_utils import (
+    duckdb_csv_text_expr,
     duckdb_read_csv_expr,
     get_iterable_options,
     resolve_csv_delimiter,
 )
+from ...common.duckdb_config import duckdb_connection, one_thread
+from ...common.field_types import column_types, quote
 from ...common.progress import progress
 from ...common.s3_iterable import open_iterable_with_s3
 from ...common.schema_utils import duckdb_decompose
 from ...constants import DEFAULT_DICT_SHARE
+from ...io import RowSource
 from ...utils import dict_generator, get_option
+from .engine import stats_type_names
 
 logger = logging.getLogger(__name__)
 
@@ -22,8 +28,17 @@ logger = logging.getLogger(__name__)
 class DuckDBStatsMixin:
     """DuckDB statistics engine methods for StatProcessor."""
 
-    def _compute_duckdb_basic_stats(self, fromfile, filetype, delimiter=None):
-        """Compute basic statistics using DuckDB's duckdb_decompose with summarize.
+    _duckdb_conn: duckdb.DuckDBPyConnection | None = None
+
+    @property
+    def _duckdb(self) -> duckdb.DuckDBPyConnection:
+        """Connection of the current stats run (a default one when used on its own)."""
+        if self._duckdb_conn is None:
+            self._duckdb_conn = duckdb_connection()
+        return self._duckdb_conn
+
+    def _describe_duckdb_fields(self, fromfile, filetype, delimiter=None):
+        """Field paths of the input and their DuckDB types, without reading every record.
 
         Args:
             fromfile: Path to input file
@@ -31,203 +46,162 @@ class DuckDBStatsMixin:
             delimiter: CSV delimiter (auto-detected when omitted)
 
         Returns:
-            tuple: (fielddata, fieldtypes, total_count) dictionaries matching iterable format
-                - fielddata: Dict mapping field paths to statistics dicts
-                - fieldtypes: Dict mapping field paths to type distribution dicts
-                - total_count: Total number of records
+            list: ``(field_path, duckdb_type)`` pairs; struct members as dotted paths.
         """
-        # Call duckdb_decompose with use_summarize=True to get statistics
-        # Use default limit (10000000) to process all rows - don't pass None as it creates invalid SQL
-        columns_raw = duckdb_decompose(
+        columns = duckdb_decompose(
             filename=fromfile,
             filetype=filetype,
             path="*",
-            limit=10000000,  # Process all rows (default limit)
+            limit=None,
             recursive=True,
             ignore_errors=False,  # a bad record must not shrink the counts unnoticed
-            use_summarize=True,
+            use_summarize=False,
             delimiter=delimiter,
+            conn=self._duckdb,
+            text_types=False,  # typed by _duckdb_field_types
         )
-
-        fielddata = {}
-        fieldtypes = {}
-        total_count = 0
-
-        # Log if columns_raw is empty to help debug
-        if not columns_raw:
-            logger.debug("duckdb_decompose returned empty result - no columns found")
-
-        # Process results from duckdb_decompose
-        # Format: [field_path, base_type, is_array, unique_count, total_count, uniqueness_percentage]
-        for column in columns_raw:
-            if len(column) < 6:
-                continue  # Skip incomplete entries
-
-            field_path = column[0]
-            base_type = column[1]
-
-            # Safely extract unique_count and total_count
-            try:
-                # column[3] and column[4] should be strings from duckdb_decompose
-                unique_count_str = str(column[3]) if column[3] is not None else "0"
-                count_str = str(column[4]) if column[4] is not None else "0"
-                unique_count = int(unique_count_str) if unique_count_str.isdigit() else 0
-                count = int(count_str) if count_str.isdigit() else 0
-            except (ValueError, TypeError, IndexError, AttributeError):
-                unique_count = 0
-                count = 0
-
-            try:
-                uniqueness_percentage = float(column[5]) if column[5] else 0.0
-            except (ValueError, TypeError, IndexError):
-                uniqueness_percentage = 0.0
-
-            # Track maximum total count (should be same for all fields, but use max)
-            total_count = max(total_count, count)
-
-            # Skip fields with empty names, None values, or invalid paths
+        fields = []
+        for column in columns:
+            field_path = column[0] if column else None
             if not field_path or not isinstance(field_path, str) or field_path == "None":
                 continue
-            if field_path.startswith(".") or (field_path and field_path[0].isdigit()):
+            if field_path.startswith(".") or field_path[0].isdigit():
                 continue
+            fields.append((field_path, column[1]))
+        return fields
 
-            # Initialize fielddata structure matching iterable format
-            if field_path not in fielddata:
-                fielddata[field_path] = {
-                    "key": field_path,
-                    "uniq": {},  # Will be populated later by dictionary construction
-                    "n_uniq": unique_count,
-                    "total": count,
-                    "share_uniq": uniqueness_percentage,
-                    "minlen": None,  # Will be computed separately
-                    "maxlen": 0,
-                    "avglen": 0.0,
-                    "totallen": 0,
-                }
+    # Fields whose distinct values are counted, or grouped into dictionaries, in one scan.
+    # DuckDB holds every distinct value of a scan's fields, so both bound its memory.
+    DISTINCT_VALUES_PER_SCAN = 2_000_000
+    DICTIONARY_FIELDS_PER_SCAN = 4
 
-            # Initialize fieldtypes structure
-            # Map DuckDB types to our type system
-            # Note: We'll do proper type detection from samples later, this is just initial
-            if field_path not in fieldtypes:
-                # Map DuckDB types to our type names
-                type_mapping = {
-                    "VARCHAR": "str",
-                    "BIGINT": "int",
-                    "INTEGER": "int",
-                    "DOUBLE": "float",
-                    "FLOAT": "float",
-                    "BOOLEAN": "bool",
-                    "DATE": "date",
-                    "TIMESTAMP": "date",
-                    "JSON": "str",  # JSON fields treated as strings initially
-                }
-                mapped_type = type_mapping.get(base_type, "str")
+    def _compute_duckdb_profile(
+        self, fromfile, filetype, field_paths, numeric_paths, delimiter=None
+    ):
+        """Per-field counts, missing values, lengths and numeric distributions in one scan.
 
-                fieldtypes[field_path] = {
-                    "key": field_path,
-                    "types": {mapped_type: count},  # Initial type distribution
-                }
-
-        return fielddata, fieldtypes, total_count
-
-    def _compute_duckdb_length_stats(self, fromfile, filetype, field_paths, delimiter=None):
-        """Compute length statistics (minlen, maxlen, avglen) for each field using DuckDB.
+        Distinct values are estimated (``approx_count_distinct``, as in ``SUMMARIZE``); exact
+        counts come from :meth:`_compute_duckdb_dictionaries` and
+        :meth:`_compute_duckdb_distinct`.
 
         Args:
             fromfile: Path to input file
             filetype: File type ('csv', 'jsonl', 'json', etc.)
+            field_paths: Field paths to profile
+            numeric_paths: Fields that also get min, max, mean, median and stddev
             delimiter: CSV delimiter (auto-detected when omitted)
-            field_paths: List of field paths to compute length statistics for
 
         Returns:
-            dict: Mapping from field_path to dict with 'minlen', 'maxlen', 'avglen' keys
+            tuple: (number of records, {field_path: statistics})
         """
-        length_stats = {}
-
         read_func = self._duckdb_read_func(fromfile, filetype, delimiter)
-
-        # Compute length statistics for each field path
+        columns = ["COUNT(*)"]
+        layout = []
         for field_path in field_paths:
-            # Skip None, empty, or invalid field paths
-            if (
-                not field_path
-                or not isinstance(field_path, str)
-                or field_path == "None"
-                or field_path.startswith(".")
-                or (field_path and field_path[0].isdigit())
-            ):
-                logger.debug(f"Skipping invalid field path: {field_path}")
+            quoted_field = self._quote_field_path(field_path)
+            if quoted_field is None:
                 continue
-            try:
-                # Handle nested field paths - quote properly for SQL
-                # For nested paths like "user.address.city", we need to access via dot notation
-                # In DuckDB, we use bracket notation for nested fields: "user"."address"."city"
-                field_parts = field_path.split(".")
-                # Validate that no path part is None or "None"
-                if any(
-                    not part or part == "None" or not isinstance(part, str) for part in field_parts
+            length = f"LENGTH(CAST({quoted_field} AS VARCHAR))"
+            exprs = [
+                f"COUNT({quoted_field})",
+                f"approx_count_distinct({quoted_field})",  # what SUMMARIZE reports
+                f"MIN({length})",
+                f"MAX({length})",
+                f"AVG({length})",
+            ]
+            if field_path in numeric_paths:
+                number = f"TRY_CAST({quoted_field} AS DOUBLE)"
+                exprs += [f"{func}({number})" for func in ("MIN", "MAX", "AVG", "MEDIAN", "STDDEV")]
+            columns.extend(exprs)
+            layout.append((field_path, len(exprs)))
+        row = self._duckdb.execute(f"SELECT {', '.join(columns)} FROM {read_func}").fetchall()[0]
+        total = int(row[0] or 0)
+        profile = {}
+        position = 1
+        for field_path, width in layout:
+            values = row[position : position + width]
+            position += width
+            present, approx, minlen, maxlen, avglen = values[:5]
+            missing = total - int(present or 0)
+            stats = {
+                "n_uniq": int(approx or 0),
+                "total": total,
+                "share_uniq": float(f"{(approx or 0) * 100.0 / total:0.2f}") if total else 0.0,
+                "minlen": int(minlen) if minlen is not None else None,
+                "maxlen": int(maxlen) if maxlen is not None else 0,
+                "avglen": float(avglen) if avglen is not None else 0.0,
+                "missing_count": missing,
+                "missing_rate": round(missing * 100.0 / total, 2) if total else 0.0,
+                "cardinality_pct": 0.0,  # set from the exact distinct counts
+            }
+            if avglen and total:
+                stats["totallen"] = int(avglen * total)
+            if width > 5 and values[7] is not None:
+                for name, value in zip(
+                    ("min", "max", "mean", "median", "stddev"), values[5:], strict=True
                 ):
-                    logger.debug(f"Skipping field path with invalid parts: {field_path}")
-                    continue
+                    stats[name] = float(value) if value is not None else None
+                for name in ("mean", "stddev"):  # parallel sums differ in the last digits
+                    value = stats[name]
+                    if value is not None:
+                        stats[name] = _significant(float(value))
+            profile[field_path] = stats
+        return total, profile
 
-                if len(field_parts) == 1:
-                    # Simple field path
-                    quoted_field = f'"{field_path}"'
-                else:
-                    # Nested field path - construct path expression
-                    # For DuckDB JSON, we might need to use JSON extraction
-                    # For CSV with nested structures, this won't work directly
-                    # Let's try the bracket notation approach first
-                    quoted_field = ".".join([f'"{part}"' for part in field_parts])
+    def _compute_duckdb_distinct(self, fromfile, filetype, estimates, delimiter=None):
+        """Exact numbers of distinct non-null values, a few fields per scan.
 
-                # Construct SQL query to compute length statistics
-                # Cast to VARCHAR first, then compute length
-                # Handle NULL values - only compute length for non-NULL values
-                query = f"""
-                SELECT
-                    MIN(CASE WHEN {quoted_field} IS NOT NULL THEN LENGTH(CAST({quoted_field} AS VARCHAR)) ELSE NULL END) as minlen,
-                    MAX(CASE WHEN {quoted_field} IS NOT NULL THEN LENGTH(CAST({quoted_field} AS VARCHAR)) ELSE NULL END) as maxlen,
-                    AVG(CASE WHEN {quoted_field} IS NOT NULL THEN LENGTH(CAST({quoted_field} AS VARCHAR)) ELSE NULL END) as avglen,
-                    COUNT(*) as total_count
-                FROM {read_func}
-                """
+        Args:
+            fromfile: Path to input file
+            filetype: File type ('csv', 'jsonl', 'json', etc.)
+            estimates: Field path -> estimated distinct values; fields are packed into scans
+                of at most ``DISTINCT_VALUES_PER_SCAN`` estimated values (one field when it has
+                more)
+            delimiter: CSV delimiter (auto-detected when omitted)
 
-                # Execute query
-                result = duckdb.sql(query).fetchone()
+        Returns:
+            dict: Field path -> distinct values
+        """
+        read_func = self._duckdb_read_func(fromfile, filetype, delimiter)
+        batches: list[list[tuple[str, str]]] = []
+        size = 0
+        for field_path, estimate in sorted(estimates.items(), key=lambda item: item[1]):
+            quoted_field = self._quote_field_path(field_path)
+            if quoted_field is None:
+                continue
+            if not batches or size + estimate > self.DISTINCT_VALUES_PER_SCAN:
+                batches.append([])
+                size = 0
+            batches[-1].append((field_path, quoted_field))
+            size += estimate
+        distinct = {}
+        for batch in batches:
+            counts = ", ".join(f"COUNT(DISTINCT {quoted})" for _, quoted in batch)
+            row = self._duckdb.execute(f"SELECT {counts} FROM {read_func}").fetchall()[0]
+            for (field_path, _), count in zip(batch, row, strict=True):
+                distinct[field_path] = int(count or 0)
+        return distinct
 
-                if result:
-                    minlen, maxlen, avglen, total_count = result
-                    length_stats[field_path] = {
-                        "minlen": int(minlen) if minlen is not None else None,
-                        "maxlen": int(maxlen) if maxlen is not None else 0,
-                        "avglen": float(avglen) if avglen is not None else 0.0,
-                        "total_count": int(total_count) if total_count else 0,
-                    }
-                else:
-                    # No results, set defaults
-                    length_stats[field_path] = {
-                        "minlen": None,
-                        "maxlen": 0,
-                        "avglen": 0.0,
-                        "total_count": 0,
-                    }
-            except Exception as e:
-                # If query fails for this field, log and continue with defaults
-                logger.debug(f"Failed to compute length stats for field {field_path}: {e}")
-                length_stats[field_path] = {
-                    "minlen": None,
-                    "maxlen": 0,
-                    "avglen": 0.0,
-                    "total_count": 0,
-                }
-
-        return length_stats
+    def _duckdb_field_types(self, fromfile, options, field_paths):
+        """Stats type names of the fields, by the shared rules of ``common.field_types``."""
+        source = RowSource(fromfile, options)
+        relation = source.duckdb_from()
+        if relation is None:
+            return {}
+        codes: set[str] = set()
+        types = column_types(
+            self._duckdb, relation, text_values=source.format_id in ("csv", "tsv"), codes=codes
+        )
+        names = stats_type_names(types, codes)
+        return {path: names[path] for path in field_paths if path in names}
 
     @staticmethod
     def _duckdb_read_func(fromfile, filetype, delimiter=None):
         """Build a DuckDB read function expression for the given file."""
         if filetype in ["csv", "tsv"]:
-            return duckdb_read_csv_expr(fromfile, delimiter)
+            # As text with the header the Python reader takes, when DuckDB can name its columns
+            text = duckdb_csv_text_expr(fromfile, {"delimiter": delimiter}, filetype=filetype)
+            return text or duckdb_read_csv_expr(fromfile, delimiter)
         escaped = fromfile.replace("'", "''")
         if filetype in ["json", "jsonl"]:
             return f"read_json('{escaped}')"
@@ -247,107 +221,6 @@ class DuckDBStatsMixin:
         if any(not part or part == "None" for part in field_parts):
             return None
         return ".".join(f'"{part}"' for part in field_parts)
-
-    def _compute_duckdb_missing_values(
-        self, fromfile, filetype, field_paths, total_count, delimiter=None
-    ):
-        """Compute missing value counts and cardinality for each field using DuckDB.
-
-        Args:
-            fromfile: Path to input file
-            filetype: File type ('csv', 'jsonl', 'json', etc.)
-            delimiter: CSV delimiter (auto-detected when omitted)
-            field_paths: List of field paths to compute statistics for
-            total_count: Total number of records in the dataset
-
-        Returns:
-            dict: Mapping from field_path to dict with 'missing_count',
-                'missing_rate' and 'cardinality_pct' keys
-        """
-        missing_stats = {}
-        read_func = self._duckdb_read_func(fromfile, filetype, delimiter)
-
-        for field_path in field_paths:
-            quoted_field = self._quote_field_path(field_path)
-            if quoted_field is None:
-                logger.debug(f"Skipping invalid field path: {field_path}")
-                continue
-            try:
-                query = f"""
-                SELECT
-                    COUNT(*) - COUNT({quoted_field}) as missing_count,
-                    COUNT(DISTINCT {quoted_field}) as n_uniq,
-                    COUNT(*) as total
-                FROM {read_func}
-                """
-                result = duckdb.sql(query).fetchone()
-                if result:
-                    missing_count, n_uniq, total = result
-                    total = total or total_count or 0
-                    missing_stats[field_path] = {
-                        "missing_count": int(missing_count or 0),
-                        "missing_rate": (
-                            round((missing_count or 0) * 100.0 / total, 2) if total else 0.0
-                        ),
-                        "cardinality_pct": (
-                            round((n_uniq or 0) * 100.0 / total, 2) if total else 0.0
-                        ),
-                    }
-            except Exception as e:
-                logger.debug(f"Failed to compute missing values for field {field_path}: {e}")
-
-        return missing_stats
-
-    def _compute_duckdb_distributions(
-        self, fromfile, filetype, field_paths, finfields, delimiter=None
-    ):
-        """Compute distribution statistics (mean, median, min, max, stddev) for numerical fields.
-
-        Args:
-            fromfile: Path to input file
-            filetype: File type ('csv', 'jsonl', 'json', etc.)
-            delimiter: CSV delimiter (auto-detected when omitted)
-            field_paths: List of field paths
-            finfields: Dictionary mapping field paths to final types
-
-        Returns:
-            dict: Mapping from field_path to dict with 'min', 'max', 'mean',
-                'median' and 'stddev' keys (numerical fields only)
-        """
-        distribution_stats = {}
-        read_func = self._duckdb_read_func(fromfile, filetype, delimiter)
-
-        for field_path in field_paths:
-            if finfields.get(field_path) not in ("int", "float", "numeric"):
-                continue
-            quoted_field = self._quote_field_path(field_path)
-            if quoted_field is None:
-                continue
-            try:
-                numeric_expr = f"TRY_CAST({quoted_field} AS DOUBLE)"
-                query = f"""
-                SELECT
-                    MIN({numeric_expr}) as min_val,
-                    MAX({numeric_expr}) as max_val,
-                    AVG({numeric_expr}) as mean_val,
-                    MEDIAN({numeric_expr}) as median_val,
-                    STDDEV({numeric_expr}) as stddev_val
-                FROM {read_func}
-                """
-                result = duckdb.sql(query).fetchone()
-                if result and result[2] is not None:
-                    min_val, max_val, mean_val, median_val, stddev_val = result
-                    distribution_stats[field_path] = {
-                        "min": float(min_val) if min_val is not None else None,
-                        "max": float(max_val) if max_val is not None else None,
-                        "mean": float(mean_val) if mean_val is not None else None,
-                        "median": float(median_val) if median_val is not None else None,
-                        "stddev": float(stddev_val) if stddev_val is not None else None,
-                    }
-            except Exception as e:
-                logger.debug(f"Failed to compute distribution stats for field {field_path}: {e}")
-
-        return distribution_stats
 
     def _infer_field_types(self, fielddata, finfields, categorical_threshold=10.0):
         """Infer field type categories (categorical vs numerical) from statistics.
@@ -380,7 +253,36 @@ class DuckDBStatsMixin:
             }
         return type_inference
 
-    def _detect_types_from_sample(self, fromfile, filetype, field_paths, show_progress=False):
+    def _csv_sample(self, fromfile, options, limit):
+        """The first ``limit`` records of a CSV file as the Python reader reads them, or None.
+
+        DuckDB reads the text with the Python reader's header, empty fields as ``''``; None
+        for other formats and files DuckDB does not read (the caller uses iterabledata).
+        """
+        source = RowSource(fromfile, options or {})
+        if source.format_id not in ("csv", "tsv"):
+            return None
+        relation = source.duckdb_from()
+        if relation is None:
+            return None
+        try:
+            names = [
+                str(row[0])
+                for row in self._duckdb.execute(f"DESCRIBE SELECT * FROM {relation}").fetchall()
+            ]
+            values = ", ".join(f"COALESCE({quote(name)}, '')" for name in names)
+            with one_thread(self._duckdb):
+                rows = self._duckdb.execute(
+                    f"SELECT {values} FROM {relation} LIMIT {int(limit)}"
+                ).fetchall()
+        except duckdb.Error as exc:
+            logger.debug("%s: DuckDB sample failed, sampling with iterabledata: %s", fromfile, exc)
+            return None
+        return [dict(zip(names, row, strict=True)) for row in rows]
+
+    def _detect_types_from_sample(
+        self, fromfile, filetype, field_paths, show_progress=False, options=None
+    ):
         """Detect field types by sampling records and using guess_datatype.
 
         This maintains compatibility with iterable engine's type detection logic.
@@ -392,6 +294,7 @@ class DuckDBStatsMixin:
             filetype: File type ('csv', 'jsonl', 'json', etc.)
             field_paths: List of field paths to detect types for
             show_progress: Whether to show progress indication during sampling
+            options: Reader options; CSV samples are read by DuckDB with them
 
         Returns:
             dict: Mapping from field_path to type distribution dictionary
@@ -402,8 +305,11 @@ class DuckDBStatsMixin:
         # Use iterable engine for sampling (handles nested structures correctly)
         # This is fast for small samples (10000 records) and maintains accuracy
         sample_limit = 10000
-        iterableargs = {}
-        iterable_context = open_iterable_with_s3(fromfile, mode="r", iterableargs=iterableargs)
+        sample = self._csv_sample(fromfile, options, sample_limit)
+        if sample is not None:
+            iterable_context = nullcontext(sample)
+        else:
+            iterable_context = open_iterable_with_s3(fromfile, mode="r", iterableargs={})
         iterable = iterable_context.__enter__()
 
         try:
@@ -460,7 +366,8 @@ class DuckDBStatsMixin:
             # If sampling fails, log warning and continue with empty distributions
             logger.warning(f"Failed to sample records for type detection: {e}")
         finally:
-            iterable.close()
+            if sample is None:
+                iterable.close()
             iterable_context.__exit__(None, None, None)
 
         return type_distributions
@@ -468,130 +375,119 @@ class DuckDBStatsMixin:
     def _compute_duckdb_dictionaries(
         self, fromfile, filetype, fielddata, finfields, dictshare, delimiter=None
     ):
-        """Compute value frequency dictionaries for low-cardinality fields using DuckDB GROUP BY.
+        """Value frequencies of the low-cardinality fields, several fields per scan.
+
+        Up to ``DICTIONARY_FIELDS_PER_SCAN`` fields are grouped in one scan with
+        ``GROUPING SETS``; a scan that fails is repeated field by field.
 
         Args:
             fromfile: Path to input file
             filetype: File type ('csv', 'jsonl', 'json', etc.)
-            delimiter: CSV delimiter (auto-detected when omitted)
             fielddata: Dictionary of field statistics (used to identify low-cardinality fields)
             finfields: Dictionary mapping field paths to final types
             dictshare: Threshold percentage for dictionary construction (fields below this get dictionaries)
+            delimiter: CSV delimiter (auto-detected when omitted)
 
         Returns:
-            dict: Mapping from field_path to dictionary structure {'items': {value: count}, 'count': n_uniq, 'type': field_type}
+            tuple: (field path -> {'items': {value: count}, 'count': n, 'type': field_type},
+            field path -> exact number of distinct non-null values)
         """
         dictionaries = {}
-
-        read_func = self._duckdb_read_func(fromfile, filetype, delimiter)
-
-        # Identify fields that need dictionaries (uniqueness percentage below dictshare)
+        targets = []
         for field_path, fd in fielddata.items():
             if fd["share_uniq"] >= dictshare:
-                continue  # Skip high-cardinality fields
-
-            # Skip None, empty, or invalid field paths
-            if (
-                not field_path
-                or not isinstance(field_path, str)
-                or field_path == "None"
-                or field_path.startswith(".")
-                or (field_path and field_path[0].isdigit())
-            ):
-                logger.debug(f"Skipping invalid field path for dictionary: {field_path}")
-                # Create empty dictionary entry
-                field_type = finfields.get(field_path, "str")
-                dictionaries[field_path] = {"items": {}, "count": 0, "type": field_type}
                 continue
-
-            try:
-                # Construct field reference for SQL query
-                field_parts = field_path.split(".")
-                # Validate that no path part is None or "None"
-                if any(
-                    not part or part == "None" or not isinstance(part, str) for part in field_parts
-                ):
-                    logger.debug(f"Skipping dictionary field path with invalid parts: {field_path}")
-                    # Create empty dictionary entry
-                    field_type = finfields.get(field_path, "str")
-                    dictionaries[field_path] = {"items": {}, "count": 0, "type": field_type}
-                    continue
-
-                if len(field_parts) == 1:
-                    # Simple field path - just quote it
-                    quoted_field = f'"{field_path}"'
-                else:
-                    # Nested field path - use dot notation with quoted parts
-                    quoted_field = ".".join([f'"{part}"' for part in field_parts])
-
-                # Construct SQL query to get value frequencies
-                # SELECT field_value, COUNT(*) as freq FROM ... GROUP BY field_value ORDER BY freq DESC
-                query = f"""
-                SELECT
-                    {quoted_field} as value,
-                    COUNT(*) as freq
-                FROM {read_func}
-                WHERE {quoted_field} IS NOT NULL
-                GROUP BY {quoted_field}
-                ORDER BY freq DESC
-                """
-
-                # Execute query and fetch all results
-                results = duckdb.sql(query).fetchall()
-
-                # Build dictionary structure matching iterable engine format
-                items_dict = {}
-                for value, freq in results:
-                    # Convert value to string for consistency with iterable engine
-                    value_str = str(value) if value is not None else ""
-                    items_dict[value_str] = int(freq)
-
-                # Get field type and unique count
-                field_type = finfields.get(field_path, "str")
-                n_uniq = len(items_dict)
-
-                # Build dictionary structure
+            quoted_field = self._quote_field_path(field_path)
+            if quoted_field is None:
                 dictionaries[field_path] = {
-                    "items": items_dict,
-                    "count": n_uniq,
-                    "type": field_type,
+                    "items": {},
+                    "count": 0,
+                    "type": finfields.get(field_path, "str"),
                 }
+            else:
+                targets.append((field_path, quoted_field))
 
-            except Exception as e:
-                # If dictionary construction fails for this field, log and skip
-                logger.debug(f"Failed to build dictionary for field {field_path}: {e}")
-                # Create empty dictionary entry
-                field_type = finfields.get(field_path, "str")
-                dictionaries[field_path] = {"items": {}, "count": 0, "type": field_type}
+        read_func = self._duckdb_read_func(fromfile, filetype, delimiter)
+        counts: dict[str, list] = {field_path: [] for field_path, _ in targets}
+        for first in range(0, len(targets), self.DICTIONARY_FIELDS_PER_SCAN):
+            batch = targets[first : first + self.DICTIONARY_FIELDS_PER_SCAN]
+            self._group_values(read_func, batch, counts)
 
-        return dictionaries
+        distinct = {}
+        for field_path, _ in targets:
+            distinct[field_path] = len(counts[field_path])
+            # Most frequent first, equal counts by value (DuckDB groups in no fixed order);
+            # values as text, like the iterable engine.
+            items = {}
+            for value, freq in _by_frequency(counts[field_path]):
+                items[str(value)] = int(freq)
+            dictionaries[field_path] = {
+                "items": items,
+                "count": len(items),
+                "type": finfields.get(field_path, "str"),
+            }
+        return dictionaries, distinct
+
+    def _group_values(self, read_func, batch, counts):
+        """Add ``(value, frequency)`` pairs of each field of ``batch`` to ``counts``."""
+        width = len(batch)
+        query = (
+            f"SELECT {', '.join(f'GROUPING({q})' for _, q in batch)}, "
+            f"{', '.join(q for _, q in batch)}, COUNT(*) FROM {read_func} "
+            f"GROUP BY GROUPING SETS ({', '.join(f'({q})' for _, q in batch)})"
+        )
+        try:
+            result = self._duckdb.execute(query)
+            while rows := result.fetchmany(10_000):
+                for row in rows:
+                    index = row.index(0)  # GROUPING() is 0 for the field this row groups by
+                    value = row[width + index]
+                    if value is not None:
+                        counts[batch[index][0]].append((value, row[-1]))
+            return
+        except duckdb.Error as exc:
+            logger.debug("Grouping %d fields in one scan failed (%s)", width, exc)
+        for field_path, quoted_field in batch:
+            try:
+                counts[field_path] = self._duckdb.execute(
+                    f"SELECT {quoted_field}, COUNT(*) FROM {read_func} "
+                    f"WHERE {quoted_field} IS NOT NULL GROUP BY {quoted_field}"
+                ).fetchall()
+            except duckdb.Error as field_exc:
+                logger.debug(f"Failed to build dictionary for field {field_path}: {field_exc}")
+                counts[field_path] = []
 
     def _stats_duckdb(self, fromfile, options):
         """Compute statistics using DuckDB engine.
 
         This is the main entry point for DuckDB-based statistics computation.
-        It orchestrates all the DuckDB operations and combines results.
+        It orchestrates all the DuckDB operations and combines results on one connection
+        configured from ``--duckdb-threads``/``--duckdb-memory``/``--duckdb-temp-dir``
+        (``--threads`` when no DuckDB thread count is given).
 
         Args:
             fromfile: Path to input file
             options: Dictionary of options (same as stats method)
         """
+        self._duckdb_conn = duckdb_connection(options)
+        try:
+            return self._run_stats_duckdb(fromfile, options)
+        finally:
+            self._duckdb_conn.close()
+            self._duckdb_conn = None
+
+    def _run_stats_duckdb(self, fromfile, options):
         # Get progress control option (default: show progress)
         show_progress = get_option(options, "progress") is not False
         if "no_progress" in options and options["no_progress"]:
             show_progress = False
 
-        # Honor --threads on the default DuckDB connection
-        threads = get_option(options, "threads") or get_option(options, "duckdb_threads")
-        if threads:
-            duckdb.sql(f"SET threads={int(threads)}")
-
         # Detect file type if not provided
         filetype = get_option(options, "format_in")
         if filetype is None:
-            ftype = detect_file_type(fromfile)
-            if ftype["success"]:
-                filetype = ftype["datatype"].id()
+            from ...io import RowSource
+
+            filetype = RowSource(fromfile).format_id
 
         if filetype is None:
             raise ValueError(f"Could not detect file type for {fromfile}")
@@ -605,134 +501,75 @@ class DuckDBStatsMixin:
         else:
             dictshare = DEFAULT_DICT_SHARE
 
-        # Phase 0: Count rows for progress indication (fast COUNT query)
-        total_count = 0
-        if show_progress:
-            try:
-                read_func = self._duckdb_read_func(fromfile, filetype, csv_delimiter)
-                query_str = f"SELECT COUNT(*) FROM {read_func}"
-                with progress(desc="Counting rows", unit="rows", leave=False, total=None) as pbar:
-                    total_count = duckdb.sql(query_str).fetchone()[0]
-                    pbar.total = total_count
-                    pbar.update(total_count)
-            except Exception as e:
-                logger.debug(f"Failed to count rows for progress: {e}")
-
-        # Phase 1: Get basic statistics using duckdb_decompose
-        if show_progress and total_count > 0:
-            with progress(
-                desc="Computing statistics",
-                unit="rows",
-                total=total_count,
-                initial=total_count,
-                leave=False,
-            ) as pbar:
-                fielddata, fieldtypes, computed_count = self._compute_duckdb_basic_stats(
-                    fromfile, filetype, csv_delimiter
-                )
-                # Use computed count if we didn't get it from Phase 0
-                if total_count == 0:
-                    total_count = computed_count
-                    pbar.total = total_count
-                # Mark statistics computation as complete
-                pbar.update(0)  # Already at total, just refresh display
-        else:
-            fielddata, fieldtypes, computed_count = self._compute_duckdb_basic_stats(
-                fromfile, filetype, csv_delimiter
-            )
-            if total_count == 0:
-                total_count = computed_count
-
-        # Check if we got any fields - if empty, fall back to iterable
-        if not fielddata:
+        # Fields and their DuckDB types (DESCRIBE reads a sample only)
+        fields = self._describe_duckdb_fields(fromfile, filetype, csv_delimiter)
+        if not fields:
             logger.warning(
                 "DuckDB stats returned no fields from duckdb_decompose, falling back to iterable engine"
             )
             raise ValueError("No fields extracted - DuckDB returned empty result")
+        field_paths = [field_path for field_path, _ in fields]
 
-        # Phase 2: Filter out None, empty, or invalid field paths before processing
-        field_paths = [
-            fp
-            for fp in fielddata.keys()
-            if fp
-            and isinstance(fp, str)
-            and fp != "None"
-            and not fp.startswith(".")
-            and not fp[0].isdigit()
-        ]
-
-        # Phase 3: Compute missing values and cardinality
-        missing_stats = self._compute_duckdb_missing_values(
-            fromfile, filetype, field_paths, total_count, csv_delimiter
-        )
-
-        # Merge missing value statistics into fielddata
-        for field_path, stats in missing_stats.items():
-            if field_path in fielddata:
-                fielddata[field_path]["missing_count"] = stats["missing_count"]
-                fielddata[field_path]["missing_rate"] = stats["missing_rate"]
-                fielddata[field_path]["cardinality_pct"] = stats["cardinality_pct"]
-
-        # Phase 4: Compute length statistics (minlen, maxlen, avglen)
-        length_stats = self._compute_duckdb_length_stats(
-            fromfile, filetype, field_paths, csv_delimiter
-        )
-
-        # Merge length statistics into fielddata
-        for field_path, stats in length_stats.items():
-            if field_path in fielddata:
-                fielddata[field_path]["minlen"] = stats["minlen"]
-                fielddata[field_path]["maxlen"] = stats["maxlen"]
-                fielddata[field_path]["avglen"] = stats["avglen"]
-                # Calculate totallen for consistency (avglen * total)
-                if stats["avglen"] and stats["total_count"]:
-                    fielddata[field_path]["totallen"] = int(stats["avglen"] * stats["total_count"])
-
-        # Phase 5: Type detection from samples (hybrid approach)
+        # Types from a sample of records (same rules as the iterable engine)
         type_distributions = self._detect_types_from_sample(
-            fromfile, filetype, field_paths, show_progress
+            fromfile, filetype, field_paths, show_progress, options
         )
+        fieldtypes = {
+            field_path: {"key": field_path, "types": type_distributions.get(field_path, {})}
+            for field_path in field_paths
+        }
 
-        # Merge type distributions into fieldtypes
-        for field_path, type_dist in type_distributions.items():
-            if field_path in fieldtypes:
-                # Update fieldtypes with sampled type distribution
-                fieldtypes[field_path]["types"] = type_dist
-            else:
-                # Create new entry if not found
-                fieldtypes[field_path] = {"key": field_path, "types": type_dist}
+        for fd in fieldtypes.values():
+            fd["types"].pop("empty", None)
+        # Field types by the shared rules (the sample above stays in the debug output)
+        finfields = dict.fromkeys(field_paths, "str")
+        finfields.update(self._duckdb_field_types(fromfile, options, field_paths))
+        numeric_paths = {
+            path for path, ftype in finfields.items() if ftype in ("int", "float", "numeric")
+        }
+
+        # One scan: counts, missing values, estimated distinct values, lengths, distributions
+        with (
+            progress(desc="Computing statistics", unit="rows", leave=False, total=None)
+            if show_progress
+            else nullcontext()
+        ):
+            total_count, field_stats = self._compute_duckdb_profile(
+                fromfile, filetype, field_paths, numeric_paths, csv_delimiter
+            )
+        fielddata = {}
+        for field_path in field_paths:
+            fielddata[field_path] = {
+                "key": field_path,
+                "uniq": {},
+                "n_uniq": 0,
+                "total": total_count,
+                "share_uniq": 0.0,
+                "minlen": None,
+                "maxlen": 0,
+                "avglen": 0.0,
+                "totallen": 0,
+            }
+            fielddata[field_path].update(field_stats.get(field_path, {}))
 
         # Initialize profile structure
         profile = {"version": 1.0}
         profile["count"] = total_count
         profile["num_fields"] = len(fielddata)
-
-        # Determine final field types (matching iterable logic)
-        finfields = {}
-        for fd in fieldtypes.values():
-            fdt = list(fd["types"].keys())
-            if "empty" in fdt:
-                del fd["types"]["empty"]
-            types_keys = list(fd["types"].keys())
-            if len(types_keys) != 1:
-                ftype = "str"
-            else:
-                ftype = types_keys[0]
-            finfields[fd["key"]] = ftype
-
         profile["fieldtypes"] = finfields
 
-        # Phase 6: Compute distribution statistics for numerical fields
-        distribution_stats = self._compute_duckdb_distributions(
-            fromfile, filetype, field_paths, finfields, csv_delimiter
+        # Value dictionaries of low-cardinality fields, which also give their exact distinct
+        # counts; the other fields are counted in scans of bounded memory
+        dictionaries, distinct = self._compute_duckdb_dictionaries(
+            fromfile, filetype, fielddata, finfields, dictshare, csv_delimiter
         )
+        others = {p: fielddata[p]["n_uniq"] for p in field_paths if p not in distinct}
+        distinct.update(self._compute_duckdb_distinct(fromfile, filetype, others, csv_delimiter))
+        if total_count:
+            for field_path, count in distinct.items():
+                fielddata[field_path]["cardinality_pct"] = round(count * 100.0 / total_count, 2)
 
-        # Merge distribution statistics into fielddata
-        for field_path, stats in distribution_stats.items():
-            if field_path in fielddata:
-                fielddata[field_path].update(stats)
-
-        # Phase 7: Type inference (categorical vs numerical)
+        # Type inference (categorical vs numerical)
         type_inference = self._infer_field_types(fielddata, finfields)
 
         # Merge type inference into fielddata
@@ -741,11 +578,6 @@ class DuckDBStatsMixin:
                 fielddata[field_path]["type_category"] = inference["category"]
                 fielddata[field_path]["is_categorical"] = inference["is_categorical"]
                 fielddata[field_path]["is_numerical"] = inference["is_numerical"]
-
-        # Phase 8: Dictionary construction for low-cardinality fields
-        dictionaries = self._compute_duckdb_dictionaries(
-            fromfile, filetype, fielddata, finfields, dictshare, csv_delimiter
-        )
 
         # Build dictkeys list and populate dicts
         dictkeys = []
@@ -767,13 +599,9 @@ class DuckDBStatsMixin:
         profile["dictkeys"] = dictkeys
         profile["dicts"] = dicts  # Store dictionaries in profile (though not displayed in table)
 
-        # Store dictionaries in fielddata for compatibility with iterable engine output format
-        # Note: The iterable engine stores uniq dictionaries in fielddata and then deletes them
-        # We're building them separately but need to clean up the structure
-        for k, v in fielddata.items():
-            if "uniq" in v:
-                del v["uniq"]
-            fielddata[k] = v
+        # The iterable engine keeps uniq dictionaries in fielddata and deletes them at the end
+        for value in fielddata.values():
+            value.pop("uniq", None)
 
         profile["debug"] = {"fieldtypes": fieldtypes.copy(), "fielddata": fielddata, "dicts": dicts}
 
@@ -781,3 +609,18 @@ class DuckDBStatsMixin:
         if not get_option(options, "quiet"):
             self._display_enhanced_statistics_table(fielddata, finfields, dictkeys)
         return profile
+
+
+def _by_frequency(pairs):
+    """``(value, count)`` pairs, most frequent first and equal counts by value."""
+    try:
+        return sorted(pairs, key=lambda pair: (-pair[1], pair[0]))
+    except TypeError:  # structs and lists do not compare
+        return sorted(pairs, key=lambda pair: (-pair[1], str(pair[0])))
+
+
+def _significant(value: float, digits: int = 12) -> float:
+    """``value`` rounded to ``digits`` significant digits."""
+    if value == 0 or not math.isfinite(value):
+        return value
+    return round(value, digits - 1 - math.floor(math.log10(abs(value))))

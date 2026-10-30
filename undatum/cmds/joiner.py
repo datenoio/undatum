@@ -4,9 +4,11 @@ import logging
 
 from ..common.command_utils import (
     ITERABLE_OPTIONS_KEYS,  # noqa: F401
+    duckdb_read_expr,
     force_iterable_if_table,
     get_side_iterable_options,
     iter_command_rows,
+    quote_sql_identifier,
 )
 from ..common.duckdb_config import create_duckdb_connection, get_duckdb_config_from_options
 from ..common.engine_selector import detect_engine
@@ -20,7 +22,7 @@ from ..common.path_utils import validate_file_path
 from ..common.progress import wrap_iterable
 from ..common.s3_iterable import open_path as open_iterable
 from ..ops import write_query, write_rows
-from ..utils import field_values, get_file_type, get_option
+from ..utils import field_values, get_option
 
 logger = logging.getLogger(__name__)
 
@@ -114,31 +116,20 @@ class Joiner:
 
         if detected_engine == "duckdb":
             try:
+                read_expr1 = duckdb_read_expr(
+                    file1, filetype1, get_side_iterable_options(options, 1), all_varchar=True
+                )
+                read_expr2 = duckdb_read_expr(
+                    file2, filetype2, get_side_iterable_options(options, 2), all_varchar=True
+                )
                 duckdb_config = get_duckdb_config_from_options(options)
                 conn = create_duckdb_connection(**duckdb_config)
 
-                # Determine input formats and build appropriate read expressions
-                source_type1 = filetype1 or get_file_type(file1) or "csv"
-                source_type2 = filetype2 or get_file_type(file2) or "csv"
-
-                def build_read_expr(filename, filetype):
-                    if filetype == "csv":
-                        return f"read_csv_auto('{filename}', all_varchar=true)"
-                    elif filetype in ("json", "jsonl"):
-                        return f"read_json_auto('{filename}')"
-                    elif filetype == "parquet":
-                        return f"read_parquet('{filename}')"
-                    else:
-                        raise ValueError(f"Unsupported file type for DuckDB: {filetype}")
-
-                read_expr1 = build_read_expr(file1, source_type1)
-                read_expr2 = build_read_expr(file2, source_type2)
-
                 # Build ON clause for multiple keys
-                on_conditions = []
-                for key_field in key_field_list:
-                    on_conditions.append(f"t1.{key_field} = t2.{key_field}")
-                on_clause = " AND ".join(on_conditions)
+                on_clause = " AND ".join(
+                    f"t1.{quote_sql_identifier(key)} = t2.{quote_sql_identifier(key)}"
+                    for key in key_field_list
+                )
 
                 # Map join type
                 join_type_sql = {

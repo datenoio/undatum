@@ -117,15 +117,38 @@ def test_duckdb_engine_is_used_for_readable_inputs(tmp_path, caplog):
 
 
 @pytest.mark.parametrize(("engine", "expected"), [("auto", "Python engine"), ("duckdb", "DuckDB")])
-@pytest.mark.parametrize("name,cfg", [("dedup", DedupConfig()), ("reverse", ReverseConfig())])
-def test_queries_holding_every_record_need_the_duckdb_engine(
-    tmp_path, caplog, name, cfg, engine, expected
-):
-    # DuckDB's memory would grow with the input; the Python forms stay bounded.
+def test_reverse_needs_the_duckdb_engine(tmp_path, caplog, engine, expected):
+    # DuckDB's memory would grow with the input; the Python form stays bounded.
     source = _write_input(tmp_path, "csv")
     with caplog.at_level("DEBUG", logger="undatum.ops.runner"):
-        run(name, cfg, open_source(str(source)), str(tmp_path / "o.csv"), engine=engine)
-    assert any(f"{name}: {expected}" in message for message in caplog.messages)
+        run(
+            "reverse",
+            ReverseConfig(),
+            open_source(str(source)),
+            str(tmp_path / "o.csv"),
+            engine=engine,
+        )
+    assert any(f"reverse: {expected}" in message for message in caplog.messages)
+
+
+@pytest.mark.parametrize(
+    ("cfg", "expected"),
+    [
+        (DedupConfig(), "DuckDB engine"),
+        (DedupConfig(keys=("name",), keep="last"), "DuckDB engine"),
+        (DedupConfig(keys=("name",), memory_keys=2), "Python engine"),  # four names
+        (DedupConfig(keys=("name",), low_memory=True), "Python engine"),
+    ],
+)
+def test_dedup_runs_in_duckdb_when_its_keys_fit(tmp_path, caplog, cfg, expected):
+    # DuckDB holds one record per key: up to memory_keys keys, as many as the Python form.
+    source = _write_input(tmp_path, "csv")
+    out = tmp_path / "auto.csv"
+    with caplog.at_level("DEBUG", logger="undatum.ops.runner"):
+        run("dedup", cfg, open_source(str(source)), str(out))
+    assert any(f"dedup: {expected}" in message for message in caplog.messages)
+    run("dedup", cfg, open_source(str(source)), str(tmp_path / "python.csv"), engine="python")
+    assert _read_output(out) == _read_output(tmp_path / "python.csv")
 
 
 def test_python_engine_for_options_duckdb_cannot_honour(tmp_path, caplog):

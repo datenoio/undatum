@@ -16,6 +16,7 @@ from difflib import SequenceMatcher
 from typing import Any
 
 from ..common.errors import FileNotFoundError, ValidationError
+from ..common.field_types import normalize_type
 
 SAMPLE_ROWS = 10_000
 SAMPLE_VALUES = 200
@@ -94,69 +95,45 @@ class SchemaDiff:
 # ---------------------------------------------------------------- types
 
 
-def normalize_type(kind: str | None) -> str:
-    """A DuckDB, JSON Schema or Frictionless type name as one of the normalized types."""
-    text = (kind or "").strip().upper()
-    if not text or text == "NULL":
-        return "null"
-    if text.endswith("[]") or text.startswith(("LIST", "ARRAY")):
-        return "array"
-    if text.startswith(("STRUCT", "MAP", "OBJECT", "JSON", "UNION")):
-        return "object"
-    integer = ("BIGINT", "INTEGER", "INT", "SMALLINT", "TINYINT", "HUGEINT", "UBIGINT", "UINTEGER")
-    if text in integer or text in ("USMALLINT", "UTINYINT", "UHUGEINT", "INT64", "INT32", "YEAR"):
-        return "integer"
-    if text.startswith(("DOUBLE", "FLOAT", "REAL", "DECIMAL", "NUMERIC", "NUMBER")):
-        return "number"
-    if text.startswith(("BOOL",)):
-        return "boolean"
-    if text == "DATE":
-        return "date"
-    if text.startswith(("TIMESTAMP", "DATETIME", "DATE-TIME")):
-        return "datetime"
-    if text.startswith("TIME"):
-        return "time"
-    if text in ("BLOB", "BYTEA", "BINARY", "VARBINARY"):
-        return "binary"
-    return "string"
-
-
 # ---------------------------------------------------------------- profiles
 
 
 def profile_file(path: str, options: dict[str, Any] | None = None) -> dict[str, FieldInfo]:
     """Fields of a data file, inferred from a sample of its records."""
-    import duckdb
-
+    from ..common.duckdb_config import duckdb_connection
+    from ..common.field_types import infer_text_types, value_sql
     from ..io import RowSource
-    from ..ops.expr import _value_sql, infer_types
 
     if not os.path.exists(path) and "://" not in path:
         raise FileNotFoundError(path)
     options = options or {}
     source = RowSource(path, options)
-    conn = duckdb.connect()
+    conn = duckdb_connection(options)
     try:
         relation = source.duckdb_from()
+        # CSV and records read by undatum hold text; JSON and Parquet keep their types.
+        text_values = relation is None or source.format_id in ("csv", "tsv")
         if relation is None:
             relation = _register_sample(conn, source)
         else:
             relation = f"(SELECT * FROM {relation} LIMIT {SAMPLE_ROWS})"
         described = conn.sql(f"DESCRIBE SELECT * FROM {relation}").fetchall()
-        schema = {str(row[0]): str(row[1]).upper() for row in described}
-        types = infer_types(conn, relation, schema, min_share=1.0)
+        types = {str(row[0]): normalize_type(str(row[1])) for row in described}
+        if text_values:
+            text = [str(row[0]) for row in described if str(row[1]).upper() == "VARCHAR"]
+            types.update(infer_text_types(conn, relation, text))
         fields: dict[str, FieldInfo] = {}
         for name, kind in types.items():
             column = '"' + name.replace('"', '""') + '"'
             # Missing: NULL, empty, or a placeholder such as n/a (as in type inference).
-            empty = f"count_if(({_value_sql(f'CAST({column} AS VARCHAR)')}) IS NULL)"
-            row = conn.sql(
+            empty = f"count_if(({value_sql(f'CAST({column} AS VARCHAR)')}) IS NULL)"
+            row = conn.execute(
                 f"SELECT {empty}, list(DISTINCT CAST({column} AS VARCHAR)) "
                 f"FILTER (WHERE {column} IS NOT NULL) FROM {relation}"
-            ).fetchone()
+            ).fetchall()[0]
             missing, values = row if row else (0, [])
             sample = frozenset(str(v) for v in (values or [])[:SAMPLE_VALUES])
-            seen_type = normalize_type(kind) if sample else "null"
+            seen_type = kind if sample else "null"
             fields[name] = FieldInfo(name, seen_type, bool(missing), sample)
         return fields
     finally:

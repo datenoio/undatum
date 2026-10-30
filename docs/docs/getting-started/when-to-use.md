@@ -33,5 +33,7 @@ Use the others when you want their specialized strengths.
 ## Related docs
 
 - [Quickstarts](/getting-started/quick-start)
+- [Coming from csvkit](/getting-started/from-csvkit) and [from qsv](/getting-started/from-qsv)
+- [Cheat sheet](/getting-started/cheat-sheet)
 - [Format support](/formats/)
 - [Performance](/getting-started/performance)

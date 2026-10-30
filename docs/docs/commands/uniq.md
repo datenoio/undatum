@@ -4,7 +4,8 @@ description: "undatum uniq command reference"
 ---
 # `uniq`
 
-Extracts all unique values from specified field(s). **`--fields` is required.**
+Extracts all unique values from specified field(s). **`--fields` is required.** Values are listed
+in the order they first appear in the input, with either engine.
 
 Default stdout format is CSV. Use `--format-out json` (or an `--output` path ending in `.json`) for JSON.
 
@@ -54,6 +55,9 @@ undatum uniq [OPTIONS] INPUT_FILE
 | `-e`, `--engine` [auto\|duckdb\|python] | Processing engine: auto (default), duckdb, or python. |  |
 | `--filter`, `--filter-expr` TEXT | Filter expression to apply before extracting uniques. |  |
 | `-O`, `--format-out` TEXT | Output format: 'csv' (default) or 'json' (also inferred from --output). |  |
+| `--duckdb-threads` INTEGER | Number of threads for DuckDB engine. |  |
+| `--duckdb-memory` TEXT | Memory limit for DuckDB (e.g., '4GB', '512MB'). |  |
+| `--duckdb-temp-dir` TEXT | Temporary directory for DuckDB. |  |
 | `--json` | Print the result as one JSON document (same as --format-out json). |  |
 
 Deprecated spellings (removed in 2.0): `--filetype` → `--format-in`.

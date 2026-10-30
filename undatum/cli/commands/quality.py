@@ -6,6 +6,10 @@ import typer
 
 from ..common import enable_verbose
 from ..options import (
+    DuckdbMemoryOpt,
+    DuckdbTempDirOpt,
+    DuckdbThreadsOpt,
+    EngineOpt,
     ErrorLogOpt,
     FlattenNestedOpt,
     JsonOpt,
@@ -34,7 +38,10 @@ def validate(
         str | None, typer.Option(help="CSV delimiter character (auto-detected when omitted).")
     ] = None,
     quotechar: QuoteCharOpt = None,
-    encoding: Annotated[str, typer.Option(help="File encoding (e.g., 'utf8', 'latin1').")] = "utf8",
+    encoding: Annotated[
+        str | None,
+        typer.Option(help="Input encoding (e.g., 'utf8', 'cp1251'); detected when omitted."),
+    ] = None,
     verbose: Annotated[bool, typer.Option(help="Enable verbose logging output.")] = False,
     format_in: Annotated[
         str, typer.Option(help="Override input file format detection (e.g., 'csv', 'jsonl').")
@@ -107,6 +114,7 @@ def validate(
         bool,
         typer.Option("--list-rules", help="List the built-in rules (format: ...) and exit."),
     ] = False,
+    engine: EngineOpt = None,
 ):
     """Validate data against validation rules.
 
@@ -172,6 +180,7 @@ def validate(
         "flatten_nested": flatten_nested,
         "max_nested_depth": max_nested_depth,
         "keep_nested_parents": keep_nested_parents,
+        "engine": engine,
     }
     acmd = Validator()
     acmd.validate(input_file, options)
@@ -209,6 +218,9 @@ def quality(
         str | None, typer.Option("--format-in", "-F", help="Override input format detection.")
     ] = None,
     table: TableNameOpt = None,
+    duckdb_threads: DuckdbThreadsOpt = None,
+    duckdb_memory: DuckdbMemoryOpt = None,
+    duckdb_temp_dir: DuckdbTempDirOpt = None,
     json_output: JsonOpt = False,
 ):
     """Report whether a dataset is fit for use, and exit with 1 when a threshold fails.
@@ -228,7 +240,13 @@ def quality(
         rules=rules,
         schema=schema,
         thresholds=thresholds,
-        options={"format_in": format_in, "table": table},
+        options={
+            "format_in": format_in,
+            "table": table,
+            "duckdb_threads": duckdb_threads,
+            "duckdb_memory": duckdb_memory,
+            "duckdb_temp_dir": duckdb_temp_dir,
+        },
     )
     write_report(report, "json" if json_output else format_out, output)
     if not report["verdict"]["passed"]:

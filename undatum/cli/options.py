@@ -96,6 +96,25 @@ EngineOpt = Annotated[
     typer.Option(help="Processing engine: auto (default), duckdb, or python."),
 ]
 
+DuckdbThreadsOpt = Annotated[int | None, typer.Option(help="Number of threads for DuckDB engine.")]
+
+DuckdbMemoryOpt = Annotated[
+    str | None, typer.Option(help="Memory limit for DuckDB (e.g., '4GB', '512MB').")
+]
+
+DuckdbTempDirOpt = Annotated[str | None, typer.Option(help="Temporary directory for DuckDB.")]
+
+CacheOpt = Annotated[
+    bool | None,
+    typer.Option(
+        "--cache/--no-cache",
+        help=(
+            "Reuse the result kept in ~/.undatum/cache for an unchanged file (default: on; "
+            "UNDATUM_CACHE=0 or 'defaults: cache: false' in a config file turn it off)."
+        ),
+    ),
+]
+
 JsonOpt = Annotated[
     bool,
     typer.Option(

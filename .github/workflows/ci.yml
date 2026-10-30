@@ -93,7 +93,7 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v7
       with:
-        python-version: "3.10"
+        python-version: "3.11"
     - name: Install package and mypy
       run: |
         python -m pip install --upgrade pip
@@ -106,7 +106,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11", "3.12", "3.13"]
+        python-version: ["3.11", "3.12", "3.13"]
     steps:
     - uses: actions/checkout@v7
     - name: Set up Python ${{ matrix.python-version }}
@@ -116,8 +116,13 @@ jobs:
     - uses: astral-sh/setup-uv@v6
     - name: Install locked dependencies
       run: uv sync --frozen --extra api --extra dev --python ${{ matrix.python-version }}
+    - name: DuckDB encodings extension for the non-UTF-8 CSV tests
+      if: matrix.python-version == '3.12'
+      run: uv run --frozen --no-sync undatum extensions install encodings --dir "$RUNNER_TEMP/duckdb-extensions"
     - name: Run tests with coverage
       # Coverage only ratchets up: 65 (2026-10) -> 70 -> 75 -> 80.
+      env:
+        UNDATUM_TEST_DUCKDB_EXTENSION_DIR: ${{ matrix.python-version == '3.12' && format('{0}/duckdb-extensions', runner.temp) || '' }}
       run: |
         uv run --frozen --no-sync pytest --cov=undatum --cov-report=term --cov-report=xml --cov-fail-under=65
     - name: Diff coverage for pull requests
@@ -152,10 +157,10 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v7
       with:
-        python-version: "3.10"
+        python-version: "3.11"
     - name: Install lowest versions allowed by pyproject.toml
       run: |
-        uv venv .venv-lowest --python 3.10
+        uv venv .venv-lowest --python 3.11
         uv pip install --python .venv-lowest/bin/python --resolution lowest-direct -e ".[api,dev]"
     - name: Run tests
       run: .venv-lowest/bin/python -m pytest -q
@@ -266,7 +271,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.10", "3.13"]
+        python-version: ["3.11", "3.13"]
     steps:
     - uses: actions/checkout@v7
     - name: Set up Python ${{ matrix.python-version }}
@@ -296,7 +301,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.10", "3.11", "3.13"]
+        python-version: ["3.11", "3.12", "3.13"]
     steps:
     - uses: actions/checkout@v7
     - name: Set up Python ${{ matrix.python-version }}

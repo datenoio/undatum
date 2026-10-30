@@ -10,7 +10,7 @@ undatum supports **140+ formats** via [iterabledata](https://github.com/datenoio
 Capabilities differ by format: many are **read-only**, some require extras, and streaming
 support varies.
 
-undatum requires **Python 3.10+** and **iterabledata ≥ 1.0.21** (installed with undatum), which
+undatum requires **Python 3.11+** and **iterabledata ≥ 1.0.21** (installed with undatum), which
 provides the open-data pack, lakehouse writes, codec profiles and Avro writes. Run
 `undatum formats list` to see what your install actually exposes.
 
@@ -43,7 +43,7 @@ undatum formats list --capabilities --json
 | JSON (array/object) | yes | yes | limited | Prefer JSONL for large files |
 | Parquet | yes | yes | batched | Requires `pyarrow` (default dependency); codec profiles `fast`/`balanced`/`max` |
 | Arrow / Feather | yes | yes | batched | Native batch convert path in iterabledata 1.0.17+ |
-| Excel XLSX / XLS | yes | limited | sheet-based | `--table` / `--sheet` for a named sheet; `--start-page` for a 0-based index |
+| Excel XLSX / XLS | yes | limited | sheet-based | `--table` / `--sheet` for a named sheet; `--start-page` for a 0-based index; read with typed values (see below) |
 | XML | yes | limited | yes | Use `--tagname` for record elements |
 | BSON | yes | yes | yes | |
 | AVRO | yes | yes | batched | Writable since iterabledata 1.0.14 (lazy schema inference) |
@@ -92,13 +92,24 @@ Parquet/ORC/AVRO with format-native compression. See [`repack`](/commands/repack
 3. **Large files.** Prefer `--low-memory` on `convert` / `sort` / `dedup`, and Parquet or
    JSONL over in-memory JSON arrays. Parquet/Arrow writers buffer bounded batches
    (iterabledata 1.0.17+).
-4. **Python version.** undatum and iterabledata require **Python ≥ 3.10**; on Python 3.9 pip
-   resolves to undatum 1.6.0.
+4. **Python version.** undatum requires **Python ≥ 3.11**; on Python 3.10 pip resolves to
+   undatum 1.9.x, and on Python 3.9 to 1.6.0.
 5. **Security / error policy** (iterabledata 1.0.16+): XML parsers disable external entities;
    pickle reads warn unless `trust=True` (`undatum convert --trust`, and the same flag on
    other read commands); malformed rows raise `FormatParseError` unless you pass
    `--on-error skip` or `--on-error warn`. Pair with `--error-log errors.jsonl` to keep a JSONL
    record of skipped rows.
+6. **Spreadsheets have typed values.** xlsx, xlsm, xls, xlsb and ods files are read with
+   fastexcel, the same way by both engines:
+   - numbers are numbers: integers when every value of the column is whole, since Excel stores
+     only floating-point numbers;
+   - dates are dates when every value of the column is at midnight, else datetimes;
+   - booleans are booleans, and empty cells are null;
+   - formula cells give their cached results;
+   - a column without a header is named `__UNNAMED__<n>`;
+   - a column that mixes numbers and text is text.
+
+   Compressed workbooks (`.xlsx.gz`) are not read with fastexcel.
 
 For the authoritative list, always trust `undatum formats list --capabilities` for your
 installed version. Upstream release notes:
@@ -118,7 +129,7 @@ undatum supports **140+ formats** through iterabledata (exact catalog depends on
 | **JSON** | `.json` | Array or object documents |
 | **Parquet / ORC / Avro** | `.parquet`, `.orc`, `.avro` | Columnar and binary row formats; Avro is writable (iterabledata 1.0.14+) |
 | **Arrow / Feather** | `.arrow`, `.feather` | Bounded batch I/O; native batch convert path available |
-| **Excel** | `.xls`, `.xlsx`, `.xlsb`, `.ods` | Named sheet via `--table` / `--sheet`; `--start-page` for a 0-based index |
+| **Excel** | `.xls`, `.xlsx`, `.xlsm`, `.xlsb`, `.ods` | Named sheet via `--table` / `--sheet`; `--start-page` for a 0-based index; `--start-line` skips rows before the header |
 | **BSON** | `.bson` | Binary JSON (MongoDB) |
 | **DuckDB / SQLite** | `.ddb`, `.duckdb`, `.sqlite`, `.db` | Table name defaults from output filename when omitted |
 

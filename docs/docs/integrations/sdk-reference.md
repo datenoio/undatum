@@ -52,6 +52,31 @@ Dataset.from_records([{"a": 1}, {"a": 2}]).count()
 2
 ```
 
+### `Dataset.from_frame(frame: Any) -> Dataset` *(classmethod)*
+
+Wrap a DataFrame or table of any library Narwhals supports.
+
+pandas, Polars, PyArrow, Modin, cuDF and other eager frames are read through Arrow;
+lazy frames (a Polars `LazyFrame`, a DuckDB relation, Ibis, ...) are collected first.
+Plans on the frame run in DuckDB like plans on a file.
+
+| Parameter | Description |
+|-----------|-------------|
+| `frame` | A DataFrame, a `pyarrow.Table` or a Narwhals frame. |
+
+**Returns:** Dataset instance
+
+**Raises:**
+
+- `DependencyError`: Narwhals is not installed.
+- `UndatumError`: The object is not a frame Narwhals supports.
+
+```python
+import pandas as pd
+Dataset.from_frame(pd.DataFrame({"a": [1, 2]})).count()
+2
+```
+
 ### `Dataset.source` *(property)*
 
 Path or URI the records are read from (`None` for in-memory records).
@@ -462,13 +487,76 @@ Same as `undatum convert --recursive`; `to_ext` is required unless
 Dataset.convert_many("./raw", "./out", to_ext="jsonl")
 ```
 
+### `Dataset.to_arrow(chunksize: int | None = None) -> Any`
+
+Convert to a `pyarrow.Table` (or an iterator of tables with `chunksize`).
+
+A plan DuckDB runs (see the module notes) is read by DuckDB straight into Arrow; other
+plans convert their records in batches. CSV fields stay text, as in the Python reader.
+
+| Parameter | Description |
+|-----------|-------------|
+| `chunksize` | Rows per table; `None` returns one table. |
+
+**Returns:** `pyarrow.Table`, or an iterator of tables of `chunksize` rows (the last may be shorter)
+
+**Raises:**
+
+- `UndatumError`: A field has values Arrow cannot hold in one column (numbers and text, for example); :meth:`to_pandas` accepts them.
+
+```python
+Dataset.read("data.parquet").select(["id", "name"]).to_arrow().num_rows
+1000
+```
+
 ### `Dataset.to_pandas(chunksize: int | None = None) -> Any`
 
 Convert to a pandas DataFrame (or an iterator of them with `chunksize`).
 
+The frames are built from Arrow (see :meth:`to_arrow`); records whose fields mix
+value types that Arrow cannot hold in one column become frames of Python objects.
+
+| Parameter | Description |
+|-----------|-------------|
+| `chunksize` | Rows per frame; `None` returns one frame. |
+
+**Returns:** `pandas.DataFrame`, or an iterator of frames of `chunksize` rows
+
+**Raises:**
+
+- `DependencyError`: pandas is not installed (`pip install "undatum[pandas]"`).
+
 ### `Dataset.to_polars(chunksize: int | None = None) -> Any`
 
-Convert to a Polars DataFrame (needs `undatum[polars]`).
+Convert to a Polars DataFrame (or an iterator of them with `chunksize`).
+
+Needs `undatum[polars]`. The frames are built from Arrow, as in :meth:`to_pandas`.
+
+| Parameter | Description |
+|-----------|-------------|
+| `chunksize` | Rows per frame; `None` returns one frame. |
+
+**Returns:** `polars.DataFrame`, or an iterator of frames of `chunksize` rows
+
+### `Dataset.to_frame(backend: str, chunksize: int | None = None) -> Any`
+
+Convert to a DataFrame of `backend` through Arrow and Narwhals.
+
+| Parameter | Description |
+|-----------|-------------|
+| `backend` | A library Narwhals builds eager frames with: `"pandas"`, `"polars"`, `"pyarrow"`, `"modin"`, `"cudf"`, ... |
+| `chunksize` | Rows per frame; `None` returns one frame. |
+
+**Returns:** A native frame of `backend`, or an iterator of frames of `chunksize` rows
+
+**Raises:**
+
+- `DependencyError`: Narwhals or the backend is not installed.
+- `UndatumError`: A field mixes value types that Arrow cannot hold in one column (see :meth:`to_arrow`).
+
+```python
+Dataset.read("data.csv").to_frame("polars")
+```
 
 ### `Dataset.to_dask(chunksize: int = 1000000) -> Any`
 

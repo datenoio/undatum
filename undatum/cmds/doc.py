@@ -146,13 +146,13 @@ def _merge_ai_metadata(metadata: dict[str, Any], ai_metadata: dict[str, Any]) ->
 
 
 def _parse_metacrafter_matches(entry: dict[str, Any]) -> list[dict[str, Any]]:
-    from iterable.ai.semantic import _parse_metacrafter_matches as _parse
+    from iterable.ai.semantic import parse_metacrafter_matches as _parse
 
     return _parse(entry)
 
 
 def _run_metacrafter_scan(filename: str) -> list[dict[str, Any]] | None:
-    from iterable.ai.semantic import _run_metacrafter_scan as _scan
+    from iterable.ai.semantic import run_metacrafter_scan as _scan
 
     return _scan(filename)
 

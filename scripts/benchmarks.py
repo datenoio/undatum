@@ -39,7 +39,7 @@ ROOT = Path(__file__).resolve().parent.parent
 BUDGETS = ROOT / "tests" / "benchmarks" / "budgets.toml"
 TIERS = {"tiny": 2_000, "100k": 100_000, "1m": 1_000_000}
 
-# name -> argv after ``python -m undatum``. {csv}, {jsonl}, {parquet}: inputs; {out}: a
+# name -> argv after ``python -m undatum``. {csv}, {jsonl}, {parquet}, {orc}: inputs; {out}: a
 # fresh output directory per run.
 SUITE: dict[str, list[str]] = {
     "help": ["--help"],
@@ -60,6 +60,7 @@ SUITE: dict[str, list[str]] = {
     "sql": ["sql", "SELECT city, count(*) AS n FROM data GROUP BY city", "{csv}"],
     "convert-parquet": ["convert", "{csv}", "{out}/c.parquet"],
     "convert-jsonl": ["convert", "{parquet}", "{out}/c.jsonl"],
+    "convert-orc": ["convert", "{orc}", "{out}/o.parquet"],
 }
 
 
@@ -67,7 +68,8 @@ SUITE: dict[str, list[str]] = {
 
 
 def generate(tier: str, directory: Path) -> dict[str, Path]:
-    """Write ``bench.csv``, ``bench.jsonl`` and ``bench.parquet`` with ``TIERS[tier]`` rows.
+    """Write ``bench.csv``, ``bench.jsonl``, ``bench.parquet`` and ``bench.orc`` with
+    ``TIERS[tier]`` rows.
 
     Values are derived from the row number, so every run produces the same files.
     """
@@ -92,6 +94,7 @@ def generate(tier: str, directory: Path) -> dict[str, Path]:
         "csv": directory / "bench.csv",
         "jsonl": directory / "bench.jsonl",
         "parquet": directory / "bench.parquet",
+        "orc": directory / "bench.orc",
     }
     conn = duckdb.connect()
     conn.execute("SET threads = 1")  # stable row order
@@ -99,6 +102,11 @@ def generate(tier: str, directory: Path) -> dict[str, Path]:
     conn.execute(f"COPY ({query}) TO '{paths['jsonl']}' (FORMAT JSON)")
     conn.execute(f"COPY ({query}) TO '{paths['parquet']}' (FORMAT PARQUET)")
     conn.close()
+    # DuckDB does not write ORC; the input of the Arrow bridge (``RowSource.arrow_reader``).
+    import pyarrow.parquet as pq
+    from pyarrow import orc
+
+    orc.write_table(pq.read_table(paths["parquet"]), paths["orc"])
     return paths
 
 
@@ -122,10 +130,13 @@ def measure(python: str, argv: list[str], repeat: int = 3) -> dict[str, Any]:
         ):
             args = [a.replace("{out}", out) for a in argv]
             start = time.perf_counter()
+            # ``-m`` imports from the working directory first: run outside any checkout, so
+            # each interpreter measures its own undatum.
             proc = subprocess.Popen(
                 [python, "-m", "undatum", *args],
                 stdout=subprocess.DEVNULL,
                 stderr=err,
+                cwd=out,
                 env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
             )
             _, status, usage = os.wait4(proc.pid, 0)
@@ -153,10 +164,12 @@ def run(
     only: list[str] | None = None,
 ) -> dict[str, Any]:
     """Measure the suite for each interpreter; commands are interleaved across them."""
+    data = data.resolve()
     inputs = {
         "{csv}": str(data / "bench.csv"),
         "{jsonl}": str(data / "bench.jsonl"),
         "{parquet}": str(data / "bench.parquet"),
+        "{orc}": str(data / "bench.orc"),
     }
     missing = [path for path in inputs.values() if not Path(path).exists()]
     if missing:
@@ -179,7 +192,7 @@ def run(
         "tier": tier,
         "rows": TIERS[tier],
         "repeat": repeat,
-        "created": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
+        "created": dt.datetime.now(dt.UTC).isoformat(timespec="seconds"),
         "platform": platform.platform(),
         "commit": os.environ.get("GITHUB_SHA") or _git_commit(),
         "runs": results,
@@ -203,10 +216,8 @@ def _git_commit() -> str:
 
 
 def load_budgets(path: Path = BUDGETS) -> dict[str, Any]:
-    try:
-        import tomllib
-    except ModuleNotFoundError:  # Python 3.10 (tomli comes with pytest)
-        import tomli as tomllib  # type: ignore[no-redef]
+    import tomllib
+
     with open(path, "rb") as handle:
         return tomllib.load(handle)
 
@@ -376,7 +387,9 @@ def _pythons(values: list[str] | None) -> dict[str, str]:
     pythons = {}
     for value in values:
         label, sep, path = value.partition("=")
-        pythons[label if sep else "head"] = path if sep else label
+        python = path if sep else label
+        # Commands run in their output directory, so a relative interpreter path must not be.
+        pythons[label if sep else "head"] = os.path.abspath(python) if os.sep in python else python
     return pythons
 
 

@@ -1,10 +1,14 @@
 """File format conversion module."""
 
+import functools
 import logging
+import os
 import time
 from collections import defaultdict
+from dataclasses import dataclass, field
 from typing import Any
 
+from .. import constants
 from ..common.chunked_io import chunked_reader
 from ..common.command_utils import (
     apply_iterable_csv_delimiter,
@@ -16,19 +20,19 @@ from ..common.command_utils import (
     validate_codec_profile,
     validate_write_mode,
 )
-from ..common.engine_selector import detect_engine, is_format_supported_by_duckdb
 from ..common.errors import (
+    ConversionError,
     FileNotFoundError,
     FormatError,
     PermissionError,
     ValidationError,
     find_similar_files,
 )
+from ..common.format_names import FAST_CODECS, FAST_FORMATS, FAST_WRITABLE
 from ..common.parallel import parallel_process_chunks
 from ..common.parallel_workers import transform_convert_chunk
 from ..common.path_utils import validate_file_path
 from ..common.progress import is_tty, wrap_iterable
-from ..constants import COMPRESSED_FILE_TYPES, DUCKABLE_FILE_TYPES, SUPPORTED_FILE_TYPES
 from ..utils import get_file_type, get_option
 
 logger = logging.getLogger(__name__)
@@ -39,10 +43,12 @@ logger = logging.getLogger(__name__)
 _PREFERRED_WRITABLE_FORMATS = ["csv", "jsonl", "json", "parquet", "orc", "avro", "bson"]
 
 
+@functools.cache
 def _writable_format_suggestions() -> list[str]:
     """Return the preferred writable formats that iterabledata can actually write.
 
-    Falls back to the full preferred list if capability reporting is unavailable.
+    Falls back to the full preferred list if capability reporting is unavailable. Called
+    only for error messages: the capability probe imports every iterabledata format.
     """
     try:
         from iterable.helpers.capabilities import supports_write
@@ -58,9 +64,6 @@ def _writable_format_suggestions() -> list[str]:
     return writable or list(_PREFERRED_WRITABLE_FORMATS)
 
 
-# Formats commonly suggested as writable conversion targets (capability-filtered).
-WRITABLE_FORMAT_SUGGESTIONS = _writable_format_suggestions()
-
 # Formats that report as writable but require an externally-supplied schema or
 # message class to serialize (e.g. a compiled protobuf message). They cannot be
 # used as generic conversion targets, so we fail fast with an actionable error
@@ -75,23 +78,42 @@ _SCHEMA_REQUIRED_FORMATS: dict[str, str] = {
 
 
 def _native_bulk_pair(format_in: str | None, format_out: str | None) -> bool:
-    """Return True when both formats advertise native bulk read/write."""
+    """Return True when iterabledata can convert between the formats in batches.
+
+    As in ``iterable.convert.batch``, the reader needs ``read_batches`` and the writer
+    ``write_batch``, or ``read_arrow_batches`` and ``write_arrow_batch``. ORC and Lance decide
+    per file whether they take part, so the methods are enough. The capability flags
+    ``native_bulk_read``/``native_bulk_write`` only say that a format has its own
+    ``read_bulk``/``write_bulk`` (CSV and JSON Lines have since iterabledata 1.1).
+    """
     if not format_in or not format_out:
         return False
     try:
-        from iterable.helpers.capabilities import get_format_capabilities
-    except Exception:  # noqa: BLE001
+        import importlib
+
+        from iterable.helpers.detect import DATATYPE_REGISTRY
+
+        reader, writer = (
+            getattr(importlib.import_module(module), name)
+            for module, name in (
+                DATATYPE_REGISTRY[str(fmt).lower()] for fmt in (format_in, format_out)
+            )
+        )
+    except Exception:  # noqa: BLE001 - unknown format or missing optional backend
         return False
-    try:
-        cin = get_format_capabilities(str(format_in).lower()) or {}
-        cout = get_format_capabilities(str(format_out).lower()) or {}
-    except Exception:  # noqa: BLE001
-        return False
-    return bool(cin.get("native_bulk_read") and cout.get("native_bulk_write"))
+
+    def has(cls: Any, method: str) -> bool:
+        return callable(getattr(cls, method, None))
+
+    return (has(reader, "read_batches") and has(writer, "write_batch")) or (
+        has(reader, "read_arrow_batches") and has(writer, "write_arrow_batch")
+    )
 
 
 def _skip_duckdb_convert(options: dict) -> bool:
-    """DuckDB COPY cannot honor table/sheet, column selection, codec profiles, compression level, CSV quotechar, or Parquet row-group size."""
+    """DuckDB COPY cannot honor table/sheet, column selection, codec profiles, compression level, CSV quotechar, Parquet row-group size, or nested values as text."""
+    if options.get("flatten"):
+        return True
     if options.get("table") or options.get("sheet"):
         return True
     if options.get("columns") or options.get("row_range"):
@@ -222,6 +244,58 @@ def express_analyze_jsonl(filename, itemlimit=100):
     return {"isflat": isflat, "keys": keys}
 
 
+def _is_flat_output(tofile, options: dict) -> bool:
+    """Whether the output format holds only flat records (CSV, TSV, ...)."""
+    from iterable.helpers.detect import is_flat
+
+    fmt = Converter._resolve_output_format(tofile, options)
+    return bool(fmt) and is_flat(filetype=fmt)
+
+
+def _raise_write_errors(result, tofile) -> None:
+    """Fail when iterabledata reported records it could not write (it only logs them)."""
+    errors = getattr(result, "errors", None) or []
+    if not errors:
+        return
+    rows_in, rows_out = getattr(result, "rows_in", 0), getattr(result, "rows_out", 0)
+    lost = (
+        f"{rows_in - rows_out:,} of {rows_in:,} records were not written; "
+        if rows_out < rows_in
+        else ""
+    )
+    raise ConversionError(
+        f"Converting to {tofile} failed: {lost}{errors[0]}. The output file is incomplete.",
+        context={"output": str(tofile), "errors": len(errors)},
+    )
+
+
+def _delimited_writer(filename, openargs: dict, csv_args: dict | None, codecargs: dict | None):
+    """A CSV/TSV writer constructed with its delimiter, or ``None`` for ``open_iterable``.
+
+    ``open_iterable`` would open TSV (also compressed) with a comma and write the header at
+    once; setting the delimiter afterwards writes a second header into compressed files.
+    """
+    from ..common.format_names import format_from_name
+    from ..common.writer import _open_writer
+
+    if not isinstance(filename, str):
+        return None
+    named = format_from_name(filename)
+    fmt = str(openargs.get("format") or (named[0] if named else "")).lower()
+    if fmt not in ("csv", "tsv"):
+        return None
+    csv_args = csv_args or {}
+    # Not resolve_csv_delimiter: it would sniff the old file at the output path
+    delimiter = csv_args.get("delimiter") or ("\t" if fmt == "tsv" else None)
+    quotechar = csv_args.get("quotechar")
+    if delimiter in (None, ",") and quotechar in (None, '"'):
+        return None  # plain CSV: open_iterable writes it as is
+    args = {**openargs, "delimiter": delimiter or ","}
+    if quotechar:
+        args["quotechar"] = quotechar
+    return _open_writer(filename, fmt, args, codecargs)
+
+
 def make_flat(item):
     """Flatten nested structures in dictionary by converting to strings."""
     result = {}
@@ -253,6 +327,22 @@ def _format_bytes(num_bytes: int | None) -> str:
     if num_bytes < 1024 * 1024:
         return f"{num_bytes / 1024:.1f} KB"
     return f"{num_bytes / (1024 * 1024):.1f} MB"
+
+
+@dataclass
+class CopyResult:
+    """Metrics of a conversion DuckDB wrote, with the fields of iterabledata's ``ConversionResult``.
+
+    iterabledata's class is not used: importing ``iterable.types`` imports the whole package
+    (about 0.3 s), which the DuckDB path does not need otherwise.
+    """
+
+    rows_in: int
+    rows_out: int
+    elapsed_seconds: float
+    bytes_read: int | None = None
+    bytes_written: int | None = None
+    errors: list[Exception] = field(default_factory=list)
 
 
 def format_conversion_summary(result) -> str:
@@ -294,7 +384,12 @@ class Converter:
             return fmt.lower()
         basename = str(tofile).rsplit("/", 1)[-1]
         parts = basename.split(".")
-        if len(parts) >= 2 and parts[-1].lower() in COMPRESSED_FILE_TYPES:
+        last = parts[-1].lower()
+        # Common extensions are known without iterabledata's codec list (an import of ~0.5 s)
+        if len(parts) >= 2 and (
+            last in FAST_CODECS
+            or (last not in FAST_FORMATS and last in constants.COMPRESSED_FILE_TYPES)
+        ):
             parts = parts[:-1]
         if len(parts) >= 2:
             return parts[-1].lower()
@@ -317,7 +412,7 @@ class Converter:
                 f"generic conversion target. Convert to a self-describing format instead.",
                 field="output",
                 suggestions=[
-                    f for f in WRITABLE_FORMAT_SUGGESTIONS if f not in _SCHEMA_REQUIRED_FORMATS
+                    f for f in _writable_format_suggestions() if f not in _SCHEMA_REQUIRED_FORMATS
                 ],
             )
 
@@ -351,11 +446,15 @@ class Converter:
 
         relation = None
         if (get_option(options, "engine") or "auto") != "python":
+            # Native readers only: partitioning queries the input twice, and an Arrow reader
+            # (RowSource.duckdb_relation) can be read once.
             relation = source.duckdb_from()
         if relation is not None:
             import duckdb
 
-            conn = duckdb.connect()
+            from ..common.duckdb_config import duckdb_connection
+
+            conn = duckdb_connection(options)
             try:
                 query = compose_sql(conn, relation, steps) if steps else f"SELECT * FROM {relation}"
                 if query and duckdb_partitioned_copy(
@@ -388,19 +487,21 @@ class Converter:
         out_fmt = self._resolve_output_format(tofile, options)
         if not out_fmt:
             return
+        if out_fmt in FAST_WRITABLE and out_fmt != "parquet":
+            # Known writable without the capability probe, which imports every format
+            return
         if out_fmt == "parquet":
-            try:
-                import pyarrow  # noqa: F401
+            import importlib.util
 
+            if importlib.util.find_spec("pyarrow") is not None:
                 return
-            except ImportError:
-                from ..common.errors import DependencyError
+            from ..common.errors import DependencyError
 
-                raise DependencyError(
-                    "pyarrow",
-                    feature="Parquet write",
-                    install_command="pip install pyarrow",
-                ) from None
+            raise DependencyError(
+                "pyarrow",
+                feature="Parquet write",
+                install_command="pip install pyarrow",
+            )
         try:
             from iterable.helpers.capabilities import supports_write
 
@@ -412,7 +513,7 @@ class Converter:
                 f"Output format '{out_fmt}' is read-only; undatum can read it but cannot "
                 f"write to it.",
                 field="output",
-                suggestions=WRITABLE_FORMAT_SUGGESTIONS,
+                suggestions=_writable_format_suggestions(),
             )
 
     def _build_convert_kwargs(
@@ -462,7 +563,12 @@ class Converter:
         if quotechar:
             toiterableargs["quotechar"] = quotechar
 
-        is_flatten = bool(get_option(options, "flatten"))
+        # Flat outputs (CSV, TSV, ...) hold nested values as text, as the other commands write
+        # them; without flattening iterabledata names the columns by dotted paths but writes the
+        # nested rows, which fail.
+        is_flatten = bool(get_option(options, "flatten")) or (
+            tofile is not None and _is_flat_output(tofile, options)
+        )
         show_progress = get_option(options, "progress")
         if show_progress is None:
             show_progress = True
@@ -582,11 +688,17 @@ class Converter:
         return _ctx()
 
     @staticmethod
-    def _with_csv_options(iterableargs: dict | None, toiterableargs: dict | None = None):
-        """Apply CSV delimiter/quotechar after iterable.convert opens a file.
+    def _with_csv_options(
+        iterableargs: dict | None,
+        toiterableargs: dict | None = None,
+        codecargs: dict | None = None,
+    ):
+        """Apply CSV delimiter/quotechar to the files iterable.convert opens.
 
         ``open_iterable`` passes those keys via ``options=``; CSVIterable only
-        reads constructor kwargs.
+        reads constructor kwargs. Readers get them after open; CSV and TSV writers
+        are constructed with them, because the writer writes its header when it opens
+        (a compressed file cannot drop a header written with the wrong delimiter).
         """
         from contextlib import contextmanager
 
@@ -597,11 +709,23 @@ class Converter:
             original = convert_core.open_iterable
 
             def wrapped(*args, **kwargs):
-                iterable = original(*args, **kwargs)
+                from ..common.s3_iterable import _open_spreadsheet
+
+                # Spreadsheets are read by fastexcel, as in the other commands
+                spreadsheet = _open_spreadsheet(args, kwargs)
+                if spreadsheet is not None:
+                    return spreadsheet
                 mode = kwargs.get("mode")
                 if mode is None and len(args) >= 2:
                     mode = args[1]
                 filename = args[0] if args else kwargs.get("filename")
+                if mode in ("w", "wb"):
+                    writer = _delimited_writer(
+                        filename, kwargs.get("iterableargs") or {}, toiterableargs, codecargs
+                    )
+                    if writer is not None:
+                        return writer
+                iterable = original(*args, **kwargs)
                 csv_args = toiterableargs if mode in ("w", "wb") else iterableargs
                 apply_iterable_csv_delimiter(iterable, filename, csv_args)
                 return iterable
@@ -614,81 +738,79 @@ class Converter:
 
         return _ctx()
 
-    def _try_duckdb_convert(self, fromfile, tofile, options: dict) -> bool:
-        """Attempt DuckDB spill-to-disk conversion for duckable → Parquet/CSV/JSONL.
+    def _try_duckdb_convert(self, fromfile, tofile, options: dict):
+        """Convert with one DuckDB ``COPY`` when DuckDB reads the input and writes the output.
+
+        Covers CSV/TSV, JSON, JSON Lines and Parquet in and out (plain, gzip or zstd). The
+        records equal the Python engine's: CSV values stay text and empty CSV fields stay
+        empty strings. With ``--engine auto``, inputs whose values DuckDB would write as
+        different values (see :func:`duckdb_copy_keeps_values`) use the Python engine.
 
         Returns:
-            True if conversion completed via DuckDB, False if caller should fall back.
+            :class:`CopyResult` when DuckDB wrote ``tofile``, ``None`` to use the
+            iterabledata path.
         """
-        out_fmt = self._resolve_output_format(tofile, options)
-        if out_fmt not in ("parquet", "csv", "json", "jsonl"):
-            return False
+        import time
 
-        engine = get_option(options, "engine") or "auto"
-        low_memory = bool(options.get("low_memory"))
-        # Prefer DuckDB for low-memory parquet/csv/jsonl or when engine requests it.
-        if engine == "python":
-            return False
-        if engine == "auto" and not low_memory and out_fmt != "parquet":
-            # Keep existing iterable path as default for non-parquet unless low-memory.
-            return False
+        import duckdb
 
-        detected = detect_engine(
-            fromfile, engine if engine != "auto" else "auto", operation="convert"
+        from ..common.duckdb_config import duckdb_connection
+        from ..common.engine_selector import validate_engine
+        from ..common.writer import (
+            AtomicFileTarget,
+            csv_copy_query,
+            duckdb_copy_keeps_values,
+            duckdb_copy_options,
+            resolve_output_format,
         )
-        if detected != "duckdb" and not (low_memory and engine == "auto"):
-            # Still try duckdb if format looks duckable under low-memory.
-            ftype = get_file_type(fromfile)
-            if not is_format_supported_by_duckdb(ftype, "raw") and ftype not in DUCKABLE_FILE_TYPES:
-                return False
+        from ..io import RowSource
 
+        start = time.time()
+
+        engine = validate_engine(get_option(options, "engine"))
+        target = str(tofile)
+        copy_options = duckdb_copy_options(target)
+        if engine == "python" or copy_options is None:
+            return None
+        out_fmt = resolve_output_format(target, get_option(options, "format_out"))
+        if out_fmt != resolve_output_format(target):
+            return None  # --format-out differs from the extension COPY would write
+        source = RowSource(fromfile, options)
+        if not source.duckdb_readable():
+            return None
+        # A conversion streams: one thread keeps memory bounded (about 100-150 MB for millions
+        # of rows) and is nearly as fast, since COPY preserves the input order.
+        conn = duckdb_connection(options, "row")
         try:
-            from iterable.helpers.detect import detect_file_type
-
-            from ..common.duckdb_config import (
-                create_duckdb_connection,
-                get_duckdb_config_from_options,
-            )
-
-            ftype_info = detect_file_type(fromfile)
-            filetype = options.get("format_in")
-            compression = "raw"
-            if not filetype and ftype_info.get("success"):
-                filetype = ftype_info["datatype"].id()
-                if ftype_info.get("codec") is not None:
-                    compression = ftype_info["codec"].id()
-            filetype = (filetype or get_file_type(fromfile) or "").lower()
-            if not is_format_supported_by_duckdb(filetype, compression):
-                return False
-
-            if filetype == "csv":
-                read_expr = f"read_csv_auto('{fromfile}', all_varchar=true)"
-            elif filetype in ("json", "jsonl"):
-                read_expr = f"read_json_auto('{fromfile}')"
-            elif filetype == "parquet":
-                read_expr = f"read_parquet('{fromfile}')"
-            else:
-                return False
-
-            duckdb_config = get_duckdb_config_from_options(options)
-            if low_memory and not duckdb_config.get("memory"):
-                duckdb_config["memory"] = "1GB"
-            conn = create_duckdb_connection(**duckdb_config)
-            try:
-                query = f"SELECT * FROM {read_expr}"
-                if out_fmt == "parquet":
-                    conn.execute(f"COPY ({query}) TO '{tofile}' (FORMAT PARQUET)")
-                elif out_fmt == "csv":
-                    conn.execute(f"COPY ({query}) TO '{tofile}' (FORMAT CSV, HEADER)")
-                else:
-                    conn.execute(f"COPY ({query}) TO '{tofile}' (FORMAT JSON)")
-            finally:
-                conn.close()
-            logger.info("convert: completed via DuckDB spill path (%s → %s)", filetype, out_fmt)
-            return True
-        except Exception as exc:  # noqa: BLE001 - fall back to iterable path
-            logger.warning("DuckDB convert path failed, falling back to iterable: %s", exc)
-            return False
+            relation = source.duckdb_relation(conn)
+            if relation is None:
+                return None
+            described = conn.execute(f"DESCRIBE SELECT * FROM {relation}").fetchall()
+            types = {str(row[0]): str(row[1]).upper() for row in described}
+            if engine == "auto" and not duckdb_copy_keeps_values(
+                types.values(), out_fmt or "", from_json=source.format_id in ("json", "jsonl")
+            ):
+                logger.debug("convert: column types need the Python writer")
+                return None
+            # Empty CSV fields are empty strings, which CSV output writes as the Python writer
+            query = csv_copy_query(conn, f"SELECT * FROM {relation}", out_fmt, types)
+            with AtomicFileTarget(target) as stage:
+                escaped = stage.target.replace("'", "''")
+                copied = conn.execute(f"COPY ({query}) TO '{escaped}' ({copy_options})").fetchall()
+                stage.commit()
+        except duckdb.Error as exc:
+            logger.warning("DuckDB convert failed, using the Python engine: %s", exc)
+            return None
+        finally:
+            conn.close()
+        rows = int(copied[0][0]) if copied else 0
+        logger.info("convert: written by DuckDB (%s -> %s)", source.format_id, out_fmt)
+        return CopyResult(
+            rows_in=rows,
+            rows_out=rows,
+            elapsed_seconds=time.time() - start,
+            bytes_written=os.path.getsize(target),
+        )
 
     def convert(self, fromfile, tofile, options=None, limit=DEFAULT_HEADERS_DETECT_LIMIT):
         """Convert a file (or cloud/DB source) to another format.
@@ -698,8 +820,8 @@ class Converter:
         reporting, atomic local writes, and native cloud (s3/gs/az) handling.
         Friendly errors for missing files and unsupported formats are preserved.
 
-        When ``low_memory`` is set (or converting duckable formats to Parquet),
-        prefers DuckDB ``COPY`` spill-to-disk when possible.
+        CSV/TSV, JSON, JSON Lines and Parquet inputs and outputs are written with one DuckDB
+        ``COPY`` (same records as the Python engine); ``--engine python`` forces iterabledata.
 
         Args:
             fromfile: Path or URI of the input source.
@@ -708,8 +830,8 @@ class Converter:
             limit: Maximum records to sample for schema detection.
 
         Returns:
-            iterabledata ``ConversionResult`` with row/byte metrics, or ``None``
-            when DuckDB completed the conversion.
+            iterabledata ``ConversionResult`` with row/byte metrics, or a
+            :class:`CopyResult` with the same fields when DuckDB wrote the output.
 
         Raises:
             FileNotFoundError: If a local input file does not exist.
@@ -757,8 +879,11 @@ class Converter:
             return None
 
         if "://" not in fromfile and not _skip_duckdb_convert(options):
-            if self._try_duckdb_convert(fromfile, tofile, options):
-                return None
+            result = self._try_duckdb_convert(fromfile, tofile, options)
+            if result is not None:
+                if options.get("summary", True):
+                    logger.info(format_conversion_summary(result))
+                return result
 
         convert_kwargs = self._build_convert_kwargs(
             options, limit, fromfile=fromfile, tofile=tofile
@@ -795,15 +920,17 @@ class Converter:
                 with self._with_csv_options(
                     convert_kwargs.get("iterableargs"),
                     convert_kwargs.get("toiterableargs"),
+                    codecargs,
                 ):
                     result = iterable_convert(fromfile, tofile, **convert_kwargs)
-        except (FileNotFoundError, PermissionError, FormatError):
+            _raise_write_errors(result, tofile)
+        except (FileNotFoundError, PermissionError, FormatError, ConversionError):
             raise
         except Exception as e:
             # Surface a helpful error when the input format is not supported.
             file_type = get_file_type(fromfile)
-            if file_type is None or file_type not in SUPPORTED_FILE_TYPES:
-                raise FormatError(fromfile, file_type, SUPPORTED_FILE_TYPES) from e
+            if file_type is None or file_type not in constants.SUPPORTED_FILE_TYPES:
+                raise FormatError(fromfile, file_type, constants.SUPPORTED_FILE_TYPES) from e
             # Actionable hint when Parquet support is missing
             if "pyarrow" in str(e).lower() or "parquet" in str(e).lower():
                 try:
@@ -999,7 +1126,7 @@ class Converter:
             raise ValidationError(
                 "Bulk conversion requires a target extension (use --to-ext or --format-out).",
                 field="output",
-                suggestions=WRITABLE_FORMAT_SUGGESTIONS,
+                suggestions=_writable_format_suggestions(),
             )
 
         # Fail fast if the requested target format is read-only or schema-required.
@@ -1022,6 +1149,7 @@ class Converter:
             with self._with_csv_options(
                 convert_kwargs.get("iterableargs"),
                 convert_kwargs.get("toiterableargs"),
+                codecargs,
             ):
                 result = iterable_bulk_convert(
                     source,
@@ -1032,6 +1160,15 @@ class Converter:
                     workers=threads if threads else None,
                     **convert_kwargs,
                 )
+        failed = [item for item in result.file_results if item.error is not None]
+        if failed:
+            raise ConversionError(
+                f"{len(failed)} of {result.total_files} files were not converted; "
+                f"{failed[0].source_file}: {failed[0].error}",
+                context={"failed": [item.source_file for item in failed]},
+            )
+        for file_result in result.file_results:
+            _raise_write_errors(file_result.result, file_result.dest_file)
         if options.get("summary", True):
             logger.info(format_bulk_conversion_summary(result))
         return result

@@ -30,7 +30,9 @@ class Sniffer:
         if options is None:
             options = {}
         logger.debug("Sniffing %s", fromfile)
-        result = sniff_file(fromfile, options)
+        from ..common.cache import cached
+
+        result = cached("sniff", fromfile, options, lambda: sniff_file(fromfile, options))
 
         format_type = (
             get_option(options, "format_out") or get_option(options, "format") or ""

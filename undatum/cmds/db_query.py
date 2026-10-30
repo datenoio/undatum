@@ -219,16 +219,12 @@ class DatabaseQueryExecutor:
 
     def _output_rows_parquet(self, rows, output_path: str) -> None:
         """Write an iterable of dict rows as Parquet."""
-        try:
-            import pandas as pd
-        except ImportError as e:
-            raise ImportError(
-                "pandas is required for Parquet output. Install with: pip install pandas pyarrow"
-            ) from e
+        import pyarrow.parquet as pq
+
+        from ..io.arrow import records_table
 
         all_rows = list(rows)
-        df = pd.DataFrame(all_rows)
-        df.to_parquet(output_path, index=False)
+        pq.write_table(records_table(all_rows), output_path)
         logger.info(f"Output {len(all_rows)} records in Parquet format to {output_path}")
 
     def _output_jsonl(self, cursor, columns: list, out_file, batch_size: int) -> list:
@@ -324,12 +320,9 @@ class DatabaseQueryExecutor:
         Returns:
             List of column names (may be inferred from first row)
         """
-        try:
-            import pandas as pd
-        except ImportError as e:
-            raise ImportError(
-                "pandas is required for Parquet output. Install with: pip install pandas pyarrow"
-            ) from e
+        import pyarrow.parquet as pq
+
+        from ..io.arrow import records_table
 
         # Collect all rows (Parquet needs full dataset)
         all_rows = []
@@ -356,9 +349,7 @@ class DatabaseQueryExecutor:
                         )
                     )
 
-        # Convert to DataFrame and write Parquet
-        df = pd.DataFrame(all_rows)
-        df.to_parquet(output_path, index=False)
+        pq.write_table(records_table(all_rows), output_path)
 
         logger.info(f"Output {len(all_rows)} records in Parquet format to {output_path}")
         return columns

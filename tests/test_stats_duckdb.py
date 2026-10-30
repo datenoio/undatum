@@ -292,3 +292,112 @@ def test_malformed_jsonl_is_an_error_not_a_smaller_count(tmp_path):
     source.write_text('{"a": 1}\n{"a": 2\n{"a": 3}\n', encoding="utf8")
     result = CliRunner().invoke(app, ["stats", str(source), "-O", "json"])
     assert result.exit_code != 0
+
+
+class _CountingConnection:
+    """DuckDB connection that counts the SELECT queries (each reads the input once)."""
+
+    def __init__(self, conn):
+        self.conn = conn
+        self.scans = 0
+
+    def execute(self, query, *args):
+        # current_setting() reads a setting, not the input.
+        if query.lstrip().startswith("SELECT") and "current_setting(" not in query:
+            self.scans += 1
+        return self.conn.execute(query, *args)
+
+    def __getattr__(self, name):
+        return getattr(self.conn, name)
+
+
+def test_stats_reads_the_input_a_few_times_not_per_field(tmp_path, monkeypatch):
+    """Statistics of all fields come from one scan plus grouped scans, not 4 queries per field."""
+    from undatum.cmds.statistics import duckdb_engine
+
+    fields = [f"f{i}" for i in range(24)]
+    rows = [",".join(f"v{(r + i) % 3}" for i in range(24)) for r in range(50)]
+    source = tmp_path / "wide.csv"
+    source.write_text(",".join(fields) + "\n" + "\n".join(rows) + "\n", encoding="utf8")
+    connections = []
+
+    def counting(options=None, workload="aggregate"):
+        connections.append(
+            _CountingConnection(duckdb_engine.duckdb_connection.__wrapped__(options, workload))
+        )
+        return connections[-1]
+
+    counting.__wrapped__ = duckdb_engine.duckdb_connection
+    monkeypatch.setattr(duckdb_engine, "duckdb_connection", counting)
+    profile = StatProcessor().stats(
+        str(source), {"engine": "duckdb", "format_out": "json", "output": str(tmp_path / "s.json")}
+    )
+    assert profile["count"] == 50
+    # Two samples of the first 10,000 records (types by the shared rules, and the records
+    # for the type distribution), one profile scan, and dictionaries of four fields per scan
+    # (all fields have 3 values).
+    assert connections[0].scans == 3 + 24 // StatProcessor.DICTIONARY_FIELDS_PER_SCAN
+
+
+def test_stats_values_match_direct_counts(tmp_path):
+    """Missing values, exact distinct shares, lengths and dictionaries of a small file."""
+    source = tmp_path / "people.csv"
+    source.write_text(
+        "id,city,score\n1,Berlin,10\n2,,20\n3,Paris,25\n4,Berlin,10\n5,Rome,30\n", encoding="utf8"
+    )
+    profile = StatProcessor().stats(
+        str(source),
+        {"engine": "duckdb", "format_out": "json", "output": str(tmp_path / "s.json")},
+    )
+    data = profile["debug"]["fielddata"]
+    assert data["city"]["missing_count"] == 1
+    assert data["city"]["cardinality_pct"] == 60.0  # Berlin, Paris, Rome of 5 records
+    assert (data["city"]["minlen"], data["city"]["maxlen"]) == (4, 6)
+    assert data["id"]["cardinality_pct"] == 100.0
+    assert data["score"]["missing_count"] == 0
+    assert (data["score"]["min"], data["score"]["median"], data["score"]["max"]) == (10, 20, 30)
+    assert profile["dicts"]["city"]["items"] == {"Berlin": 2, "Paris": 1, "Rome": 1}
+
+
+def test_dictionaries_order_equal_counts_by_value(tmp_path):
+    """Most frequent first; equal counts by value, whatever order DuckDB groups in."""
+    source = tmp_path / "ties.csv"
+    source.write_text("city\nRome\nParis\nBerlin\nParis\nBerlin\nOslo\n", encoding="utf8")
+    profile = StatProcessor().stats(
+        str(source), {"engine": "duckdb", "format_out": "json", "output": str(tmp_path / "s.json")}
+    )
+    assert list(profile["dicts"]["city"]["items"].items()) == [
+        ("Berlin", 2),
+        ("Paris", 2),
+        ("Oslo", 1),
+        ("Rome", 1),
+    ]
+
+
+def test_profile_is_the_same_on_every_run(tmp_path):
+    """Many equal counts and floating-point sums on several threads give one profile."""
+    source = tmp_path / "many.csv"
+    rows = "".join(f"{i % 997},{(i * 7919) % 1000 / 3},{i}\n" for i in range(30_000))
+    source.write_text("code,amount,id\n" + rows, encoding="utf8")
+    profiles = set()
+    for _ in range(4):
+        out = tmp_path / "s.json"
+        StatProcessor().stats(
+            str(source),
+            {"engine": "duckdb", "format_out": "json", "output": str(out), "duckdb_threads": 4},
+        )
+        profiles.add(out.read_text(encoding="utf8"))
+    assert len(profiles) == 1
+
+
+def test_frequency_order_and_significant_digits():
+    from undatum.cmds.statistics.duckdb_engine import _by_frequency, _significant
+
+    assert _by_frequency([(3, 1), (1, 2), (2, 2)]) == [(1, 2), (2, 2), (3, 1)]
+    structs = [({"b": 1}, 1), ({"a": 1}, 1)]
+    assert _by_frequency(structs) == [({"a": 1}, 1), ({"b": 1}, 1)]
+    assert _significant(4999.995000000001) == 4999.995
+    assert _significant(2886.7527893234433) == 2886.75278932
+    assert _significant(-0.000123456789012345) == -0.000123456789012
+    assert _significant(0.0) == 0.0
+    assert _significant(float("inf")) == float("inf")

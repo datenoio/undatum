@@ -120,7 +120,7 @@ def _catalog(connection: Any) -> list[list[tuple[Any, ...]]]:
     if connection.execute(
         "SELECT count(*) FROM duckdb_constraints() "
         "WHERE database_name='checked' AND constraint_type='FOREIGN KEY'"
-    ).fetchone()[0]:
+    ).fetchall()[0][0]:
         raise ValidationError(
             "Unsupported DuckDB foreign keys: database copy cannot reliably order their data.",
             field="input",
@@ -129,7 +129,7 @@ def _catalog(connection: Any) -> list[list[tuple[Any, ...]]]:
         condition = "" if function == "duckdb_sequences" else " AND NOT internal"
         if connection.execute(
             f"SELECT count(*) FROM {function}() WHERE database_name='checked'{condition}"
-        ).fetchone()[0]:
+        ).fetchall()[0][0]:
             raise ValidationError(
                 "Unsupported DuckDB views, sequences, functions/macros or custom types.",
                 field="input",
@@ -207,12 +207,9 @@ def _arrow_type(dtype: Any) -> bool:
 
 
 def _reader(connection: Any, table: str, batch_size: int, *, empty: bool = False) -> Any:
-    cursor = connection.execute("SELECT * FROM checked." + table + (" LIMIT 0" if empty else ""))
-    reader = (
-        cursor.to_arrow_reader(batch_size)
-        if hasattr(cursor, "to_arrow_reader")
-        else cursor.fetch_record_batch(batch_size)
-    )
+    # A relation streams record batches (DuckDB 1.5 and 2.0); 2.0 copies execute() results.
+    query = "SELECT * FROM checked." + table + (" LIMIT 0" if empty else "")
+    reader = connection.sql(query).to_arrow_reader(batch_size)
     if not all(_arrow_type(field.type) for field in reader.schema):
         reader.close()
         raise ValidationError("Unsupported DuckDB Arrow column type.", field="input")
@@ -239,7 +236,7 @@ def prepare_duckdb(source: str, options: RepackOptions) -> None:
         rows = 0
         for schema, table, *_rest in _catalog(connection)[1]:
             name = _quote(schema) + "." + _quote(table)
-            rows += connection.execute("SELECT count(*) FROM checked." + name).fetchone()[0]
+            rows += connection.execute("SELECT count(*) FROM checked." + name).fetchall()[0][0]
             if rows > MAX_ROWS:
                 raise ValidationError("DuckDB exceeds the supported 1,000,000 row limit.")
             with _reader(connection, name, MAX_BATCH_ROWS, empty=True):

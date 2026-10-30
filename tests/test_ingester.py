@@ -727,9 +727,8 @@ class TestDuckDBIngester:
         # Use appender
         ingester._use_appender(batch)
 
-        # Close appender
-        if ingester._appender:
-            ingester._appender.close()
+        # Write the appended rows
+        ingester._finish_appender()
 
         # Verify data
         result = ingester.conn.execute("SELECT COUNT(*) FROM testtable").fetchone()

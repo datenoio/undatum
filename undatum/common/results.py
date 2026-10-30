@@ -1,7 +1,7 @@
 """Machine-readable results of informational commands.
 
 Informational commands (``count``, ``headers``, ``sniff``, ``stats``, ``schema``, ``diff``,
-``validate``, ``analyze``, ``formats list``, ``config show``) print one JSON document with
+``validate``, ``analyze``, ``formats list``, ``config show``, ``commands``, ``cache list``) print one JSON document with
 ``--json`` or ``--format-out json``. Its ``schema`` key names the layout and its major version,
 for example ``undatum.count/1``; an incompatible change (a removed or renamed key, a changed
 type) raises the version. :data:`SCHEMAS` documents every layout; the documentation site
@@ -187,7 +187,11 @@ STATS = _register(
         {
             "count": ("integer", "Records profiled"),
             "num_fields": ("integer", "Number of fields"),
-            "fieldtypes": ("object", "Field -> detected type"),
+            "fieldtypes": (
+                "object",
+                "Field -> detected type: `int`, `float`, `bool`, `date`, `datetime`, `numstr` "
+                "(digits with leading zeros) or `str`",
+            ),
             "fields": ("array", "Per-field statistics"),
             "dictkeys": ("array", "Fields with few distinct values"),
             "dicts": ("object", "Value lists of the dictionary fields"),
@@ -285,11 +289,18 @@ VALIDATE = _register(
         {
             "statistics": (
                 "object",
-                "total_records, total_violations, errors, warnings, info, passed",
+                "total_records, total_violations, errors, warnings, info, passed; with a data "
+                "contract also failed_checks (error, warning, info)",
             ),
             "violations_by_field": ("object", "Field -> number of violations"),
             "violations_by_rule": ("object", "Rule -> number of violations"),
             "violations": ("array", "Violations (at most --max-violations)"),
+            "contract": (
+                "object",
+                "With an ODCS data contract: object, checks (name, fields, metric, value, unit, "
+                "operator, limit, expected, passed, severity, description), not_checked (name, "
+                "reason)",
+            ),
         },
         ("statistics", "violations"),
     )
@@ -381,6 +392,36 @@ FORMATS = _register(
         ("formats",),
     )
 )
+EXTENSIONS = _register(
+    ResultSchema(
+        "undatum.extensions/1",
+        "extensions list",
+        "DuckDB extensions undatum uses and whether they are installed",
+        {
+            "directory": ("string", "Extension directory"),
+            "extensions": (
+                "array",
+                "Extensions: name, purpose, installed, path, size (bytes); install adds downloaded",
+            ),
+        },
+        ("directory", "extensions"),
+    )
+)
+CACHE = _register(
+    ResultSchema(
+        "undatum.cache/1",
+        "cache list",
+        "Cached command results",
+        {
+            "directory": ("string", "Cache directory"),
+            "entries": (
+                "array",
+                "Cached files: path, size, mtime, stale, bytes, results (command, created, bytes)",
+            ),
+        },
+        ("directory", "entries"),
+    )
+)
 CONFIG = _register(
     ResultSchema(
         "undatum.config/1",
@@ -391,6 +432,28 @@ CONFIG = _register(
             "defaults": ("object", "Merged command defaults"),
         },
         ("files", "defaults"),
+    )
+)
+
+COMMANDS = _register(
+    ResultSchema(
+        "undatum.commands/1",
+        "commands",
+        "The command-line interface as data",
+        {
+            "undatum_version": ("string", "undatum version"),
+            "exit_codes": ("object", "Exit code -> meaning"),
+            "global_options": ("array", "Options of the undatum command itself (see commands)"),
+            "groups": ("array", "Command groups: name, summary"),
+            "commands": (
+                "array",
+                "Commands: name, summary, help, examples, usage, arguments, options (name, "
+                "flags, negation, type, choices, default, required, multiple, flag, count, "
+                "deprecated_flags, help), engines, capabilities, results (schema, when), "
+                "deprecated",
+            ),
+        },
+        ("undatum_version", "exit_codes", "global_options", "groups", "commands"),
     )
 )
 

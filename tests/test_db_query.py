@@ -288,22 +288,29 @@ class TestDatabaseQueryExecutor:
 
     @patch("undatum.cmds.db_query.get_db_connection")
     @patch("undatum.cmds.db_query.parse_db_uri")
-    def test_query_parquet_no_pandas(self, mock_parse_uri, mock_get_conn):
-        """Test query with Parquet output when pandas is not available."""
+    def test_query_parquet_no_pandas(self, mock_parse_uri, mock_get_conn, tmp_path):
+        """Parquet output is written with pyarrow; pandas is an optional extra."""
+        import pyarrow.parquet as pq
+
         mock_parse_uri.return_value = ("sqlite", {"path": ":memory:"})
 
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
+        mock_cursor.description = [("id",), ("name",)]
+        mock_cursor.fetchmany.side_effect = [[(1, "Alice"), (2, None)], []]
         mock_conn.cursor.return_value = mock_cursor
         mock_get_conn.return_value = mock_conn
 
-        executor = DatabaseQueryExecutor()
-
+        output = tmp_path / "users.parquet"
         # A None entry in sys.modules makes "import pandas" raise ImportError.
-        with patch.dict(sys.modules, {"pandas": None}), pytest.raises(ImportError):
-            executor.query(
+        with patch.dict(sys.modules, {"pandas": None}):
+            DatabaseQueryExecutor().query(
                 "SELECT * FROM users",
                 "sqlite://:memory:",
-                output="test.parquet",
+                output=str(output),
                 output_format="parquet",
             )
+        assert pq.read_table(output).to_pylist() == [
+            {"id": 1, "name": "Alice"},
+            {"id": 2, "name": None},
+        ]

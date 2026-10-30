@@ -4,7 +4,7 @@ import logging
 from typing import Any
 
 from ..constants import DUCKABLE_CODECS, DUCKABLE_FILE_TYPES
-from .command_utils import duckdb_can_decode
+from .command_utils import duckdb_csv_encoding
 
 logger = logging.getLogger(__name__)
 
@@ -70,11 +70,19 @@ def detect_engine(
 
     compression = "raw"
     if filetype is None:
-        ftype: Any = detect_file_type(fromfile)
-        if ftype["success"]:
-            filetype = ftype["datatype"].id()
-            if ftype["codec"] is not None:
-                compression = ftype["codec"].id()
+        from .format_names import format_from_name
+
+        # Common extensions are recognised without importing iterabledata (about 0.5 s).
+        named = format_from_name(fromfile)
+        if named is not None:
+            filetype, codec = named
+            compression = codec or "raw"
+        else:
+            ftype: Any = detect_file_type(fromfile)
+            if ftype["success"]:
+                filetype = ftype["datatype"].id()
+                if ftype["codec"] is not None:
+                    compression = ftype["codec"].id()
 
     logger.debug("File filetype %s and compression %s", filetype, compression)
 
@@ -84,8 +92,8 @@ def detect_engine(
             if operation and not _is_sql_expressible(operation):
                 logger.debug("Operation %s not SQL-expressible, using iterable engine", operation)
                 return "iterable"
-            if filetype == "csv" and not duckdb_can_decode(fromfile, compression, encoding):
-                logger.debug("%s is not UTF-8 text, using iterable engine", fromfile)
+            if filetype == "csv" and duckdb_csv_encoding(fromfile, compression, encoding) is None:
+                logger.debug("DuckDB does not read the text encoding of %s", fromfile)
                 return "iterable"
             return "duckdb"
         return "iterable"
@@ -93,6 +101,22 @@ def detect_engine(
     if engine == "duckdb":
         return "duckdb"
     return "iterable"
+
+
+def engine_for_arrow(detected: str, engine: str | None, source: Any) -> str:
+    """``duckdb`` instead of ``iterable`` with ``--engine auto`` when DuckDB reads ``source``
+    through Arrow (``RowSource.arrow_reader``: ORC, Arrow IPC/Feather), else ``detected``.
+
+    Args:
+        detected: Engine chosen by :func:`detect_engine`.
+        engine: Requested ``--engine`` value.
+        source: The input's ``RowSource``.
+    """
+    if detected == "iterable" and validate_engine(engine) == "auto":
+        if source.arrow_reader() is not None:
+            logger.debug("%s: read through Arrow by DuckDB", source.path)
+            return "duckdb"
+    return detected
 
 
 def _is_sql_expressible(operation: str) -> bool:

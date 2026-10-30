@@ -28,7 +28,7 @@ from there as a check, without touching PyPI.
 | Job | Purpose |
 |-----|---------|
 | verify | the tag matches `__version__`; `rc` tags are marked as pre-releases |
-| test | full test suite on Python 3.10 and 3.13 |
+| test | full test suite on Python 3.11 and 3.13 |
 | build | sdist and wheel with build provenance attestations |
 | install-gate | the built wheel installs into a clean environment and real commands run |
 | binaries | PyInstaller single-file binaries for Linux, macOS and Windows (attested) |

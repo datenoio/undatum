@@ -176,6 +176,12 @@ class FormatError(UndatumError):
         )
 
 
+class ConversionError(UndatumError):
+    """Records could not be written to the output (the output file is incomplete)."""
+
+    code = "write_failed"
+
+
 class ConfigurationError(UndatumError):
     """Raised when there's a configuration issue.
 
@@ -422,6 +428,20 @@ def error_code(error: BaseException) -> str:
     if isinstance(error, (ValueError, KeyError)):
         return "invalid_value"
     return "internal_error"
+
+
+# Exit codes of every command (``undatum commands --json`` publishes this table).
+EXIT_CODES: dict[int, str] = {
+    0: "Success",
+    1: "User error: missing file, invalid parameter, unsupported or non-writable format",
+    2: (
+        "Invalid command-line usage (unknown option, bad choice), configuration error, "
+        "or missing optional dependency"
+    ),
+    3: "System error: permission denied, database or network failure",
+    4: "Internal error",
+    130: "Interrupted with Ctrl-C",
+}
 
 
 def exit_code_for(error: BaseException) -> int:

@@ -4,7 +4,9 @@ description: "undatum frequency command reference"
 ---
 # `frequency`
 
-Calculates frequency distribution for specified fields. **`--fields` is required.**
+Calculates frequency distribution for specified fields. **`--fields` is required.** Values are
+listed most frequent first; values with the same count keep the order they first appear in the
+input, with either engine.
 
 Default stdout format is CSV. Use `--format-out json` (or an `--output` path ending in `.json`) for JSON.
 

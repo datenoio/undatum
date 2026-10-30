@@ -104,6 +104,83 @@ Example rule files are available in `examples/validation-rules/`:
 - `cross-field-validation.yml` - Cross-field validation examples
 - `complex-validation.yml` - Comprehensive validation scenario
 
+**Engines:**
+- For CSV and TSV files, `--engine auto` (the default) checks a rule file as one DuckDB query,
+  about 4× faster on large files (1M rows: 1.4 s instead of 5.8 s).
+- It reports the same violations, in the same order and with the same messages, as the Python
+  engine, which `--engine python` selects.
+- It applies to field rules made of `required`, `type`, `references`, `unique`, `min`/`max`,
+  `min_length`/`max_length`, `enum` and `pattern`.
+- The file is checked record by record in Python when:
+  - a rule uses `format` or `custom`, or is a cross-field rule;
+  - a pattern uses `\w`, `\s`, `\b` or a construct DuckDB's regular expressions lack (Python
+    reads them differently);
+  - a value is a number only Python reads (digits or spaces outside ASCII);
+  - the `--filter` has no SQL form;
+  - the input is not CSV or TSV.
+- `undatum quality --rules` uses the same query.
+
+#### Data Contracts (ODCS)
+
+`--rules` also takes an [Open Data Contract Standard](https://bitol-io.github.io/open-data-contract-standard/)
+(ODCS v3) contract, a YAML file with `kind: DataContract`. `undatum schema --format odcs` writes a
+draft contract for a file:
+
+```bash
+undatum schema data.csv --format odcs --output contract.odcs.yaml
+undatum validate data.csv --rules contract.odcs.yaml
+undatum validate data.csv --rules contract.odcs.yaml --format-out json
+```
+
+A contract with several schema objects needs the name of one after `#`:
+`--rules contract.odcs.yaml#orders`.
+
+```yaml
+apiVersion: v3.2.0
+kind: DataContract
+id: orders-contract
+version: 1.0.0
+schema:
+  - name: orders
+    properties:
+      - name: order_id
+        logicalType: integer
+        primaryKey: true
+      - name: email
+        logicalType: string
+        logicalTypeOptions: {format: email}
+        quality:
+          - metric: nullValues
+            mustBeLessThan: 5
+            unit: percent
+            severity: warning
+      - name: status
+        enum: [{value: open}, {value: shipped}]
+    quality:
+      - metric: rowCount
+        mustBeGreaterThan: 0
+```
+
+How the parts of a contract are checked:
+
+| Contract | Checked as |
+|---|---|
+| `required`, `unique`, `primaryKey` (one property) | Rules, record by record |
+| `logicalType`: `integer`, `number` | The `integer` and `number` rule types |
+| `logicalType`: `boolean`, `date`, `timestamp` | The `boolean`, `date` and `datetime` formats |
+| `enum` | Allowed values (numbers also as their text, as CSV holds them) |
+| `logicalTypeOptions`: `minLength`, `maxLength`, `pattern`, `minimum`, `maximum`, `format` (`email`, `uuid`, `url`) | Rules; a pattern matches anywhere in the value, as in ODCS |
+| Quality metrics `nullValues`, `missingValues`, `invalidValues`, `duplicateValues`, `rowCount` | Contract checks: counted over the file and compared with `mustBe`, `mustBeLessThan`, `mustBeBetween`, ... in `rows` or `percent` |
+| `primaryKey` on several properties, `exclusiveMinimum`, `exclusiveMaximum`, `multipleOf` | Contract checks |
+| `sql`, `custom` and `text` checks, other types and options | Listed as not checked |
+
+Rules report violations per record, as from a rule file, on both engines. Contract checks are
+listed in their own table, and in the `contract` key of the JSON report. A failed check of
+severity `error` (the default) makes the command exit with 1, and one of severity `warning`
+does so with `--fail-on-warnings`. `nullValues` counts missing fields, nulls and empty values,
+because CSV has no other null. SQL checks are never run: a contract from elsewhere could run any
+SQL. `undatum quality --rules` and `Dataset.validate()` check the rules of a contract, not its contract checks.
+
 #### Legacy Mode (Backward Compatible)
 
 Simple single-rule validation for quick checks:
@@ -140,7 +217,7 @@ undatum validate --rule ru.org.inn --fields VendorINN data.jsonl --mode invalid
 
 ## Reference
 
-**Reads:** any readable format · **Writes:** validation report or the (in)valid rows · **Memory:** streaming · **Engines:** python
+**Reads:** any readable format · **Writes:** validation report or the (in)valid rows · **Memory:** streaming · **Engines:** auto, duckdb, python
 
 ```text
 undatum validate [OPTIONS] [INPUT_FILE]
@@ -156,7 +233,7 @@ undatum validate [OPTIONS] [INPUT_FILE]
 | `-f`, `--fields` TEXT | Comma-separated list of field names to validate (legacy mode). |  |
 | `-d`, `--delimiter` TEXT | CSV delimiter character (auto-detected when omitted). |  |
 | `--quotechar` TEXT | CSV quote character (iterabledata default '"' when omitted). |  |
-| `--encoding` TEXT | File encoding (e.g., 'utf8', 'latin1'). | `utf8` |
+| `--encoding` TEXT | Input encoding (e.g., 'utf8', 'cp1251'); detected when omitted. |  |
 | `--verbose` / `--no-verbose` | Enable verbose logging output. | `--no-verbose` |
 | `-F`, `--format-in` TEXT | Override input file format detection (e.g., 'csv', 'jsonl'). |  |
 | `--zipfile` / `--no-zipfile` | Treat input file as a ZIP archive. | `--no-zipfile` |
@@ -181,6 +258,7 @@ undatum validate [OPTIONS] [INPUT_FILE]
 | `--keep-nested-parents` / `--no-keep-nested-parents` | With --flatten-nested, keep parent dict/array fields alongside dotted children. | `--keep-nested-parents` |
 | `--json` | Print the result as one JSON document (same as --format-out json). |  |
 | `--list-rules` | List the built-in rules (format: ...) and exit. |  |
+| `-e`, `--engine` [auto\|duckdb\|python] | Processing engine: auto (default), duckdb, or python. |  |
 
 Deprecated spellings (removed in 2.0): `--output-format` → `--format-out`.
 

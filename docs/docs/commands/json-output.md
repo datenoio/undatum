@@ -90,6 +90,7 @@ undatum stats missing.csv --json
 | `format_error` | 1 | The file format is unknown or cannot be written |
 | `invalid_rules` | 1 | A validation rule file is malformed |
 | `invalid_value` | 1 | A value could not be processed |
+| `write_failed` | 1 | Records could not be written to the output; the output file is incomplete |
 | `usage_error` | 2 | Unknown option, missing argument |
 | `configuration_error` | 2 | Bad configuration |
 | `dependency_missing` | 2 | An optional extra is not installed |
@@ -186,7 +187,7 @@ Field statistics. Printed by `undatum stats --json`. [JSON Schema](pathname:///s
 | `schema` | string | yes | `undatum.stats/1` |
 | `count` | integer | yes | Records profiled |
 | `num_fields` | integer | yes | Number of fields |
-| `fieldtypes` | object | yes | Field -> detected type |
+| `fieldtypes` | object | yes | Field -> detected type: `int`, `float`, `bool`, `date`, `datetime`, `numstr` (digits with leading zeros) or `str` |
 | `fields` | array | yes | Per-field statistics |
 | `dictkeys` | array |  | Fields with few distinct values |
 | `dicts` | object |  | Value lists of the dictionary fields |
@@ -267,10 +268,11 @@ Rule-file validation report. Printed by `undatum validate --rules --json`. [JSON
 | Key | Type | Always | Description |
 |-----|------|--------|-------------|
 | `schema` | string | yes | `undatum.validate/1` |
-| `statistics` | object | yes | total_records, total_violations, errors, warnings, info, passed |
+| `statistics` | object | yes | total_records, total_violations, errors, warnings, info, passed; with a data contract also failed_checks (error, warning, info) |
 | `violations_by_field` | object |  | Field -> number of violations |
 | `violations_by_rule` | object |  | Rule -> number of violations |
 | `violations` | array | yes | Violations (at most --max-violations) |
+| `contract` | object |  | With an ODCS data contract: object, checks (name, fields, metric, value, unit, operator, limit, expected, passed, severity, description), not_checked (name, reason) |
 
 ### `undatum.validate-rules/1`
 
@@ -336,6 +338,26 @@ Supported formats and their capabilities. Printed by `undatum formats list --jso
 | `schema` | string | yes | `undatum.formats/1` |
 | `formats` | array | yes | Formats: id, readable, writable, ... |
 
+### `undatum.extensions/1`
+
+DuckDB extensions undatum uses and whether they are installed. Printed by `undatum extensions list --json`. [JSON Schema](pathname:///schemas/undatum.extensions.v1.json)
+
+| Key | Type | Always | Description |
+|-----|------|--------|-------------|
+| `schema` | string | yes | `undatum.extensions/1` |
+| `directory` | string | yes | Extension directory |
+| `extensions` | array | yes | Extensions: name, purpose, installed, path, size (bytes); install adds downloaded |
+
+### `undatum.cache/1`
+
+Cached command results. Printed by `undatum cache list --json`. [JSON Schema](pathname:///schemas/undatum.cache.v1.json)
+
+| Key | Type | Always | Description |
+|-----|------|--------|-------------|
+| `schema` | string | yes | `undatum.cache/1` |
+| `directory` | string | yes | Cache directory |
+| `entries` | array | yes | Cached files: path, size, mtime, stale, bytes, results (command, created, bytes) |
+
 ### `undatum.config/1`
 
 Effective CLI configuration. Printed by `undatum config show --json`. [JSON Schema](pathname:///schemas/undatum.config.v1.json)
@@ -345,5 +367,18 @@ Effective CLI configuration. Printed by `undatum config show --json`. [JSON Sche
 | `schema` | string | yes | `undatum.config/1` |
 | `files` | object | yes | Config files read: home, project |
 | `defaults` | object | yes | Merged command defaults |
+
+### `undatum.commands/1`
+
+The command-line interface as data. Printed by `undatum commands --json`. [JSON Schema](pathname:///schemas/undatum.commands.v1.json)
+
+| Key | Type | Always | Description |
+|-----|------|--------|-------------|
+| `schema` | string | yes | `undatum.commands/1` |
+| `undatum_version` | string | yes | undatum version |
+| `exit_codes` | object | yes | Exit code -> meaning |
+| `global_options` | array | yes | Options of the undatum command itself (see commands) |
+| `groups` | array | yes | Command groups: name, summary |
+| `commands` | array | yes | Commands: name, summary, help, examples, usage, arguments, options (name, flags, negation, type, choices, default, required, multiple, flag, count, deprecated_flags, help), engines, capabilities, results (schema, when), deprecated |
 
 <!-- END GENERATED: result-schemas -->

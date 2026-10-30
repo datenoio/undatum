@@ -40,7 +40,7 @@ undatum schema-bulk [OPTIONS] INPUT_FILE
 |--------|-------------|---------|
 | `--verbose` / `--no-verbose` | Enable verbose logging output. | `--no-verbose` |
 | `-O`, `--format-out` TEXT | Output format: 'text' (default), 'json', or 'yaml'. | `text` |
-| `--format` TEXT | Schema format: 'yaml' (default), 'json', 'cerberus', 'jsonschema', 'avro', or 'parquet'. Overrides outtype when specified. |  |
+| `--format` TEXT | Schema format: 'yaml' (default), 'json', 'cerberus', 'jsonschema', 'avro', 'parquet', or 'odcs' (an Open Data Contract Standard contract). Overrides outtype when specified. |  |
 | `-o`, `--output` TEXT | Output directory path for schema files. |  |
 | `--mode` TEXT | Extraction mode: 'distinct' (extract unique schemas, default) or 'perfile' (one schema per file). | `distinct` |
 | `--autodoc` / `--no-autodoc` | Enable AI-powered automatic field documentation. | `--no-autodoc` |

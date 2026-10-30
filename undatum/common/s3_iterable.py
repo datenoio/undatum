@@ -8,8 +8,6 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any
 
-from iterable.helpers.detect import open_iterable
-
 from ..common.command_utils import apply_iterable_csv_delimiter, apply_table_selection
 from ..common.path_utils import (
     is_native_cloud_uri,
@@ -20,6 +18,31 @@ from ..common.path_utils import (
 from ..formats.s3 import get_s3_client, parse_s3_uri
 
 logger = logging.getLogger(__name__)
+
+
+def open_iterable(*args: Any, **kwargs: Any) -> Any:
+    """iterabledata's ``open_iterable``, imported on first use (the import takes ~0.25 s).
+
+    Local spreadsheets opened for reading are read by fastexcel instead
+    (:class:`~undatum.io.excel_iterable.ExcelIterable`), with typed values.
+    """
+    excel = _open_spreadsheet(args, kwargs)
+    if excel is not None:
+        return excel
+    from iterable.helpers.detect import open_iterable as open_with_iterabledata
+
+    return open_with_iterabledata(*args, **kwargs)
+
+
+def _open_spreadsheet(args: tuple[Any, ...], kwargs: dict[str, Any]) -> Any:
+    """The fastexcel reader for an ``open_iterable`` call that reads a local spreadsheet."""
+    path = args[0] if args else kwargs.get("filename")
+    mode = kwargs.get("mode", args[1] if len(args) > 1 else "r")
+    if not isinstance(path, str) or mode not in ("r", "rb"):
+        return None
+    from ..io.excel import open_excel
+
+    return open_excel(path, kwargs.get("iterableargs"))
 
 
 def _configure_iterable(iterable: Any, path: str, iterableargs: dict) -> None:

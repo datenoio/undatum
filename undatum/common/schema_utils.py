@@ -4,12 +4,13 @@ This module provides common functions used by both schema extraction
 and data analysis commands to eliminate code duplication.
 """
 
+from __future__ import annotations
+
 from typing import Any
 
 import duckdb
-import pandas as pd
 
-from .command_utils import duckdb_read_csv_expr
+from .command_utils import duckdb_csv_text_expr, duckdb_read_csv_expr
 
 # DuckDB type → Frictionless Table Schema type (shared by packager and schemer).
 DUCKDB_FRICTIONLESS_TYPE_MAP = {
@@ -118,7 +119,7 @@ def field_to_frictionless_schema(field: Any) -> dict[str, Any]:
 
 def duckdb_decompose(
     filename: str | None = None,
-    frame: pd.DataFrame | None = None,
+    frame: Any = None,
     filetype: str | None = None,
     path: str = "*",
     limit: int = 10000000,
@@ -127,6 +128,8 @@ def duckdb_decompose(
     ignore_errors: bool = True,
     use_summarize: bool = False,
     delimiter: str | None = None,
+    conn: Any = None,
+    text_types: bool = True,
 ) -> list[Any]:
     """Decompose file or DataFrame structure using DuckDB.
 
@@ -136,7 +139,8 @@ def duckdb_decompose(
 
     Args:
         filename: Path to input file. If None, frame must be provided.
-        frame: Pandas DataFrame. Used when filename is None.
+        frame: Records DuckDB scans (a ``pyarrow.Table`` from ``undatum.io.arrow.records_table``
+            or a pandas DataFrame). Used when filename is None.
         filetype: File type ('csv', 'tsv', 'json', 'jsonl'). Determines read function.
         path: Path expression for nested fields (default: '*' for all fields).
         limit: Maximum records to process (default: 10000000).
@@ -145,6 +149,11 @@ def duckdb_decompose(
         ignore_errors: Whether to ignore parsing errors in DuckDB (default: True).
         use_summarize: If True, use 'summarize' (for analyzer), else use 'describe' (for schemer).
         delimiter: CSV/TSV delimiter (passed to DuckDB read_csv when set).
+        conn: DuckDB connection to run the queries on (the module's default connection
+            when omitted).
+        text_types: Type the columns of CSV files, which are read as text with the header the
+            Python reader takes, by the shared rules (``field_types``); ``False`` leaves them
+            ``VARCHAR``.
 
     Returns:
         List of lists containing field information:
@@ -157,10 +166,40 @@ def duckdb_decompose(
     """
     if filename is None and frame is None:
         raise ValueError("Either filename or frame must be provided")
+    if conn is None and filename is not None:
+        # A configured connection: it finds the installed extensions and does not download any
+        from .duckdb_config import create_duckdb_connection
+
+        own = create_duckdb_connection()
+        try:
+            return duckdb_decompose(
+                filename,
+                frame,
+                filetype=filetype,
+                path=path,
+                limit=limit,
+                recursive=recursive,
+                root=root,
+                ignore_errors=ignore_errors,
+                use_summarize=use_summarize,
+                delimiter=delimiter,
+                conn=own,
+                text_types=text_types,
+            )
+        finally:
+            own.close()
 
     json_ignore = ", ignore_errors=true" if ignore_errors else ""
     data: list = []
-    if filetype in ["csv", "tsv"]:
+    text_read = None
+    if filetype in ["csv", "tsv"] and filename is not None:
+        # The header the Python reader takes, as text; the types come from the shared rules
+        text_read = duckdb_csv_text_expr(
+            filename, {"delimiter": delimiter}, filetype=filetype, ignore_errors=ignore_errors
+        )
+    if text_read is not None:
+        read_func = text_read
+    elif filetype in ["csv", "tsv"]:
         if filename is not None:
             # For schemer (describe), use sample_size; for analyzer (summarize), don't
             if use_summarize:
@@ -199,7 +238,7 @@ def duckdb_decompose(
                 query_str = f"{query_cmd} select {path} from {read_func}{limit_clause}"
             # Execute query with error handling for None column references
             try:
-                data = duckdb.sql(query_str).fetchall()
+                data = (conn or duckdb).execute(query_str).fetchall()
             except (duckdb.Error, Exception) as e:
                 error_msg = str(e)
                 # Only catch specific "Referenced column 'None' not found" errors
@@ -291,7 +330,7 @@ def duckdb_decompose(
             return []
         # Execute query with error handling for None column references
         try:
-            data = duckdb.sql(query).fetchall()
+            data = (conn or duckdb).execute(query).fetchall()
         except (duckdb.Error, Exception) as e:
             # If query fails due to None column reference, return empty result
             error_msg = str(e)
@@ -446,6 +485,7 @@ def duckdb_decompose(
                         ignore_errors=ignore_errors,
                         use_summarize=use_summarize,
                         delimiter=delimiter,
+                        conn=conn,
                     )
                     for subitem in subtable:
                         table.append(subitem)
@@ -455,4 +495,8 @@ def duckdb_decompose(
                         continue
                     raise
 
+    if text_read is not None and text_types and table:
+        from .field_types import apply_text_types
+
+        apply_text_types(conn or duckdb, text_read, table)
     return table

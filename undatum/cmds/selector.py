@@ -3,6 +3,7 @@
 import itertools
 import logging
 import os
+from collections.abc import Iterator
 from typing import Any
 
 from ..common.command_utils import (
@@ -13,8 +14,12 @@ from ..common.command_utils import (
     iter_command_rows,
     quote_sql_identifier,
 )
-from ..common.duckdb_config import create_duckdb_connection, get_duckdb_config_from_options
-from ..common.engine_selector import detect_engine
+from ..common.duckdb_config import (
+    WORKLOAD_DEFAULTS,
+    create_duckdb_connection,
+    get_duckdb_config_from_options,
+)
+from ..common.engine_selector import detect_engine, engine_for_arrow
 from ..common.errors import (
     FileNotFoundError,
     FormatError,
@@ -26,72 +31,22 @@ from ..common.filter import match_filter, translate_filter_to_sql
 from ..common.path_utils import validate_file_path
 from ..common.s3_iterable import open_path as open_iterable
 from ..common.writer import (
-    RecordSink,
-    StdoutSink,
-    duckdb_copy_to_file,
     emit_records,
     resolve_output_format,
 )
+from ..io import RowSource
 from ..ops import write_rows
 from ..utils import (
     dict_generator,
     field_values,
-    get_file_type,
     get_option,
-    select_fields,
 )
 
 logger = logging.getLogger(__name__)
 
 LINEEND = b"\n"
-SELECT_BATCH_SIZE = 1000
-
-
-class _SelectOutput:
-    """Unified output writer for select command (file or stdout)."""
-
-    def __init__(self, to_file, format_out, fields):
-        self._to_file = to_file
-        self._format_out = format_out
-        self._fields = fields
-        self._out_iterable = None
-        self._stdout = None
-
-    def write_batch(self, items):
-        if not items:
-            return
-        if self._to_file:
-            if self._out_iterable is None:
-                self._out_iterable = RecordSink(
-                    self._to_file, fieldnames=self._fields, format_out=self._format_out or None
-                )
-            self._out_iterable.write_batch(items)
-            return
-        if self._stdout is None:
-            from ..common.stdio import stdout_format
-
-            self._stdout = StdoutSink(
-                self._format_out or stdout_format.get() or "jsonl", fieldnames=self._fields
-            )
-        self._stdout.write_batch(items)
-
-    def close(self):
-        if self._to_file and self._out_iterable is None:
-            # No rows matched: still publish an empty file with the selected columns.
-            self._out_iterable = RecordSink(
-                self._to_file, fieldnames=self._fields, format_out=self._format_out or None
-            )
-        if self._out_iterable is not None:
-            self._out_iterable.close()
-            self._out_iterable = None
-        if self._stdout is not None:
-            self._stdout.close()
-            self._stdout = None
-
-    def abort(self):
-        if self._out_iterable is not None:
-            self._out_iterable.abort()
-            self._out_iterable = None
+# Rows per fetch from aggregate DuckDB results (uniq, frequency).
+STREAM_BATCH_ROWS = 10_000
 
 
 def _rows_as_dicts(rows, fields: list[str]):
@@ -109,19 +64,6 @@ def _has_nested_fields(fields: list[str]) -> bool:
     return any("." in field for field in fields)
 
 
-def _build_select_query(fields: list[str], source: str, filter_sql: str | None = None) -> str:
-    field_sql = ", ".join(quote_sql_identifier(field) for field in fields)
-    query = f"SELECT {field_sql} FROM {source}"
-    if filter_sql:
-        query = f"{query} WHERE {filter_sql}"
-    return query
-
-
-def _duckdb_copy_select(conn, query: str, to_file: str, to_type: str) -> bool:
-    """Write select results directly to file via DuckDB COPY. Returns True if handled."""
-    return duckdb_copy_to_file(conn, query, to_file)
-
-
 def _engine_for_filter(detected_engine: str, filter_expr, command: str):
     """Keep DuckDB when the filter translates to SQL; otherwise fall back to iterable."""
     filter_sql = None
@@ -133,12 +75,20 @@ def _engine_for_filter(detected_engine: str, filter_expr, command: str):
     return detected_engine, filter_sql
 
 
+def _value_text(value: Any) -> str | None:
+    """A field value as uniq and frequency compare it: text, ``None`` for a missing value.
+
+    ``None`` is written as an empty CSV field or JSON null, as the DuckDB engine writes it.
+    """
+    return None if value is None else str(value)
+
+
 def get_iterable_fields_uniq(iterable, fields, dolog=False, dq_instance=None, filter_expr=None):  # pylint: disable=unused-argument
     """Returns all uniq values of the fields of iterable dictionary."""
     # dq_instance parameter kept for backward compatibility (no longer used)
     n = 0
     uniqval = []
-    seen: set[tuple[str, ...]] = set()  # uniqval keeps the first-seen order
+    seen: set[tuple[str | None, ...]] = set()  # uniqval keeps the first-seen order
     for row in iterable:
         n += 1
         if dolog and n % 1000 == 0:
@@ -152,9 +102,7 @@ def get_iterable_fields_uniq(iterable, fields, dolog=False, dq_instance=None, fi
                 allvals.append(field_values(row, field))
 
             for n1, _ in enumerate(allvals[0]):
-                k = []
-                for n2, _ in enumerate(allvals):
-                    k.append(str(allvals[n2][n1]))
+                k = [_value_text(values[n1]) for values in allvals]
                 key = tuple(k)
                 if key not in seen:
                     seen.add(key)
@@ -162,6 +110,78 @@ def get_iterable_fields_uniq(iterable, fields, dolog=False, dq_instance=None, fi
         except KeyError:
             pass
     return uniqval
+
+
+def _duckdb_input(conn: Any, filename, filetype, iterableargs, source=None, columns=None) -> str:
+    """The DuckDB ``FROM`` expression of the input; ``conn`` is closed when there is none.
+
+    With a ``RowSource``, inputs DuckDB reads through Arrow (ORC, Arrow/Feather) are
+    registered on ``conn``, reading only ``columns`` when given.
+
+    Raises:
+        ValueError: For inputs DuckDB does not read.
+    """
+    try:
+        if source is None:
+            return duckdb_read_expr(filename, filetype, iterableargs, all_varchar=True)
+        relation = source.duckdb_relation(conn, columns)
+        if relation is None:
+            raise ValueError(f"DuckDB cannot read {filename}")
+        return relation
+    except BaseException:
+        conn.close()
+        raise
+
+
+def _first_seen_groups(
+    read_expr: str, fieldstext: str, filter_sql: str | None, *, counts: bool
+) -> str:
+    """Query of the distinct ``fieldstext`` values in the order the Python engine gives.
+
+    Distinct values come in first-seen order; with ``counts`` each ends with its count
+    (``c``), most frequent first and ties in first-seen order. ``row_number() OVER ()``
+    numbers the records in input order.
+    """
+    numbered = f"SELECT {fieldstext}, row_number() OVER () AS __undatum_row FROM {read_expr}"
+    if filter_sql:
+        numbered = f"{numbered} WHERE {filter_sql}"
+    if counts:
+        return (
+            f"SELECT {fieldstext}, count(*) AS c FROM ({numbered}) GROUP BY {fieldstext} "
+            "ORDER BY c DESC, min(__undatum_row)"
+        )
+    return (
+        f"SELECT {fieldstext} FROM ({numbered}) GROUP BY {fieldstext} ORDER BY min(__undatum_row)"
+    )
+
+
+def _ordered_connection(duckdb_config: dict[str, Any] | None) -> Any:
+    """A connection for queries that number the input (``--duckdb-*`` options win)."""
+    return create_duckdb_connection(**{**WORKLOAD_DEFAULTS["ordered"], **(duckdb_config or {})})
+
+
+def _stream_query(conn: Any, query: str) -> Iterator[tuple[Any, ...]]:
+    """Run ``query`` on ``conn`` and fetch its rows in batches; ``conn`` is closed after them.
+
+    The first batch is fetched here, so a query that fails raises before any row is written.
+    """
+    try:
+        result = conn.execute(query)
+        first = result.fetchmany(STREAM_BATCH_ROWS)
+    except BaseException:
+        conn.close()
+        raise
+
+    def rows() -> Iterator[tuple[Any, ...]]:
+        try:
+            batch = first
+            while batch:
+                yield from batch
+                batch = result.fetchmany(STREAM_BATCH_ROWS)
+        finally:
+            conn.close()
+
+    return rows()
 
 
 def get_duckdb_fields_uniq(
@@ -172,41 +192,27 @@ def get_duckdb_fields_uniq(
     dolog=False,
     dq_instance=None,
     filter_sql=None,
+    iterableargs=None,
+    source=None,
 ):  # pylint: disable=unused-argument
-    """Returns all uniq values of the fields of the filename using DuckDB."""
+    """Distinct values of ``fields`` in ``filename`` from DuckDB, as an iterator of tuples.
+
+    Values come in first-seen order, as from the Python engine. The query runs before this
+    returns, so read errors raise here; rows are then fetched in batches while they are
+    written.
+    """
     # dq_instance parameter kept for backward compatibility (no longer used)
-    if duckdb_config is None:
-        duckdb_config = {}
-
-    conn = create_duckdb_connection(**duckdb_config)
-
-    # Determine input format and build appropriate read expression
-    source_type = filetype or get_file_type(filename) or "csv"
-    if source_type == "csv":
-        read_expr = f"read_csv_auto('{filename}', all_varchar=true)"
-    elif source_type in ("json", "jsonl"):
-        read_expr = f"read_json_auto('{filename}')"
-    elif source_type == "parquet":
-        read_expr = f"read_parquet('{filename}')"
-    else:
-        conn.close()
-        raise ValueError(f"Unsupported file type for DuckDB: {source_type}")
+    conn = _ordered_connection(duckdb_config)
+    # Without a filter the query reads only the fields (nested paths need whole columns).
+    columns = None if filter_sql or _has_nested_fields(fields) else list(fields)
+    read_expr = _duckdb_input(conn, filename, filetype, iterableargs, source, columns)
 
     fieldstext = ",".join(quote_sql_identifier(field) for field in fields)
-    query = f"SELECT DISTINCT {fieldstext} FROM {read_expr}"
-    if filter_sql:
-        query = f"{query} WHERE {filter_sql}"
+    query = _first_seen_groups(read_expr, fieldstext, filter_sql, counts=False)
     if dolog:
         logger.info(query)
 
-    try:
-        relation = conn.execute(query)
-        uniqval = relation.fetchall()
-        conn.close()
-        return uniqval
-    except Exception:
-        conn.close()
-        raise
+    return _stream_query(conn, query)
 
 
 def get_iterable_fields_freq(
@@ -244,9 +250,7 @@ def get_iterable_fields_freq(
         valuedict = merge_frequency_partials(partials)
         items = []
         for k, v in valuedict.items():
-            row = k.split("\t")
-            row.append(v)
-            items.append(row)
+            items.append([*k, v])
         items.sort(key=lambda x: x[-1], reverse=True)
         return items
 
@@ -266,18 +270,12 @@ def get_iterable_fields_freq(
                 allvals.append(field_values(r, field))
 
             for n1, _ in enumerate(allvals[0]):
-                k = []
-                for n2, _ in enumerate(allvals):
-                    k.append(str(allvals[n2][n1]))
-                kx = "\t".join(k)
-                v = valuedict.get(kx, 0)
-                valuedict[kx] = v + 1
+                kx = tuple(_value_text(values[n1]) for values in allvals)
+                valuedict[kx] = valuedict.get(kx, 0) + 1
         except KeyError:
             pass
     for k, v in valuedict.items():
-        row = k.split("\t")
-        row.append(v)
-        items.append(row)
+        items.append([*k, v])
     items.sort(key=lambda x: x[-1], reverse=True)
     return items
 
@@ -290,42 +288,27 @@ def get_duckdb_fields_freq(
     dolog=False,
     dq_instance=None,
     filter_sql=None,
+    iterableargs=None,
+    source=None,
 ):  # pylint: disable=unused-argument
-    """Returns frequencies for the fields of the filename using DuckDB."""
+    """``fields`` values and their counts, most frequent first, as an iterator of tuples.
+
+    Ties come in first-seen order, as from the Python engine. The query runs before this
+    returns, so read errors raise here; rows are then fetched in batches while they are
+    written.
+    """
     # dq_instance parameter kept for backward compatibility (no longer used)
-    if duckdb_config is None:
-        duckdb_config = {}
-
-    conn = create_duckdb_connection(**duckdb_config)
-
-    # Determine input format and build appropriate read expression
-    source_type = filetype or get_file_type(filename) or "csv"
-    if source_type == "csv":
-        read_expr = f"read_csv_auto('{filename}', all_varchar=true)"
-    elif source_type in ("json", "jsonl"):
-        read_expr = f"read_json_auto('{filename}')"
-    elif source_type == "parquet":
-        read_expr = f"read_parquet('{filename}')"
-    else:
-        conn.close()
-        raise ValueError(f"Unsupported file type for DuckDB: {source_type}")
+    conn = _ordered_connection(duckdb_config)
+    # Without a filter the query reads only the fields (nested paths need whole columns).
+    columns = None if filter_sql or _has_nested_fields(fields) else list(fields)
+    read_expr = _duckdb_input(conn, filename, filetype, iterableargs, source, columns)
 
     fieldstext = ",".join(quote_sql_identifier(field) for field in fields)
-    query = f"SELECT {fieldstext}, count(*) as c FROM {read_expr}"
-    if filter_sql:
-        query = f"{query} WHERE {filter_sql}"
-    query = f"{query} GROUP BY {fieldstext} ORDER BY c DESC"
+    query = _first_seen_groups(read_expr, fieldstext, filter_sql, counts=True)
     if dolog:
         logger.info(query)
 
-    try:
-        relation = conn.execute(query)
-        uniqval = relation.fetchall()
-        conn.close()
-        return uniqval
-    except Exception:
-        conn.close()
-        raise
+    return _stream_query(conn, query)
 
 
 def header_names(fromfile: str, options: dict[str, Any] | None = None) -> list[str]:
@@ -340,6 +323,12 @@ def header_names(fromfile: str, options: dict[str, Any] | None = None) -> list[s
         Field names; nested fields as dotted paths.
     """
     options = options or {}
+    if not options.get("flatten_nested"):
+        # The fields of a CSV file are its header line: no record is read, and iterabledata
+        # (about 0.5 s to import) is not needed.
+        header = RowSource(fromfile, options).csv_header()
+        if header is not None:
+            return list(dict.fromkeys(header))
     limit = get_option(options, "limit")
     iterable = open_iterable(fromfile, mode="r", iterableargs=get_iterable_options(options))
     try:
@@ -393,8 +382,10 @@ class Selector:
             resolve_output_format(to_file, format_out or None)
         fields = options["fields"].split(",")
         filter_expr = get_option(options, "filter")
+        source = RowSource(fromfile, options)
         detected_engine = detect_engine(fromfile, engine, filetype, operation="uniq")
         detected_engine = force_iterable_if_table(options, detected_engine)
+        detected_engine = engine_for_arrow(detected_engine, engine, source)
         detected_engine, filter_sql = _engine_for_filter(detected_engine, filter_expr, "uniq")
         uniqval = None
         if detected_engine == "duckdb":
@@ -407,6 +398,8 @@ class Selector:
                     duckdb_config=duckdb_config,
                     dolog=True,
                     filter_sql=filter_sql,
+                    iterableargs=iterableargs,
+                    source=source,
                 )
             except Exception as e:
                 logger.warning(f"DuckDB uniq failed, falling back to iterable: {e}")
@@ -430,20 +423,22 @@ class Selector:
                 field="engine",
                 suggestions=["auto", "duckdb", "python"],
             )
-        logger.debug(f"{len(uniqval)} unique values found")
-        emit_records(
+        written = emit_records(
             _rows_as_dicts(uniqval, fields),
             to_file,
             fieldnames=fields,
             format_out=format_out or None,
             stdout_format=format_out or "csv",
         )
+        logger.debug("uniq: %d unique values found", written)
 
     def headers(self, fromfile, options=None):
         """Print field names in file order (one per line, or JSON with ``format_out``)."""
         if options is None:
             options = {}
-        keys = header_names(fromfile, options)
+        from ..common.cache import cached
+
+        keys = cached("headers", fromfile, options, lambda: header_names(fromfile, options))
         output = get_option(options, "output")
         format_out = (get_option(options, "format_out") or "").lower()
         if not format_out and output and str(output).lower().endswith(".json"):
@@ -474,10 +469,12 @@ class Selector:
             resolve_output_format(to_file, format_out or None)
         fields = options["fields"].split(",")
         filter_expr = get_option(options, "filter")
+        source = RowSource(fromfile, options)
         detected_engine = detect_engine(fromfile, engine, filetype, operation="frequency")
         detected_engine = force_iterable_if_table(options, detected_engine)
+        detected_engine = engine_for_arrow(detected_engine, engine, source)
         detected_engine, filter_sql = _engine_for_filter(detected_engine, filter_expr, "frequency")
-        items = []
+        items = None
         if detected_engine == "duckdb":
             try:
                 duckdb_config = get_duckdb_config_from_options(options)
@@ -488,6 +485,8 @@ class Selector:
                     duckdb_config=duckdb_config,
                     dolog=True,
                     filter_sql=filter_sql,
+                    iterableargs=iterableargs,
+                    source=source,
                 )
             except Exception as e:
                 logger.warning(f"DuckDB frequency failed, falling back to iterable: {e}")
@@ -507,21 +506,21 @@ class Selector:
                     raise FormatError(fromfile, str(filetype or "unknown"))
             finally:
                 iterable.close()
-        elif not items and detected_engine != "duckdb":
+        elif items is None:
             raise ValidationError(
                 f"Unsupported engine '{detected_engine}'",
                 field="engine",
                 suggestions=["auto", "duckdb", "python"],
             )
-        logger.debug(f"frequency: {len(items)} unique values found")
         fields.append("count")
-        emit_records(
+        written = emit_records(
             _rows_as_dicts(items, fields),
             to_file,
             fieldnames=fields,
             format_out=format_out or None,
             stdout_format=format_out or "csv",
         )
+        logger.debug("frequency: %d unique values found", written)
 
     def select(self, fromfile, options=None):
         """Select or re-order columns from file."""
@@ -537,120 +536,41 @@ class Selector:
         except PermissionError as e:
             raise PermissionError(fromfile, operation="read") from e
 
-        iterableargs = get_iterable_options(options)
         to_file = get_option(options, "output")
         format_out = get_option(options, "format_out")
-        filetype = get_option(options, "format_in")
         engine = get_option(options, "engine")
         fields_value = get_option(options, "fields")
+        from ..io import open_source
+        from ..ops import SelectConfig, run_steps
         from ..ops.expr import where_steps
 
         steps = where_steps(options)
-        if steps:
-            from ..io import open_source
-            from ..ops import SelectConfig, run_steps
-
-            chosen = [f.strip() for f in (fields_value or "").split(",") if f.strip()]
-            cfg = SelectConfig(fields=tuple(chosen), filter=get_option(options, "filter"))
-            if cfg.fields or cfg.filter:
-                steps = [*steps, ("select", cfg)]
-            run_steps(
-                steps,
-                open_source(fromfile, options),
-                to_file,
-                engine=engine or "auto",
-                format_out=format_out,
-            )
-            return
-        if not fields_value:
-            raise ValidationError(
-                "select requires --fields, --where or --add (fields: comma-separated names)",
-                field="fields",
-            )
-        fields = [field.strip() for field in fields_value.split(",") if field.strip()]
-        if not fields:
-            raise ValidationError(
-                "select requires at least one field name in 'fields'", field="fields"
-            )
-
-        to_type = None
+        fields = [f.strip() for f in (fields_value or "").split(",") if f.strip()]
+        if not steps:
+            if not fields_value:
+                raise ValidationError(
+                    "select requires --fields, --where or --add (fields: comma-separated names)",
+                    field="fields",
+                )
+            if not fields:
+                raise ValidationError(
+                    "select requires at least one field name in 'fields'", field="fields"
+                )
         if to_file:
-            to_type = resolve_output_format(to_file, format_out or None)
-
-        fields_list = [field.split(".") for field in fields]
-        output = _SelectOutput(to_file, format_out, fields)
-
-        filter_expr = get_option(options, "filter")
-        detected_engine = detect_engine(fromfile, engine, filetype, operation="select")
-        detected_engine = force_iterable_if_table(options, detected_engine)
-        filter_sql = None
-
-        if _has_nested_fields(fields):
-            logger.info("select: nested fields require iterable engine")
-            detected_engine = "iterable"
-        elif detected_engine == "duckdb" and filter_expr:
-            filter_sql = translate_filter_to_sql(filter_expr)
-            if filter_sql is None:
-                logger.info("select: filter not translatable to SQL, falling back to iterable")
-                detected_engine = "iterable"
-
-        try:
-            flatten_nested = bool(options.get("flatten_nested"))
-            n = 0
-            batch = []
-            if detected_engine == "duckdb":
-                try:
-                    duckdb_config = get_duckdb_config_from_options(options)
-                    conn = create_duckdb_connection(**duckdb_config)
-                    source = duckdb_read_expr(fromfile, filetype, iterableargs, all_varchar=True)
-                    query = _build_select_query(fields, source, filter_sql)
-
-                    if to_file and _duckdb_copy_select(conn, query, to_file, to_type):
-                        conn.close()
-                        logger.info("select: completed using DuckDB COPY")
-                        return
-
-                    relation = conn.execute(query)
-                    while True:
-                        rows = relation.fetchmany(SELECT_BATCH_SIZE)
-                        if not rows:
-                            break
-                        batch = [dict(zip(fields, row, strict=False)) for row in rows]
-                        n += len(batch)
-                        output.write_batch(batch)
-                    conn.close()
-                except Exception as exc:
-                    if n > 0:
-                        logger.error("select: DuckDB failed after output (%s)", exc)
-                        raise
-                    logger.warning("select: DuckDB failed (%s), falling back to iterable", exc)
-                    detected_engine = "iterable"
-
-            if detected_engine == "iterable":
-                iterable = open_iterable(fromfile, mode="r", iterableargs=iterableargs)
-                try:
-                    for r in iter_command_rows(iterable, options):
-                        n += 1
-                        if filter_expr is not None:
-                            if not match_filter(r, filter_expr):
-                                continue
-                        if flatten_nested:
-                            r_selected = {field: r[field] for field in fields if field in r}
-                        else:
-                            r_selected = select_fields(r, fields_list)
-                        batch.append(r_selected)
-                        if len(batch) >= SELECT_BATCH_SIZE:
-                            output.write_batch(batch)
-                            batch = []
-                    if batch:
-                        output.write_batch(batch)
-                finally:
-                    iterable.close()
-
-        except BaseException:
-            output.abort()
-            raise
-        output.close()
+            resolve_output_format(to_file, format_out or None)
+        cfg = SelectConfig(fields=tuple(fields), filter=get_option(options, "filter"))
+        if cfg.fields or cfg.filter:
+            steps = [*steps, ("select", cfg)]
+        # One implementation for both engines: the select operation (DuckDB when the input
+        # and the fields allow, else Python).
+        run_steps(
+            steps,
+            open_source(fromfile, options),
+            to_file,
+            engine=engine or "auto",
+            format_out=format_out,
+            fieldnames=fields or None,
+        )
 
     def split(self, fromfile, options=None):
         """Split a file into chunks of ``chunksize`` records, or into one file per value.
@@ -660,7 +580,6 @@ class Selector:
         (``<dirname>/<field>=<value>/data_0.<ext>``). Output files use ``format_out`` or the
         input's format; at most ``max_open_files`` are open at once.
         """
-        from ..io import RowSource
         from ..io.partition import DEFAULT_MAX_OPEN_FILES, PartitionedWriter
 
         if options is None:

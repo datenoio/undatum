@@ -8,6 +8,10 @@ import typer
 
 from ..common import enable_verbose
 from ..options import (
+    CacheOpt,
+    DuckdbMemoryOpt,
+    DuckdbTempDirOpt,
+    DuckdbThreadsOpt,
     EngineOpt,
     ErrorLogOpt,
     FlattenNestedOpt,
@@ -69,6 +73,9 @@ def uniq(
             help="Output format: 'csv' (default) or 'json' (also inferred from --output)."
         ),
     ] = None,
+    duckdb_threads: DuckdbThreadsOpt = None,
+    duckdb_memory: DuckdbMemoryOpt = None,
+    duckdb_temp_dir: DuckdbTempDirOpt = None,
     json_output: JsonOpt = False,
 ):
     """Extract all unique values from specified field(s).
@@ -96,6 +103,9 @@ def uniq(
         "max_nested_depth": max_nested_depth,
         "keep_nested_parents": keep_nested_parents,
         "engine": engine,
+        "duckdb_threads": duckdb_threads,
+        "duckdb_memory": duckdb_memory,
+        "duckdb_temp_dir": duckdb_temp_dir,
         "filter": filter_expr,
         "format_out": "json" if json_output else format_out,
     }
@@ -142,6 +152,7 @@ def headers(
     max_nested_depth: MaxNestedDepthOpt = None,
     keep_nested_parents: KeepNestedParentsOpt = True,
     json_output: JsonOpt = False,
+    cache: CacheOpt = None,
 ):
     """Returns fieldnames of the file. Supports XML, CSV, JSON, BSON.
 
@@ -171,6 +182,9 @@ def headers(
         "keep_nested_parents": keep_nested_parents,
     }
     acmd = Selector()
+    from ...common.cache import cli_cache_option
+
+    options["cache"] = cli_cache_option(cache)
     acmd.headers(input_file, options)
 
 
@@ -227,7 +241,11 @@ def stats(
     trust: TrustOpt = False,
     on_error: OnErrorOpt = None,
     error_log: ErrorLogOpt = None,
+    duckdb_threads: DuckdbThreadsOpt = None,
+    duckdb_memory: DuckdbMemoryOpt = None,
+    duckdb_temp_dir: DuckdbTempDirOpt = None,
     json_output: JsonOpt = False,
+    cache: CacheOpt = None,
 ):
     """Generate detailed statistics about a dataset.
 
@@ -252,6 +270,9 @@ def stats(
         "progress": progress if not no_progress else False,
         "no_progress": no_progress,
         "engine": engine,
+        "duckdb_threads": duckdb_threads,
+        "duckdb_memory": duckdb_memory,
+        "duckdb_temp_dir": duckdb_temp_dir,
         "threads": threads,
         "table": table,
         "start_page": start_page,
@@ -263,6 +284,9 @@ def stats(
         "error_log": error_log,
     }
     acmd = StatProcessor(nodates=not checkdates)
+    from ...common.cache import cli_cache_option
+
+    options["cache"] = cli_cache_option(cache)
     acmd.stats(input_file, options)
 
 
@@ -393,8 +417,12 @@ def count(
         str | None,
         typer.Option("--format-out", "-O", help="Output format: text (default) or json."),
     ] = None,
+    duckdb_threads: DuckdbThreadsOpt = None,
+    duckdb_memory: DuckdbMemoryOpt = None,
+    duckdb_temp_dir: DuckdbTempDirOpt = None,
     json_output: JsonOpt = False,
     where: WhereOpt = None,
+    cache: CacheOpt = None,
 ):
     """Count the number of rows in a data file.
 
@@ -412,6 +440,9 @@ def count(
         "encoding": encoding,
         "filetype": filetype,
         "engine": engine,
+        "duckdb_threads": duckdb_threads,
+        "duckdb_memory": duckdb_memory,
+        "duckdb_temp_dir": duckdb_temp_dir,
         "table": table,
         "start_page": start_page,
         "trust": trust,
@@ -420,6 +451,9 @@ def count(
         "format_out": "json" if json_output else format_out,
     }
     acmd = Counter()
+    from ...common.cache import cli_cache_option
+
+    options["cache"] = cli_cache_option(cache)
     acmd.count(input_file, options)
 
 
@@ -622,6 +656,7 @@ def sniff(
     max_nested_depth: MaxNestedDepthOpt = None,
     keep_nested_parents: KeepNestedParentsOpt = True,
     json_output: JsonOpt = False,
+    cache: CacheOpt = None,
 ):
     """Detect file properties (delimiter, encoding, types, record count).
 
@@ -649,6 +684,9 @@ def sniff(
         "keep_nested_parents": keep_nested_parents,
     }
     acmd = Sniffer()
+    from ...common.cache import cli_cache_option
+
+    options["cache"] = cli_cache_option(cache)
     acmd.sniff(input_file, options)
 
 

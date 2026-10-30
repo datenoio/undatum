@@ -33,7 +33,7 @@ undatum flatten [OPTIONS] INPUT_FILE
 | `-o`, `--output` TEXT | Optional output file path. If not specified, prints to stdout. |  |
 | `-d`, `--delimiter` TEXT | CSV delimiter character (auto-detected when omitted). |  |
 | `--quotechar` TEXT | CSV quote character (iterabledata default '"' when omitted). |  |
-| `--encoding` TEXT | File encoding (e.g., 'utf8', 'latin1'). | `utf8` |
+| `--encoding` TEXT | Input encoding (e.g., 'utf8', 'cp1251'); detected when omitted. |  |
 | `-F`, `--format-in` TEXT | Override input file format detection (e.g., 'jsonl', 'xml'). |  |
 | `--filter`, `--filter-expr` TEXT | Filter expression to apply before flattening. |  |
 | `--verbose` / `--no-verbose` | Enable verbose logging output. | `--no-verbose` |

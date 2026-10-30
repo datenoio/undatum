@@ -11,32 +11,31 @@ import tempfile
 import zipfile
 from typing import IO
 
-import duckdb
 import orjson
-import pandas as pd
 import xxhash
 import yaml
 from pydantic import BaseModel
 from pyzstd import ZstdFile
-from qddate import DateParser
 
 from ..ai import get_ai_service, get_description, get_fields_info
-from ..common.command_utils import duckdb_can_decode, resolve_csv_delimiter
+from ..common.command_utils import (
+    duckdb_can_decode,
+    duckdb_read_expr,
+    get_iterable_options,
+    resolve_csv_delimiter,
+)
+from ..common.duckdb_config import duckdb_connection
+from ..common.engine_selector import detect_file_type
+from ..common.format_names import format_from_name
 from ..common.progress import progress
 from ..common.schema_utils import duckdb_decompose, duckdb_to_json_schema_type
 from ..common.scheme import generate_scheme_from_file
 from ..common.tables import format_table
 from ..constants import DUCKABLE_CODECS, DUCKABLE_FILE_TYPES
+from ..io import RowSource
 from ..utils import get_file_type, get_option
 
 logger = logging.getLogger(__name__)
-
-try:
-    from iterable.helpers.detect import detect_file_type
-
-    HAS_ITERABLE_DETECT = True
-except ImportError:
-    HAS_ITERABLE_DETECT = False
 
 
 def get_schema_key(fields):
@@ -52,8 +51,8 @@ class FieldSchema(BaseModel):
     ftype: str
     is_array: bool = False
     description: str | None = None
-    sem_type: str = None
-    sem_url: str = None
+    sem_type: str | None = None
+    sem_url: str | None = None
 
 
 class TableSchema(BaseModel):
@@ -80,12 +79,16 @@ def table_from_objects(
     objects: list,
     id: str,
     objects_limit: int,
-    use_pandas: bool = False,
+    in_memory: bool = False,
     filetype="csv",
     autodoc: bool = False,
     lang: str = "English",
 ):
-    """Reconstruct a table schema from a list of objects."""
+    """Reconstruct a table schema from a list of objects.
+
+    With ``in_memory``, DuckDB describes an Arrow table of the (dict) records instead of a
+    temporary file.
+    """
     table = TableSchema(id=id)
     table.num_records = len(objects)
     if autodoc:
@@ -93,9 +96,11 @@ def table_from_objects(
         writer = csv.writer(f)
         writer.writerows(objects[:MAX_SAMPLE_SIZE])
         table.description = get_description(f.getvalue(), language=lang)
-    if use_pandas:
-        df = pd.DataFrame(objects)
-        columns_raw = duckdb_decompose(frame=df, path="*", limit=objects_limit)
+    if in_memory:
+        from ..io.arrow import records_table
+
+        frame = records_table(objects, mixed_as_text=True)
+        columns_raw = duckdb_decompose(frame=frame, path="*", limit=objects_limit)
     else:
         tfile = tempfile.NamedTemporaryFile(
             suffix="." + filetype, mode="w", encoding="utf8", delete=False
@@ -186,7 +191,7 @@ def _schema_columns_from_iterable(filename: str, objects_limit: int, options: di
         id=os.path.basename(filename),
         objects_limit=objects_limit,
         filetype="jsonl",
-        use_pandas=flatten_nested,
+        in_memory=flatten_nested,
     )
     return [[field.name, field.ftype, field.is_array] for field in sampled.fields]
 
@@ -233,8 +238,13 @@ def build_schema(
         raise PermissionError(filename, operation="read") from e
 
     try:
-        # Detect file type and compression
-        if HAS_ITERABLE_DETECT and (filetype is None or compression is None):
+        # Detect file type and compression; common extensions are recognised without
+        # importing iterabledata (about 0.5 s)
+        named = format_from_name(filename) if filetype is None or compression is None else None
+        if named is not None:
+            filetype = filetype or named[0]
+            compression = compression or named[1] or "raw"
+        if filetype is None or compression is None:
             ftype = detect_file_type(filename)
             if ftype.get("success"):
                 detected_filetype = (
@@ -258,13 +268,6 @@ def build_schema(
                     filetype = fileext
                 if compression is None:
                     compression = "raw"
-        else:
-            # Fallback to extension-based detection
-            if filetype is None:
-                fileext = filename.rsplit(".", 1)[-1].lower()
-                filetype = fileext
-            if compression is None:
-                compression = "raw"
 
         has_table = bool(options.get("table") or options.get("sheet") or options.get("start_page"))
         if filetype in ANALYZER_SCHEMA_FORMATS and not has_table and not flatten_nested:
@@ -284,42 +287,45 @@ def build_schema(
             else:
                 engine = "iterable"
 
-        # Count records (only for DuckDB engine)
-        if engine == "duckdb":
-            try:
-                text_ignore = ", ignore_errors=true"
-                if filetype in ["json", "jsonl"]:
-                    query_str = f"select count(*) from read_json('{filename}'{text_ignore})"
-                elif filetype in ["csv", "tsv"]:
-                    query_str = f"select count(*) from read_csv('{filename}'{text_ignore})"
-                else:
-                    query_str = f"select count(*) from '{filename}'"
-                num_records = duckdb.sql(query_str).fetchall()[0][0]
-                table.num_records = num_records
-            except Exception as e:
-                logger.warning(f"Could not count records: {e}")
+        conn = duckdb_connection(options)
+        try:
+            # Count records (only for DuckDB engine)
+            if engine == "duckdb":
+                try:
+                    read_expr = None
+                    if filetype in ("csv", "tsv"):
+                        read_expr = RowSource(filename, options).duckdb_from()
+                    read_expr = read_expr or duckdb_read_expr(
+                        filename, filetype, get_iterable_options(options)
+                    )
+                    num_records = conn.execute(f"select count(*) from {read_expr}").fetchall()[0][0]
+                    table.num_records = num_records
+                except Exception as e:
+                    logger.warning(f"Could not count records: {e}")
+                    table.num_records = -1
+            else:
+                # For iterable engine, we can't easily count without reading all records
                 table.num_records = -1
-        else:
-            # For iterable engine, we can't easily count without reading all records
-            table.num_records = -1
 
-        # Getting structure
-        if flatten_nested:
-            columns_raw = _schema_columns_from_iterable(filename, objects_limit, options)
-        elif engine == "duckdb":
-            columns_raw = duckdb_decompose(
-                filename, filetype=filetype, path="*", limit=objects_limit
-            )
-        else:
-            logger.debug("schema: inferring the structure of %s with DuckDB", filename)
-            try:
+            # Getting structure
+            if flatten_nested:
+                columns_raw = _schema_columns_from_iterable(filename, objects_limit, options)
+            elif engine == "duckdb":
                 columns_raw = duckdb_decompose(
-                    filename, filetype=filetype, path="*", limit=objects_limit
+                    filename, filetype=filetype, path="*", limit=objects_limit, conn=conn
                 )
-            except Exception as e:
-                raise ValueError(
-                    f"Schema extraction failed for {filetype} files: {e}. Try using --engine duckdb or a different file format."
-                ) from e
+            else:
+                logger.debug("schema: inferring the structure of %s with DuckDB", filename)
+                try:
+                    columns_raw = duckdb_decompose(
+                        filename, filetype=filetype, path="*", limit=objects_limit, conn=conn
+                    )
+                except Exception as e:
+                    raise ValueError(
+                        f"Schema extraction failed for {filetype} files: {e}. Try using --engine duckdb or a different file format."
+                    ) from e
+        finally:
+            conn.close()
 
         is_flat = True
         table.num_cols = len(columns_raw)
@@ -539,6 +545,10 @@ def _to_parquet(table: TableSchema) -> dict:
     }
 
 
+# --format values written by _write_schema_output (odcs as YAML, the others as JSON)
+SCHEMA_FORMATS = ("cerberus", "jsonschema", "json-schema", "avro", "parquet", "odcs")
+
+
 def _convert_to_format(table: TableSchema, format_name: str) -> dict:
     """Convert TableSchema to specified format.
 
@@ -573,13 +583,14 @@ def _write_schema_output(table, options, output_stream):
     """Write schema to output stream in specified format."""
     # Check if a specific schema format is requested (cerberus, jsonschema, avro, parquet)
     schema_format = options.get("format")
-    if schema_format and schema_format.lower() in [
-        "cerberus",
-        "jsonschema",
-        "json-schema",
-        "avro",
-        "parquet",
-    ]:
+    if schema_format and schema_format.lower() == "odcs":
+        from ..validate.odcs import contract_from_schema
+
+        output_stream.write(
+            yaml.safe_dump(contract_from_schema(table), sort_keys=False, allow_unicode=True)
+        )
+        return
+    if schema_format and schema_format.lower() in SCHEMA_FORMATS:
         try:
             converted_schema = _convert_to_format(table, schema_format.lower())
             # All format outputs are JSON-serializable
@@ -758,8 +769,9 @@ class Schemer:
         if nodates:
             self.qd = None
         else:
+            from qddate import DateParser
+
             self.qd = DateParser(generate=True)
-        pass
 
     def extract_schema(self, fromfile, options):
         """Extract schema from file and output in specified format."""
@@ -773,8 +785,17 @@ class Schemer:
                 _write_schema_validation(report, options, sys.stdout)
             return report
 
+        from ..common.cache import cached
+
         engine = options.get("engine", "auto")
-        table = build_schema(fromfile, engine=engine, options=options)
+        table = cached(
+            "schema",
+            fromfile,
+            options,
+            lambda: build_schema(fromfile, engine=engine, options=options),
+            load=TableSchema.model_validate,
+            dump=lambda result: result.model_dump(),
+        )
 
         # Apply AI documentation if requested
         if options.get("autodoc"):
@@ -874,14 +895,8 @@ class Schemer:
                     if "output" in options and options["output"]:
                         # Determine file extension based on format
                         schema_format = options.get("format")
-                        if schema_format and schema_format.lower() in [
-                            "cerberus",
-                            "jsonschema",
-                            "json-schema",
-                            "avro",
-                            "parquet",
-                        ]:
-                            ext = "json"  # All format outputs are JSON
+                        if schema_format and schema_format.lower() in SCHEMA_FORMATS:
+                            ext = "yaml" if schema_format.lower() == "odcs" else "json"
                         elif options.get("outtype") == "json":
                             ext = "json"
                         elif options.get("outtype") == "yaml":
@@ -905,14 +920,8 @@ class Schemer:
                 for table in tables.values():
                     # Determine file extension based on format
                     schema_format = options.get("format")
-                    if schema_format and schema_format.lower() in [
-                        "cerberus",
-                        "jsonschema",
-                        "json-schema",
-                        "avro",
-                        "parquet",
-                    ]:
-                        ext = "json"  # All format outputs are JSON
+                    if schema_format and schema_format.lower() in SCHEMA_FORMATS:
+                        ext = "yaml" if schema_format.lower() == "odcs" else "json"
                     elif options.get("outtype") == "json":
                         ext = "json"
                     elif options.get("outtype") == "yaml":

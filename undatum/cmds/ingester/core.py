@@ -120,7 +120,9 @@ class Ingester:
             if len(parts) == 2:
                 if parts[-1].lower() in DUCKABLE_FILE_TYPES:
                     try:
-                        totals = duckdb.sql(f"select count(*) from '{fromfile}'").fetchone()[0]
+                        totals = duckdb.execute(f"select count(*) from '{fromfile}'").fetchall()[0][
+                            0
+                        ]
                     except Exception as e:
                         logger.warning(f"Could not count records in {fromfile}: {e}")
             elif len(parts) == 3:
@@ -129,7 +131,9 @@ class Ingester:
                     and parts[-1].lower() in DUCKABLE_CODECS
                 ):
                     try:
-                        totals = duckdb.sql(f"select count(*) from '{fromfile}'").fetchone()[0]
+                        totals = duckdb.execute(f"select count(*) from '{fromfile}'").fetchall()[0][
+                            0
+                        ]
                     except Exception as e:
                         logger.warning(f"Could not count records in {fromfile}: {e}")
 
@@ -266,7 +270,7 @@ class Ingester:
                     processor._put_connection(conn)
             elif dbtype == "duckdb":
                 # Test DuckDB connection (simple query)
-                processor.conn.execute("SELECT 1").fetchone()
+                processor.conn.execute("SELECT 1").fetchall()
             elif dbtype == "mysql":
                 # Test MySQL connection
                 conn = processor._get_connection()
