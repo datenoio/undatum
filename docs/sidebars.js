@@ -28,6 +28,7 @@ const sidebars = {
         'getting-started/cookbook',
         'getting-started/basic-usage',
         'getting-started/performance',
+        'getting-started/benchmarks',
         'getting-started/troubleshooting',
         'getting-started/migrating-to-2',
         'getting-started/best-practices',

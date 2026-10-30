@@ -8,6 +8,9 @@ description: "Wall time and peak memory of core commands, budgets, and the CI jo
 reference datasets. Each command runs in its own process: wall time is the median of three
 runs, and peak memory is the largest resident set size the process reached.
 
+`scripts/compare_tools.py` compares undatum with csvkit, Miller, qsv, xan and the DuckDB CLI; its
+results are on the user-facing [Benchmarks](/getting-started/benchmarks) page.
+
 ## Running locally
 
 ```bash norun
