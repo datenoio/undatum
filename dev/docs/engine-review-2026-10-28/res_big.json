@@ -1,0 +1,137 @@
+{
+ "count/undatum": [
+  0.52,
+  248,
+  true
+ ],
+ "count/duckdb": [
+  0.16,
+  210,
+  true
+ ],
+ "count/polars": [
+  0.34,
+  361,
+  true
+ ],
+ "to_parquet/undatum": [
+  1.58,
+  1344,
+  true
+ ],
+ "to_parquet/duckdb": [
+  0.29,
+  958,
+  true
+ ],
+ "to_parquet/polars": [
+  0.37,
+  687,
+  true
+ ],
+ "to_jsonl/undatum": [
+  7.45,
+  262,
+  true
+ ],
+ "to_jsonl/duckdb": [
+  0.64,
+  951,
+  true
+ ],
+ "to_jsonl/polars": [
+  0.65,
+  573,
+  true
+ ],
+ "stats/undatum": [
+  109.33,
+  931,
+  true
+ ],
+ "stats/duckdb": [
+  0.3,
+  291,
+  true
+ ],
+ "stats/polars": [
+  0.48,
+  643,
+  true
+ ],
+ "frequency/undatum": [
+  1.14,
+  357,
+  true
+ ],
+ "frequency/duckdb": [
+  0.1,
+  242,
+  true
+ ],
+ "frequency/polars": [
+  0.26,
+  392,
+  true
+ ],
+ "uniq/undatum": [
+  1.21,
+  523,
+  true
+ ],
+ "uniq/duckdb": [
+  0.11,
+  383,
+  true
+ ],
+ "uniq/polars": [
+  0.28,
+  416,
+  true
+ ],
+ "sort/undatum": [
+  1.56,
+  1580,
+  true
+ ],
+ "sort/duckdb": [
+  0.65,
+  1371,
+  true
+ ],
+ "sort/polars": [
+  0.61,
+  1075,
+  true
+ ],
+ "where/undatum": [
+  2.19,
+  258,
+  true
+ ],
+ "where/duckdb": [
+  0.13,
+  278,
+  true
+ ],
+ "where/polars": [
+  0.29,
+  550,
+  true
+ ],
+ "dedup/undatum": [
+  9.38,
+  205,
+  true
+ ],
+ "dedup/duckdb": [
+  0.22,
+  777,
+  true
+ ],
+ "dedup/polars": [
+  0.32,
+  553,
+  true
+ ]
+}

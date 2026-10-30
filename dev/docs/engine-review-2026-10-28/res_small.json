@@ -1,0 +1,182 @@
+{
+ "count/undatum": [
+  0.56,
+  94,
+  true
+ ],
+ "count/undatum-py": [
+  5.62,
+  135,
+  true
+ ],
+ "count/duckdb": [
+  0.14,
+  56,
+  true
+ ],
+ "count/polars": [
+  0.32,
+  113,
+  true
+ ],
+ "to_parquet/undatum": [
+  0.99,
+  283,
+  true
+ ],
+ "to_parquet/undatum-py": [
+  2.51,
+  329,
+  true
+ ],
+ "to_parquet/duckdb": [
+  0.11,
+  160,
+  true
+ ],
+ "to_parquet/polars": [
+  0.27,
+  228,
+  true
+ ],
+ "to_jsonl/undatum": [
+  1.58,
+  262,
+  true
+ ],
+ "to_jsonl/undatum-py": [
+  1.57,
+  261,
+  true
+ ],
+ "to_jsonl/duckdb": [
+  0.16,
+  180,
+  true
+ ],
+ "to_jsonl/polars": [
+  0.29,
+  177,
+  true
+ ],
+ "stats/undatum": [
+  106.35,
+  331,
+  true
+ ],
+ "stats/undatum-py": [
+  107.79,
+  276,
+  true
+ ],
+ "stats/duckdb": [
+  0.21,
+  100,
+  true
+ ],
+ "stats/polars": [
+  0.4,
+  165,
+  true
+ ],
+ "frequency/undatum": [
+  1.16,
+  182,
+  true
+ ],
+ "frequency/undatum-py": [
+  1.29,
+  135,
+  true
+ ],
+ "frequency/duckdb": [
+  0.06,
+  68,
+  true
+ ],
+ "frequency/polars": [
+  0.25,
+  124,
+  true
+ ],
+ "uniq/undatum": [
+  1.07,
+  209,
+  true
+ ],
+ "uniq/undatum-py": [
+  98.6,
+  142,
+  true
+ ],
+ "uniq/duckdb": [
+  0.13,
+  82,
+  true
+ ],
+ "uniq/polars": [
+  0.37,
+  127,
+  true
+ ],
+ "sort/undatum": [
+  1.19,
+  306,
+  true
+ ],
+ "sort/undatum-py": [
+  2.79,
+  261,
+  true
+ ],
+ "sort/duckdb": [
+  0.17,
+  176,
+  true
+ ],
+ "sort/polars": [
+  0.28,
+  228,
+  true
+ ],
+ "where/undatum": [
+  1.56,
+  220,
+  true
+ ],
+ "where/undatum-py": [
+  3.78,
+  236,
+  true
+ ],
+ "where/duckdb": [
+  0.07,
+  65,
+  true
+ ],
+ "where/polars": [
+  0.25,
+  164,
+  true
+ ],
+ "dedup/undatum": [
+  2.27,
+  201,
+  true
+ ],
+ "dedup/undatum-py": [
+  2.21,
+  201,
+  true
+ ],
+ "dedup/duckdb": [
+  0.1,
+  150,
+  true
+ ],
+ "dedup/polars": [
+  0.26,
+  180,
+  true
+ ]
+}
