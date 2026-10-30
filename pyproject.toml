@@ -38,10 +38,10 @@ dependencies = [
     "duckdb>=2.0,<3",
     # Reads xlsx, xlsm, xls, xlsb and ods into Arrow (Rust, calamine).
     "fastexcel>=0.21,<1",
-    "iterabledata>=1.0.21,<1.1",
+    "iterabledata>=1.0.22,<1.1",
     "lz4>=4.3.2,<5",
     # DataFrames of any library in and out of the SDK (Dataset.from_frame/to_frame); no dependencies.
-    "narwhals>=2.0,<3",
+    "narwhals>=2.28,<3",
     "openpyxl>=3.1.2,<4",
     "orjson>=3.9.15,<4",
     # No upper bound: pyarrow ships a major version every few months without breaking the

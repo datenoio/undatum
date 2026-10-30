@@ -32,9 +32,9 @@ requirements:
     - avro >=1.11.3,<2
     - python-duckdb >=2.0,<3
     - fastexcel >=0.21,<1
-    - iterabledata >=1.0.21,<1.1
+    - iterabledata >=1.0.22,<1.1
     - lz4 >=4.3.2,<5
-    - narwhals >=2.0,<3
+    - narwhals >=2.28,<3
     - openpyxl >=3.1.2,<4
     - orjson >=3.9.15,<4
     - pyarrow >=16.0.0

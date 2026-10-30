@@ -255,6 +255,11 @@ def _write_derived(target: pathlib.Path, rows: list[dict]) -> None:
     import zstandard
 
     frame = pd.DataFrame(rows)
+    # Parquet keeps types, as in real files: dates and timestamps, not the text of the CSV.
+    typed = frame.assign(
+        date=pd.to_datetime(frame["date"]).dt.date,
+        created_at=pd.to_datetime(frame["created_at"]),
+    )
     for stem in (
         "data",
         "users",
@@ -269,7 +274,7 @@ def _write_derived(target: pathlib.Path, rows: list[dict]) -> None:
         "current",
         "previous",
     ):
-        frame.to_parquet(target / f"{stem}.parquet", index=False)
+        typed.to_parquet(target / f"{stem}.parquet", index=False)
     csv_bytes = (target / "data.csv").read_bytes()
     jsonl_bytes = (target / "data.jsonl").read_bytes()
     (target / "data.csv.gz").write_bytes(gzip.compress(csv_bytes))

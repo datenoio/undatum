@@ -191,8 +191,10 @@ def apply_block(text: str, block: str) -> str:
 
 def new_page(path: pathlib.Path) -> str:
     name = path.stem
+    # Docusaurus serves a page named like its folder at the folder's URL; keep /commands/<name>.
+    slug = f"slug: {name}\n" if name == path.parent.name else ""
     return (
-        f'---\ntitle: "{name}"\ndescription: "undatum {name} command reference"\n---\n'
+        f'---\ntitle: "{name}"\ndescription: "undatum {name} command reference"\n{slug}---\n'
         f"# `{name}`\n\n"
     )
 

@@ -387,7 +387,9 @@ def _pythons(values: list[str] | None) -> dict[str, str]:
     pythons = {}
     for value in values:
         label, sep, path = value.partition("=")
-        pythons[label if sep else "head"] = path if sep else label
+        python = path if sep else label
+        # Commands run in their output directory, so a relative interpreter path must not be.
+        pythons[label if sep else "head"] = os.path.abspath(python) if os.sep in python else python
     return pythons
 
 

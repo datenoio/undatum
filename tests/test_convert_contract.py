@@ -123,7 +123,11 @@ def test_empty_csv_fields_stay_empty_strings_in_json(tmp_path):
 
 
 def test_times_survive_conversion_to_json_lines(tmp_path):
-    # The iterabledata JSON writer writes null for TIME values; DuckDB keeps them.
+    # The iterabledata JSON writer writes null for TIME values; DuckDB keeps them. DuckDB
+    # writes the file: pyarrow 16 (the lowest-dependency CI job) writes a TIME column that
+    # DuckDB reads as TIME WITH TIME ZONE.
+    import duckdb
+
     source = tmp_path / "times.parquet"
-    pq.write_table(pa.Table.from_pylist([{"at": datetime.time(10, 0, 0, 123456)}]), source)
+    duckdb.sql(f"COPY (SELECT TIME '10:00:00.123456' AS at) TO '{source}' (FORMAT parquet)")
     assert _convert(source, tmp_path / "out.jsonl", "auto") == [{"at": "10:00:00.123456"}]

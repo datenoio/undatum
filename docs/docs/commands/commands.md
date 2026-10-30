@@ -1,6 +1,7 @@
 ---
 title: "commands"
 description: "undatum commands command reference"
+slug: commands
 ---
 # `commands`
 
