@@ -18,8 +18,18 @@ from dataclasses import field as dc_field
 from typing import Any
 
 from ..utils import field_values
-from .base import Operation, Streaming, register
+from .base import Operation, Streaming, quote, register
+from .rows import TEXT_TYPES
 from .spill import reversed_rows
+
+# Position of each record in the input, added to DuckDB queries that reorder or group rows.
+_ROW = "__undatum_row"
+
+
+def _numbered(source: str) -> str:
+    """``source`` with each record's input position in the ``_ROW`` column."""
+    # The runner keeps DuckDB's insertion order, so row_number() follows the input.
+    return f"(SELECT *, row_number() OVER () AS {_ROW} FROM {source})"
 
 
 def reiterable(rows: Iterable[Any]) -> Iterable[Any]:
@@ -277,9 +287,15 @@ class Reverse(Operation[ReverseConfig]):
 
     name = "reverse"
     streaming = Streaming.FULL
+    sql_holds_all_rows = True
 
     def apply(self, rows: Iterable[Any], cfg: ReverseConfig) -> Iterator[Any]:
         yield from reversed_rows(rows, cfg.chunk_rows)
+
+    def to_sql(self, source: str, schema: dict[str, str], cfg: ReverseConfig) -> str | None:
+        if _ROW in schema:
+            return None
+        return f"SELECT * EXCLUDE ({_ROW}) FROM {_numbered(source)} ORDER BY {_ROW} DESC"
 
 
 # ------------------------------------------------------------------------- transpose
@@ -347,6 +363,7 @@ class Dedup(Operation[DedupConfig]):
     """Exact deduplication; keys are indexed in memory, then on disk."""
 
     name = "dedup"
+    sql_holds_all_rows = True
 
     def apply(self, rows: Iterable[Any], cfg: DedupConfig) -> Iterator[Any]:
         from ..common.disk_dedup import DiskDeduplicator, key_blob
@@ -375,6 +392,21 @@ class Dedup(Operation[DedupConfig]):
             disk.seed((blob.encode(), row) for blob, row in seen.items())
             seen.clear()
             yield from disk.process(iterator, key_of_fn(cfg.keys))
+
+    def to_sql(self, source: str, schema: dict[str, str], cfg: DedupConfig) -> str | None:
+        keys = list(cfg.keys) or list(schema)
+        if _ROW in schema or any(schema.get(key) not in TEXT_TYPES for key in keys):
+            return None  # dotted paths and typed values compare differently in Python
+        partition = ", ".join(quote(key) for key in keys)
+        order = f"{_ROW} DESC" if cfg.keep == "last" else _ROW
+        # Kept records stay in the order in which their key first appeared.
+        return (
+            f"SELECT * EXCLUDE ({_ROW}, __undatum_first) FROM ("
+            f"SELECT *, min({_ROW}) OVER (PARTITION BY {partition}) AS __undatum_first "
+            f"FROM {_numbered(source)} "
+            f"QUALIFY row_number() OVER (PARTITION BY {partition} ORDER BY {order}) = 1"
+            ") ORDER BY __undatum_first"
+        )
 
 
 def key_of_fn(fields: tuple[str, ...]) -> Callable[[Any], Any]:

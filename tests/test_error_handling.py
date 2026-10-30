@@ -214,6 +214,23 @@ class TestFormatErrorMessage:
         assert "Invalid value" in message
         assert "Invalid value:" in message
 
+    def test_iterabledata_hints_become_cli_options(self):
+        """iterabledata's open_iterable(...) hints are shown as command-line options."""
+        error = ValueError(
+            "Failed to parse csv format at data.csv:2\n"
+            "2. Specify the correct delimiter:\n"
+            "   open_iterable('file.csv', iterableargs={'delimiter': ';'})\n"
+            "3. Handle encoding issues:\n"
+            "   open_iterable('file.csv', iterableargs={'encoding': 'utf-8'})\n"
+            "4. Use error handling to skip problematic rows:\n"
+            "   open_iterable('file.csv', iterableargs={'on_error': 'skip'})"
+        )
+        message = format_error_message(error)
+        assert "open_iterable" not in message
+        assert "--delimiter ';'" in message
+        assert "--encoding ENCODING (undatum sniff shows the detected encoding)" in message
+        assert "--on-error skip" in message
+
     def test_format_error_verbose(self):
         """Test formatting error in verbose mode."""
         error = ValueError("Test error")

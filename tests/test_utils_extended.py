@@ -8,6 +8,7 @@ import pytest
 from undatum.utils import (
     TypeGuesser,
     buf_count_newlines_gen,
+    could_be_date,
     detect_delimiter,
     detect_encoding,
     dict_generator,
@@ -420,10 +421,68 @@ class TestTypeGuesser:
         qd = _CountingDates()
         guesser = TypeGuesser(qd, date_probe=100)
         for i in range(1000):
-            guesser.base("code", f"x{i}")
+            guesser.base("code", f"room {i}")
         assert qd.calls == 100
         # A real date column keeps being checked.
         for i in range(1000):
             day = f"2020-01-{i % 28 + 1:02d} {i}"
             assert guesser.base("day", day) == "date"
         assert qd.calls == 1100
+
+    def test_few_date_checks_by_default(self):
+        # A non-date check costs 30-60 ms in qddate, so a text column is given up quickly.
+        qd = _CountingDates()
+        guesser = TypeGuesser(qd)
+        for i in range(1000):
+            guesser.base("address", f"Main street {i}")
+        assert qd.calls == 20
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "c4ca4238a0b923820dcc509a6f75849b",  # hash
+            "user105666@example.org",
+            "A1B2C3",
+            "Lorem ipsum dolor sit amet, consectetur adipiscing elit 2020",  # long text
+        ],
+    )
+    def test_values_that_cannot_be_dates_skip_the_date_check(self, value):
+        qd = _CountingDates()
+        guesser = TypeGuesser(qd)
+        assert guesser.base("f", value) == "str"
+        assert qd.calls == 0
+
+
+class TestCouldBeDate:
+    """could_be_date keeps every value qddate may read as a date."""
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "2020-01-02",
+            "02.01.2020",
+            "1/2/2020",
+            "2.1.20",
+            "2020-01-02T10:00:00Z",
+            "2006-01-02T15:04:05.000000+03:00",
+            "January 2, 2020",
+            "March 1st, 2020",
+            "Mon, 02 Jan 2006 15:04:05 -0700",
+            "12 сентября 2018 г.",
+        ],
+    )
+    def test_dates(self, value):
+        assert could_be_date(value)
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "",
+            "no digits",
+            "c4ca4238a0b923820dcc509a6f75849b",
+            "user1@example.org",
+            "word " * 10 + "1",
+        ],
+    )
+    def test_not_dates(self, value):
+        assert not could_be_date(value)

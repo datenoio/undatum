@@ -32,9 +32,19 @@ On CSV, TSV, JSON, JSON Lines and Parquet inputs (plain or `.gz`/`.zst`) the def
 
 - `rename`, `fill`, `replace`, `search`, `head` and `slice` — the same records as the Python
   engine, checked by contract tests (`rename` is about 7x faster on 1M CSV rows);
-- `select`, `sort`, `dedup`, `join`, `count`, `stats`, `frequency`, `uniq` and `sql`;
+- `select`, `sort`, `join`, `count`, `stats`, `frequency`, `uniq` and `sql`;
 - `--where` conditions and `--add` columns. Inputs DuckDB cannot read are evaluated in batches
   with the same results.
+
+`dedup` and `reverse` use DuckDB only with `--engine duckdb`: DuckDB holds the records up to
+its memory limit (about 750 MB for 2M rows), while the default Python engine stays bounded
+(spilling to disk). On 2M CSV rows `dedup --engine duckdb` takes 1.6 s instead of 10.6 s, and
+`reverse --engine duckdb` 2 s instead of about 30 s; both give the same records.
+
+DuckDB reads UTF-8 text only: CSV in another encoding (for example Windows-1251) goes to the
+Python engine, which detects the encoding. A row DuckDB cannot read makes the command fall back
+to the Python engine; if records were already printed to standard output, the command stops
+with an error instead, and `--engine python` reads the file.
 
 Commands that read and write these formats through DuckDB do not import iterabledata at all,
 which saves about a second per run (`undatum head data.csv` takes 0.7 s). `--engine python`

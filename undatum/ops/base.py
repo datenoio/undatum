@@ -31,6 +31,9 @@ class Operation(Generic[C]):
 
     name: ClassVar[str]
     streaming: ClassVar[Streaming] = Streaming.ROW
+    # The SQL form holds every record (a window or a sort), so DuckDB's memory grows with
+    # the input up to its limit while apply() stays bounded: it runs only on request.
+    sql_holds_all_rows: ClassVar[bool] = False
 
     def apply(self, rows: Iterable[Any], cfg: C) -> Iterator[Any]:
         """Transform ``rows`` (dicts) lazily."""

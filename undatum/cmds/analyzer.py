@@ -27,6 +27,7 @@ from pydantic import BaseModel
 
 from ..ai import AIService, get_ai_service, get_description, get_fields_info
 from ..common.command_utils import (
+    duckdb_can_decode,
     duckdb_read_csv_expr,
     get_iterable_options,
     iter_command_rows,
@@ -477,6 +478,13 @@ def analyze(
             filetype, compression
         )
         if engine in ("iterable", "python") or table_name or options.get("flatten_nested"):
+            use_duckdb = False
+        if (
+            use_duckdb
+            and engine == "auto"
+            and filetype in ("csv", "tsv")
+            and not duckdb_can_decode(filename, compression, encoding)
+        ):
             use_duckdb = False
 
         duckdb_failed = False

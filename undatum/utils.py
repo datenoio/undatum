@@ -4,6 +4,7 @@ This module provides helper functions for encoding detection, delimiter detectio
 file type identification, dictionary manipulation, and data type guessing.
 """
 
+import re
 from collections import OrderedDict
 from typing import Any
 
@@ -366,14 +367,29 @@ def guess_datatype(s: str | int | float | None, qd: Any) -> dict[str, Any]:
     return attrs
 
 
+# Longest value checked for a date: longer text is never a date and is the slowest to match.
+_DATE_MAX_LENGTH = 50
+# Letters and digits in one token (``c4ca42``, ``user105``) rule out a date, except for
+# ordinals, times and ISO 8601 joins such as ``1st``, ``10am``, ``02T10`` and ``00Z``.
+_ALNUM_TOKEN = re.compile(r"[0-9A-Za-z]+")
+_DATE_TOKEN = re.compile(r"[A-Za-z]+|\d+(?:st|nd|rd|th|am|pm|t\d+|z)?", re.IGNORECASE)
+
+
+def could_be_date(value: str) -> bool:
+    """Cheap test whether ``value`` may be a date; False means qddate need not be asked."""
+    if len(value) > _DATE_MAX_LENGTH or not any(c.isdigit() for c in value):
+        return False
+    return all(_DATE_TOKEN.fullmatch(token) for token in _ALNUM_TOKEN.findall(value))
+
+
 class TypeGuesser:
     """:func:`guess_datatype` for many values, with cheaper date detection.
 
-    Date matching (qddate) costs up to 0.5 ms per value, which dominated ``stats`` on text
-    columns. Results are cached per field and value; values without digits skip the date
-    check (every qddate pattern has a day or a year); and after ``date_probe`` checked values
-    of a field, dates are only looked for while at least half of them were dates. (Codes
-    such as hashes match a date pattern now and then.)
+    Date matching (qddate) takes 0.2 ms for a date but 30-60 ms for a non-date such as a
+    hash, an address or a sentence with numbers, which dominated ``stats`` on text columns.
+    Results are cached per field and value; only values that :func:`could_be_date` (short,
+    with a digit, no tokens like ``c4ca42``) are matched; and after ``date_probe`` checked
+    values of a field, dates are only looked for while at least half of them were dates.
 
     Args:
         qd: qddate ``DateParser`` (``None`` disables date detection).
@@ -381,7 +397,7 @@ class TypeGuesser:
         cache_size: Maximum number of cached ``(field, value)`` results.
     """
 
-    def __init__(self, qd: Any, date_probe: int = 1000, cache_size: int = 100_000) -> None:
+    def __init__(self, qd: Any, date_probe: int = 20, cache_size: int = 100_000) -> None:
         self.qd = qd
         self.date_probe = date_probe
         self.cache_size = cache_size
@@ -400,8 +416,8 @@ class TypeGuesser:
         probes = self._probes.get(field, 0)
         check_date = (
             self.qd is not None
-            and any(c.isdigit() for c in value)
             and (probes < self.date_probe or self._dates.get(field, 0) * 2 >= probes)
+            and could_be_date(value)
         )
         result = str(guess_datatype(value, self.qd if check_date else None)["base"])
         if check_date and result in ("date", "str", "empty"):

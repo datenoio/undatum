@@ -280,3 +280,15 @@ class TestStatsDuckDBEdgeCases:
         assert text.startswith("# Dataset Profile")
         assert "| Field |" in text
         assert "name" in text
+
+
+def test_malformed_jsonl_is_an_error_not_a_smaller_count(tmp_path):
+    """DuckDB used to skip unreadable JSON records; stats must fail like head and count."""
+    from typer.testing import CliRunner
+
+    from undatum.core import app
+
+    source = tmp_path / "bad.jsonl"
+    source.write_text('{"a": 1}\n{"a": 2\n{"a": 3}\n', encoding="utf8")
+    result = CliRunner().invoke(app, ["stats", str(source), "-O", "json"])
+    assert result.exit_code != 0

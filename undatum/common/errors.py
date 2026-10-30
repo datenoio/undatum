@@ -5,6 +5,8 @@ to ensure consistent, user-friendly error messages across all commands.
 """
 
 import builtins
+import re
+import shlex
 import sys
 from difflib import get_close_matches
 from pathlib import Path
@@ -340,6 +342,26 @@ def find_similar_field_names(
     return matches
 
 
+# iterabledata's error guidance shows its Python API; on the command line the same settings
+# are options.
+_PYTHON_HINT = re.compile(r"open_iterable\('[^']*', iterableargs=\{'(\w+)': '([^']*)'\}\)")
+_HINT_OPTIONS = {"delimiter": "--delimiter", "on_error": "--on-error", "format": "--format-in"}
+
+
+def cli_guidance(message: str) -> str:
+    """Rewrite iterabledata's ``open_iterable(...)`` hints in ``message`` as CLI options."""
+
+    def option(match: re.Match[str]) -> str:
+        name, value = match.group(1), match.group(2)
+        if name == "encoding":
+            # iterabledata always suggests utf-8, which is what just failed.
+            return "--encoding ENCODING (undatum sniff shows the detected encoding)"
+        flag = _HINT_OPTIONS.get(name)
+        return f"{flag} {shlex.quote(value)}" if flag else match.group(0)
+
+    return _PYTHON_HINT.sub(option, message)
+
+
 def format_error_message(error: Exception, verbose: bool = False) -> str:
     """Format an exception into a user-friendly error message.
 
@@ -355,7 +377,7 @@ def format_error_message(error: Exception, verbose: bool = False) -> str:
 
     # For non-UndatumError exceptions, provide user-friendly message
     error_type = type(error).__name__
-    error_msg = str(error)
+    error_msg = cli_guidance(str(error))
 
     # Map common Python exceptions to user-friendly messages
     if isinstance(error, FileNotFoundError):

@@ -27,5 +27,6 @@ class Reverser:
             ReverseConfig(),
             open_source(fromfile, options),
             get_option(options, "output"),
+            engine=get_option(options, "engine"),
         )
         logger.debug("reverse: wrote %d records", count)
