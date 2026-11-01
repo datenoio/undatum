@@ -86,7 +86,7 @@ jobs:
           fi
       - name: Attest build provenance
         if: inputs.attest
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: dist/${{ matrix.artifact }}
       - uses: actions/upload-artifact@v7
