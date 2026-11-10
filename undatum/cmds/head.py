@@ -23,7 +23,8 @@ class Head:
         """
         options = options or {}
         validate_file_path(fromfile, check_read=True)
-        cfg = HeadConfig(limit=int(get_option(options, "n") or 10))
+        n = get_option(options, "n")
+        cfg = HeadConfig(limit=int(10 if n is None else n))
         count = run_steps(
             [*where_steps(options), ("head", cfg)],
             open_source(fromfile, options),

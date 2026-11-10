@@ -22,6 +22,7 @@ class Tail:
         """
         options = options or {}
         validate_file_path(fromfile, check_read=True)
-        cfg = TailConfig(limit=int(get_option(options, "n") or 10))
+        n = get_option(options, "n")
+        cfg = TailConfig(limit=int(10 if n is None else n))
         count = run("tail", cfg, open_source(fromfile, options), get_option(options, "output"))
         logger.debug("tail: wrote %d records", count)
