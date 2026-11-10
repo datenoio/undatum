@@ -43,6 +43,24 @@ class TestTail:
         assert out.read_text().splitlines() == ['{"id":3}', '{"id":4}', '{"id":5}']
 
 
+class TestHeadTailZeroLimit:
+    """An explicit ``n`` of 0 must select zero records, not the default 10."""
+
+    def test_head_zero_limit(self, tmp_path):
+        source = tmp_path / "in.jsonl"
+        source.write_text("".join(f'{{"id": {i}}}\n' for i in range(1, 6)), encoding="utf8")
+        out = tmp_path / "out.jsonl"
+        Head().head(str(source), {"n": 0, "output": str(out), "engine": "python"})
+        assert out.read_text(encoding="utf8").splitlines() == []
+
+    def test_tail_zero_limit(self, tmp_path):
+        source = tmp_path / "in.jsonl"
+        source.write_text("".join(f'{{"id": {i}}}\n' for i in range(1, 6)), encoding="utf8")
+        out = tmp_path / "out.jsonl"
+        Tail().tail(str(source), {"n": 0, "output": str(out)})
+        assert out.read_text(encoding="utf8").splitlines() == []
+
+
 class TestTableFormatter:
     """Test TableFormatter class."""
 
