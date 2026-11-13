@@ -11,7 +11,7 @@ repos:
 
   # Keep rev equal to the ruff pin in pyproject.toml (checked by scripts/check_tool_versions.py).
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.17.1
+    rev: v0.17.4
     hooks:
       - id: ruff
         args: [--fix]
