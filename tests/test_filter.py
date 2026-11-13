@@ -98,6 +98,21 @@ class TestTranslateFilterToSql:
     def test_translate_double_quoted_string(self):
         assert translate_filter_to_sql('status == "active"') == "\"status\" = 'active'"
 
+    def test_translate_decimal_number(self):
+        """Issue #128: a decimal literal is a number, not a dotted field."""
+        assert translate_filter_to_sql("price > 9.99") == 'TRY_CAST("price" AS DOUBLE) > 9.99'
+        assert translate_filter_to_sql("delta >= -0.5") == 'TRY_CAST("delta" AS DOUBLE) >= -0.5'
+
+    def test_translate_string_with_dot_or_keyword(self):
+        """Issue #128: dots and keywords inside quoted strings are literal text."""
+        assert (
+            translate_filter_to_sql("email == 'alice@example.com'")
+            == "\"email\" = 'alice@example.com'"
+        )
+        assert translate_filter_to_sql('note == "sign in; like new"') == (
+            "\"note\" = 'sign in; like new'"
+        )
+
 
 class TestMatchFilterExpressions:
     """Test comparison/boolean expressions used by commands."""
@@ -124,3 +139,24 @@ class TestMatchFilterExpressions:
         record = {"name": "Alice"}
         with pytest.raises(ValueError, match="undatum sql"):
             match_filter(record, 'match "Al.*" name')
+
+    def test_decimal_number(self):
+        """Issue #128: ``price > 9.99`` compares numbers."""
+        assert match_filter({"price": "10.5"}, "price > 9.99") is True
+        assert match_filter({"price": "9.99"}, "price > 9.99") is False
+        assert match_filter({"price": 9.99}, "price == 9.99") is True
+        assert match_filter({"delta": "-1"}, "delta < -0.5") is True
+
+    def test_string_with_dot(self):
+        """Issue #128: a quoted string may contain dots."""
+        record = {"email": "alice@example.com"}
+        assert match_filter(record, "email == 'alice@example.com'") is True
+        assert match_filter(record, 'email != "bob@example.com"') is True
+
+    def test_keywords_inside_strings(self):
+        record = {"note": "sign in; like new"}
+        assert match_filter(record, "note == 'sign in; like new'") is True
+
+    def test_dotted_field_still_rejected(self):
+        with pytest.raises(ValueError, match="undatum sql"):
+            match_filter({"user": {"name": "x"}}, "user.name == 'x'")

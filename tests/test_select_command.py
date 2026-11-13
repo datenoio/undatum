@@ -205,3 +205,32 @@ def test_uniq_json_from_extension(sample_csv_file, tmp_path):
     assert isinstance(payload, list)
     cities = {row["city"] for row in payload}
     assert cities == {"New York", "London"}
+
+
+@pytest.mark.parametrize("engine", ["iterable", "duckdb"])
+@pytest.mark.parametrize(
+    ("filter_expr", "expected"),
+    [
+        ("price > 9.99", ["apple"]),
+        ("email == 'alice@example.com'", ["apple"]),
+        ("price <= 3.0 OR email == 'bob@example.com'", ["banana", "cherry"]),
+    ],
+)
+def test_select_filter_decimals_and_dotted_strings(tmp_path, engine, filter_expr, expected):
+    """Issue #128: decimal numbers and quoted strings with dots filter on every engine."""
+    if engine == "duckdb":
+        pytest.importorskip("duckdb")
+    source = tmp_path / "fruit.csv"
+    source.write_text(
+        "name,price,email\n"
+        "apple,10.5,alice@example.com\n"
+        "banana,9.99,bob@example.com\n"
+        "cherry,3,carol@example.org\n",
+        encoding="utf8",
+    )
+    output_file = tmp_path / f"out_{engine}.jsonl"
+    Selector().select(
+        str(source),
+        {"fields": "name", "filter": filter_expr, "output": str(output_file), "engine": engine},
+    )
+    assert [row["name"] for row in read_jsonl(str(output_file))] == expected
