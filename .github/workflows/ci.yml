@@ -30,7 +30,7 @@ jobs:
       run: python scripts/check_tool_versions.py
     - name: Runtime dependencies have version bounds
       run: python scripts/check_dependency_bounds.py
-    - uses: astral-sh/setup-uv@v6
+    - uses: astral-sh/setup-uv@v7
     - name: uv.lock matches pyproject.toml
       run: uv lock --check
     - name: Ruff lint
@@ -80,7 +80,7 @@ jobs:
     - uses: actions/setup-python@v7
       with:
         python-version: "3.12"
-    - uses: astral-sh/setup-uv@v6
+    - uses: astral-sh/setup-uv@v7
     - name: Install locked dependencies
       run: uv sync --frozen --extra api --extra plot --extra dev --python 3.12
     - name: Run every bash example under docs/docs (blocks marked norun are skipped)
@@ -115,7 +115,7 @@ jobs:
       uses: actions/setup-python@v7
       with:
         python-version: ${{ matrix.python-version }}
-    - uses: astral-sh/setup-uv@v6
+    - uses: astral-sh/setup-uv@v7
     - name: Install locked dependencies
       run: uv sync --frozen --extra api --extra dev --python ${{ matrix.python-version }}
     - name: DuckDB encodings extension for the non-UTF-8 CSV tests
@@ -142,7 +142,7 @@ jobs:
     - uses: actions/setup-python@v7
       with:
         python-version: "3.12"
-    - uses: astral-sh/setup-uv@v6
+    - uses: astral-sh/setup-uv@v7
     - name: Install locked dependencies
       run: uv sync --frozen --extra api --extra dev --python 3.12
     - name: Row commands stay under 300 MB and do not grow with the input
@@ -155,7 +155,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v7
-    - uses: astral-sh/setup-uv@v6
+    - uses: astral-sh/setup-uv@v7
     - name: Set up Python
       uses: actions/setup-python@v7
       with:
@@ -179,7 +179,7 @@ jobs:
     - uses: actions/setup-python@v7
       with:
         python-version: "3.12"
-    - uses: astral-sh/setup-uv@v6
+    - uses: astral-sh/setup-uv@v7
     - name: Install locked dependencies
       run: uv sync --frozen --extra api --extra dev --python 3.12
     - name: Upgrade typer alone to the newest version pyproject.toml allows
