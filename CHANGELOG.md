@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **iterabledata 1.2** — `iterabledata>=1.1.0,<1.3`. Its fixes reach undatum: CSV files with a UTF-8 BOM, delimiter detection in zstandard-compressed CSV, PX and Shapefile encodings, zipped Shapefiles, GML members and JSON files whose root is an object.
+
 - **Homebrew tap** — `brew install datenoio/tap/undatum` installs undatum with its own Python 3.13 and shell completions for bash, zsh and fish ([datenoio/homebrew-tap](https://github.com/datenoio/homebrew-tap)). The formula installs the release's source distribution into a virtualenv without Homebrew's site-packages, and the release workflow updates it.
 
 ### Changed
