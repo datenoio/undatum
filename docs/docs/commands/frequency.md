@@ -59,7 +59,7 @@ undatum frequency [OPTIONS] INPUT_FILE
 | `-O`, `--format-out` TEXT | Output format: 'csv' (default) or 'json' (also inferred from --output). |  |
 | `--json` | Print the result as one JSON document (same as --format-out json). |  |
 
-Deprecated spellings (removed in 2.0): `--filetype` → `--format-in`.
+Deprecated spellings (removed in 3.0): `--filetype` → `--format-in`.
 
 See also [shared options](/commands/shared-options).
 <!-- END GENERATED: reference -->

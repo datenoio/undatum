@@ -86,7 +86,7 @@ undatum doc [OPTIONS] INPUT_FILE
 | `--max-nested-depth` INTEGER | With --flatten-nested, maximum nest depth to unfold (engine default 5). |  |
 | `--keep-nested-parents` / `--no-keep-nested-parents` | With --flatten-nested, keep parent dict/array fields alongside dotted children. | `--keep-nested-parents` |
 
-Deprecated spellings (removed in 2.0): `--format` → `--format-out`.
+Deprecated spellings (removed in 3.0): `--format` → `--format-out`.
 
 See also [shared options](/commands/shared-options).
 <!-- END GENERATED: reference -->

@@ -103,7 +103,7 @@ undatum ai doc [OPTIONS] FILENAME
 | `--base-url` TEXT | Base URL override (local providers). |  |
 | `--verbose` / `--no-verbose` | Enable verbose logging output. | `--no-verbose` |
 
-Deprecated spellings (removed in 2.0): `--format` → `--format-out`.
+Deprecated spellings (removed in 3.0): `--format` → `--format-out`.
 
 ### `undatum ai filter`
 

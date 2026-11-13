@@ -67,7 +67,7 @@ undatum head [OPTIONS] INPUT_FILE
 | `--where` TEXT | Keep records where this SQL condition is true (DuckDB syntax), e.g. "amount &gt; 100 AND city = 'Berlin'". Text values are typed automatically. |  |
 | `-O`, `--format-out` TEXT | Output format (e.g. csv, jsonl, parquet). Defaults to the --output extension, or to the input's text format on stdout. |  |
 
-Deprecated spellings (removed in 2.0): `--n` → `--limit`.
+Deprecated spellings (removed in 3.0): `--n` → `--limit`.
 
 See also [shared options](/commands/shared-options).
 <!-- END GENERATED: reference -->

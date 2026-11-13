@@ -175,7 +175,7 @@ undatum api openapi [OPTIONS]
 | `-o`, `--output` TEXT | Write OpenAPI schema to this path. |  |
 | `-O`, `--format-out` TEXT | Output format: json or yaml (default: json). |  |
 
-Deprecated spellings (removed in 2.0): `--format` → `--format-out`.
+Deprecated spellings (removed in 3.0): `--format` → `--format-out`.
 
 See also [shared options](/commands/shared-options).
 <!-- END GENERATED: reference -->

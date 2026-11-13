@@ -60,7 +60,7 @@ undatum sniff [OPTIONS] INPUT_FILE
 | `--json` | Print the result as one JSON document (same as --format-out json). |  |
 | `--cache` / `--no-cache` | Reuse the result kept in ~/.undatum/cache for an unchanged file (default: on; UNDATUM_CACHE=0 or 'defaults: cache: false' in a config file turn it off). |  |
 
-Deprecated spellings (removed in 2.0): `--format` → `--format-out`.
+Deprecated spellings (removed in 3.0): `--format` → `--format-out`.
 
 See also [shared options](/commands/shared-options).
 <!-- END GENERATED: reference -->

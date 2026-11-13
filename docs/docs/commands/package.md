@@ -113,7 +113,7 @@ undatum package create [OPTIONS] INPUT_FILES...
 | `--keep-nested-parents` / `--no-keep-nested-parents` | With --flatten-nested, keep parent dict/array fields alongside dotted children. | `--keep-nested-parents` |
 | `--verbose` / `--no-verbose` | Enable verbose logging output. | `--no-verbose` |
 
-Deprecated spellings (removed in 2.0): `--objects-limit` → `--limit`.
+Deprecated spellings (removed in 3.0): `--objects-limit` → `--limit`.
 
 ### `undatum package add-resource`
 
@@ -154,7 +154,7 @@ undatum package add-resource [OPTIONS] PACKAGE_FILE INPUT_FILES...
 | `--keep-nested-parents` / `--no-keep-nested-parents` | With --flatten-nested, keep parent dict/array fields alongside dotted children. | `--keep-nested-parents` |
 | `--verbose` / `--no-verbose` | Enable verbose logging output. | `--no-verbose` |
 
-Deprecated spellings (removed in 2.0): `--objects-limit` → `--limit`.
+Deprecated spellings (removed in 3.0): `--objects-limit` → `--limit`.
 
 ### `undatum package validate`
 

@@ -52,7 +52,7 @@ undatum extract [OPTIONS] INPUT_FILES...
 | `--flatten` / `--no-flatten` | Flatten multiple tables into one output table. | `--no-flatten` |
 | `--verbose` / `--no-verbose` | Enable verbose logging output. | `--no-verbose` |
 
-Deprecated spellings (removed in 2.0): `--output-format` → `--format-out`.
+Deprecated spellings (removed in 3.0): `--output-format` → `--format-out`.
 
 See also [shared options](/commands/shared-options).
 <!-- END GENERATED: reference -->

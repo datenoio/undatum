@@ -67,7 +67,7 @@ undatum dedup [OPTIONS] INPUT_FILE
 | `--keep-nested-parents` / `--no-keep-nested-parents` | With --flatten-nested, keep parent dict/array fields alongside dotted children. | `--keep-nested-parents` |
 | `-O`, `--format-out` TEXT | Output format (e.g. csv, jsonl, parquet). Defaults to the --output extension, or to the input's text format on stdout. |  |
 
-Deprecated spellings (removed in 2.0): `--filetype` → `--format-in`.
+Deprecated spellings (removed in 3.0): `--filetype` → `--format-in`.
 
 See also [shared options](/commands/shared-options).
 <!-- END GENERATED: reference -->

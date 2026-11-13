@@ -91,7 +91,7 @@ undatum diff [OPTIONS] FILE1 FILE2
 | `--schema` | Compare the schemas (added, removed, retyped fields, renames) instead of rows. |  |
 | `--fail-on` TEXT | With --schema: exit with 1 on these changes (added, removed, type, nullability, any). |  |
 
-Deprecated spellings (removed in 2.0): `--format` → `--format-out`, `--output-format` → `--format-out`.
+Deprecated spellings (removed in 3.0): `--format` → `--format-out`, `--output-format` → `--format-out`.
 
 See also [shared options](/commands/shared-options).
 <!-- END GENERATED: reference -->

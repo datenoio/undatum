@@ -39,7 +39,7 @@ description: "Practical defaults for conversion, validation, and pipelines"
 - Parse `--json` output (it carries a versioned `schema` id) rather than text output, and rely
   on the documented exit codes.
 - Run `undatum migrate-script --check` on your scripts in CI to catch deprecated spellings
-  before 2.0 removes them.
+  before 3.0 removes them.
 
 ## Configuration
 

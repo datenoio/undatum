@@ -5,10 +5,11 @@ description: "Deprecated commands and options, their replacements, and how to up
 # Migrating to 2.0
 
 The next releases unify undatum's command-line vocabulary. Old command and option names
-keep working with a warning on stderr until 2.0, which removes them:
+keep working with a warning on stderr until 3.0, which removes them (2.0 kept them, so
+scripts written for 1.x still run):
 
 ```text
-Warning: Option --filetype is deprecated; use --format-in (removal in 2.0) [undatum count]
+Warning: Option --filetype is deprecated; use --format-in (removal in 3.0) [undatum count]
 ```
 
 `undatum migrate-script` rewrites scripts, Makefiles, CI files and pipeline YAML for you:

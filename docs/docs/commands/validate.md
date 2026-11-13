@@ -260,7 +260,7 @@ undatum validate [OPTIONS] [INPUT_FILE]
 | `--list-rules` | List the built-in rules (format: ...) and exit. |  |
 | `-e`, `--engine` [auto\|duckdb\|python] | Processing engine: auto (default), duckdb, or python. |  |
 
-Deprecated spellings (removed in 2.0): `--output-format` → `--format-out`.
+Deprecated spellings (removed in 3.0): `--output-format` → `--format-out`.
 
 See also [shared options](/commands/shared-options).
 <!-- END GENERATED: reference -->
