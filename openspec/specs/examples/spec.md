@@ -70,7 +70,9 @@ The system SHALL provide a library of common recipes for typical data processing
 - **AND** recipes for querying databases, loading data, etc.
 
 ### Requirement: Recipe Execution
-The system SHALL execute recipes with proper variable substitution and error handling.
+The system SHALL execute recipes with proper variable substitution and error handling, and SHALL
+run each command as an argument list without a shell so that substituted values cannot inject
+commands.
 
 #### Scenario: Execute recipe
 - **WHEN** user runs a recipe
@@ -90,4 +92,8 @@ The system SHALL execute recipes with proper variable substitution and error han
 - **THEN** the system SHALL show commands that would be executed
 - **AND** show variable values
 - **AND** not execute any commands
+
+#### Scenario: Shell metacharacters in a variable
+- **WHEN** a variable value is `data.csv; rm -rf ~`
+- **THEN** the value is passed to the command as one literal argument and no shell runs it
 

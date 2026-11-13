@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased](https://github.com/datenoio/undatum/compare/v2.0.0...HEAD)
 
+### Fixed
+
+- **typer below 0.29** — `typer>=0.26,<0.29`. typer 0.29 removed the `type` attribute of options, which undatum reads when it applies its option names, so every command and `--help` stopped with `Internal error (AttributeError): 'TyperOption' object has no attribute 'type'` (exit code 4) on a new install of 2.0.0.
+
 ## [2.0.0](https://github.com/datenoio/undatum/compare/v1.9.1...v2.0.0) - 2026-10-30
 
 Upgrading: Python 3.11 or newer is required, and undatum now uses DuckDB 2.0. On Python 3.10 pip keeps installing 1.9.x.

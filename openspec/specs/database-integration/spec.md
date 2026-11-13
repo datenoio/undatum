@@ -101,3 +101,26 @@ Database queries SHALL support streaming for large result sets.
 - **AND** provide progress indication
 - **AND** handle memory efficiently
 
+### Requirement: Elasticsearch Client Compatibility
+The Elasticsearch loader SHALL construct its client with arguments supported by the declared
+elasticsearch-py major versions and SHALL pass the timeout as a request timeout.
+
+#### Scenario: Load with elasticsearch-py 9
+- **WHEN** elasticsearch-py 9.x is installed and user runs an Elasticsearch load with a timeout
+- **THEN** the client is created without a `TypeError` and requests use that timeout
+
+### Requirement: ClickHouse Load Target
+The `db load` command SHALL load files into ClickHouse in batches, optionally creating the target
+table from the inferred schema.
+
+#### Scenario: Load Parquet into ClickHouse
+- **WHEN** user runs `undatum db load events.parquet --db clickhouse://host/db --table events --create-table`
+- **THEN** the table is created with a MergeTree engine and all rows are inserted
+
+### Requirement: MS SQL Server Load Target
+The `db load` command SHALL load files into MS SQL Server with append, replace and upsert modes.
+
+#### Scenario: Upsert into SQL Server
+- **WHEN** user runs `undatum db load orders.csv --db mssql://user:pass@host/db --table orders --mode upsert --upsert-key id`
+- **THEN** existing rows with matching `id` are updated and new rows are inserted
+

@@ -1,4 +1,4 @@
-## ADDED Requirements
+## MODIFIED Requirements
 
 ### Requirement: Offline DuckDB Extensions
 undatum SHALL provide `undatum extensions install` to download the DuckDB extensions it uses
@@ -12,12 +12,17 @@ download extensions while they run. The `-full` container image SHALL include th
   `/opt/ext` to an offline machine and sets `UNDATUM_DUCKDB_EXTENSION_DIR=/opt/ext`
 - **THEN** `undatum extensions list` on the offline machine shows the four extensions as installed
 
-#### Scenario: Extension not installed
+#### Scenario: Extension preinstalled
+- **WHEN** `UNDATUM_DUCKDB_EXTENSION_DIR` points to a directory that contains the extension
+- **AND** the machine has no network access
+- **THEN** the command loads the extension from that directory and succeeds
+
+#### Scenario: Extension missing offline
 - **WHEN** a command could use an extension that is not installed
 - **THEN** it does not download the extension
 - **AND** it uses the Python engine, or stops with exit code 2 naming
   `undatum extensions install <name>`
 
-#### Scenario: Full container image
+#### Scenario: Release artifacts
 - **WHEN** a user runs the `ghcr.io/datenoio/undatum:<version>-full` image
 - **THEN** `undatum extensions list` shows the four extensions as installed

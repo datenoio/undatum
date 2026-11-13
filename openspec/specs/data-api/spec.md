@@ -63,12 +63,18 @@ them immediately without requiring a persisted config file.
 
 ### Requirement: API Key Authentication
 The system SHALL support optional API-key authentication for `api serve` and `api run` when
-configured via `--api-key` or the `UNDATUM_API_KEY` environment variable.
+configured via `--api-key` or the `UNDATUM_API_KEY` environment variable. The key SHALL be
+accepted only in the `X-API-Key` header, compared in constant time, and never written to logs.
 
 #### Scenario: Reject unauthenticated request
 - **WHEN** the server is started with an API key configured
 - **AND** a client omits the key
 - **THEN** the server responds with HTTP 401
+
+#### Scenario: Key in query string ignored
+- **WHEN** a client sends the correct key only as `?api_key=...`
+- **THEN** the server responds with HTTP 401
+- **AND** the access log line does not contain the key
 
 ### Requirement: CORS Configuration
 The system SHALL support optional CORS origins for browser clients via `--cors-origins`.
@@ -98,4 +104,26 @@ DuckDB-backed endpoints.
 #### Scenario: Reject unsupported remote URIs
 - **WHEN** a config resource path is an HTTP URL or another non-cloud URI
 - **THEN** the system rejects the config with an error naming supported schemes
+
+### Requirement: Per-Resource Pagination Limits
+Each Data API resource SHALL enforce its own configured `default_limit` and `max_limit`
+independently of other resources in the same configuration.
+
+#### Scenario: Two resources with different limits
+- **WHEN** resource `a` has `max_limit: 10` and resource `b` has `max_limit: 1000`
+- **AND** a client requests `/a?limit=50`
+- **THEN** the server rejects the request for exceeding 10
+- **AND** a request to `/b?limit=50` succeeds
+
+### Requirement: Non-Blocking Query Execution
+The Data API SHALL execute DuckDB queries outside the event loop with a configurable per-request
+timeout so that one slow request does not block other clients.
+
+#### Scenario: Concurrent requests
+- **WHEN** one client runs a slow filtered query and another requests a small page
+- **THEN** the small page is served without waiting for the slow query
+
+#### Scenario: Query timeout
+- **WHEN** a query exceeds the configured timeout
+- **THEN** the server responds with HTTP 504 and cancels the query
 
