@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterator, Mapping, Sequence
-from typing import Any
+from typing import Any, get_args
 
 from ..common.errors import EXIT_CODES, UndatumError
 from .capabilities import CAPABILITIES
@@ -85,14 +85,51 @@ def _help_and_examples(command: Any) -> tuple[str, list[str]]:
     return "\n".join(lines).strip(), []
 
 
+def param_type(param: Any) -> tuple[str, list[str] | None]:
+    """Type name (lower case) and choices of a command parameter.
+
+    Every reader of parameter types goes through this function, since typer releases
+    differ: up to 0.28 a parameter has a Click ``type`` (``name`` is ``str``, ``text``,
+    ``int``, ``integer``, ...); typer 0.29 removed it and describes the declared annotation
+    in ``type_descriptor`` instead (``name`` is then the annotation's, such as ``str``).
+    Options given choices by :func:`undatum.cli.conventions.apply_conventions` carry them
+    in ``_undatum_choices``.
+
+    Args:
+        param: A parameter of a command built by typer.
+
+    Returns:
+        ``(name, choices)``; ``choices`` is ``None`` unless the value is one of a fixed set.
+    """
+    choices = getattr(param, "_undatum_choices", None)
+    click_type = getattr(param, "type", None)
+    if click_type is not None:
+        name = click_type.name or ""
+        choices = choices or getattr(click_type, "choices", None)
+    else:
+        descriptor = param.type_descriptor
+        annotation = descriptor.annotation
+        if descriptor.is_list and get_args(annotation):
+            annotation = get_args(annotation)[0]  # multiple=True: the type of one value
+        if descriptor.is_file:
+            name = "filename"
+        elif descriptor.is_path:
+            name = {"dir": "directory"}.get(descriptor.path_type, descriptor.path_type)
+        else:
+            name = getattr(annotation, "__name__", None) or str(annotation)
+        choices = choices or descriptor.choices
+    if not choices:
+        return name.lower(), None
+    return name.lower(), [str(getattr(choice, "value", choice)) for choice in choices]
+
+
 def _type(param: Any) -> tuple[str, list[str] | None]:
     """JSON type and choices of a parameter."""
-    choices = getattr(param.type, "choices", None)
+    name, choices = param_type(param)
     if choices:
-        return "string", [str(getattr(choice, "value", choice)) for choice in choices]
+        return "string", choices
     if getattr(param, "count", False):
         return "integer", None
-    name = (param.type.name or "").lower()
     if getattr(param, "is_flag", False) or name in ("boolean", "bool"):
         return "boolean", None
     return JSON_TYPES.get(name, "string"), None
