@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased](https://github.com/datenoio/undatum/compare/v2.0.1...HEAD)
 
+### Added
+
+- **Homebrew tap** — `brew install datenoio/tap/undatum` installs undatum with its own Python 3.13 and shell completions for bash, zsh and fish ([datenoio/homebrew-tap](https://github.com/datenoio/homebrew-tap)). The formula installs the release's source distribution into a virtualenv without Homebrew's site-packages, and the release workflow updates it.
+
 ### Changed
 
 - **CI tests the newest typer** — the `newest-typer` job runs the tests and regenerates the CLI reference with the locked dependencies except typer, which it upgrades to the newest version `pyproject.toml` allows, so a typer release that breaks undatum fails CI instead of new installs.

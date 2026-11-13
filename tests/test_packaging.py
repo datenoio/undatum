@@ -39,8 +39,11 @@ def test_homebrew_formula_renders():
     formula = module.render("1.8.0", url, sha256)
     assert 'url "https://files/undatum-1.8.0.tar.gz"' in formula
     assert 'sha256 "abc"' in formula
-    assert '"undatum==1.8.0"' in formula and "undatum 1.8.0" in formula
     assert "{{" not in formula
+    # Installs the downloaded sdist into an isolated virtualenv; see packaging/homebrew/.
+    assert "system_site_packages: false" in formula and "buildpath" in formula
+    assert "preserve_rpath" in formula
+    assert "shell_parameter_format: :typer" in formula
 
 
 def _base_dependencies() -> dict[str, str]:

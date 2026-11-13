@@ -26,12 +26,16 @@ Dependencies are declared in `pyproject.toml` and will be installed automaticall
 Preferred paths:
 
 ```bash norun
+brew install datenoio/tap/undatum
+# or
 brew install pipx && pipx install undatum
 # or
 uv tool install undatum
 ```
 
-A Homebrew tap is planned (`brew install datenoio/tap/undatum`); until it exists, use `pipx` or `uv` on macOS.
+The [datenoio tap](https://github.com/datenoio/homebrew-tap) formula installs undatum with
+its own Python 3.13 and shell completions for bash, zsh and fish; it installs the core
+package without extras. To add extras, use `pipx` or `uv` (`uv tool install "undatum[all]"`).
 
 Release tags publish **PyInstaller single-file binaries** (Linux, macOS, Windows) on the [GitHub Releases](https://github.com/datenoio/undatum/releases) page (Actions artifacts on the tag workflow). These are ops-oriented; `pipx`/`uv` remain the supported install paths for most users.
 
@@ -39,7 +43,7 @@ A man page ships with the package (`man undatum` after install, or `make man` to
 
 ### Container image
 
-Starting with the next release, every version is published as a container image (core
+Every release is published as a container image (core
 install and a `-full` variant with the common extras: API, web UI, MCP, cloud storage,
 PostgreSQL, MySQL, ClickHouse, Elasticsearch, plots):
 
@@ -56,9 +60,9 @@ entrypoint. Build it yourself with `docker build -t undatum .` (`--build-arg EXT
 | Channel | Command | Status |
 |---------|---------|--------|
 | PyPI (uv / pipx / pip) | `uv tool install undatum` | available |
-| Container | `docker run ghcr.io/datenoio/undatum --version` | from the next release |
-| Release binaries | download from GitHub Releases | from the next release |
-| Homebrew tap | `brew install datenoio/tap/undatum` | planned (the tap repository is not set up yet) |
+| Container | `docker run ghcr.io/datenoio/undatum --version` | available |
+| Release binaries | download from GitHub Releases | available |
+| Homebrew tap | `brew install datenoio/tap/undatum` | available (from 2.0.1) |
 | conda-forge | `conda install -c conda-forge undatum` | planned (waits for iterabledata on conda-forge) |
 
 The same smoke test works for every channel: `undatum --version` and
