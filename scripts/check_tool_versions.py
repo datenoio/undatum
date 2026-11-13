@@ -1,5 +1,8 @@
 """Fail when the ruff version drifts between pyproject.toml, pre-commit and CI.
 
+CI installs the version pinned in pyproject.toml; a literal ``ruff==X`` in ci.yml is
+still compared, so a hard-coded pin cannot drift unnoticed.
+
 Usage:
     python scripts/check_tool_versions.py
 """
