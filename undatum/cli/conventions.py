@@ -69,6 +69,8 @@ DEPRECATED_COMMANDS: dict[str, str] = {
     "scheme": "schema --format cerberus",
 }
 
+ENGINES = ("auto", "duckdb", "python")
+ENGINE_ALIASES = {"iterable": "python"}
 ENGINE_HELP = "Processing engine: auto (default), duckdb, or python."
 
 # Commands that write records through the shared writer; those without their own
@@ -99,42 +101,52 @@ FORMAT_OUT_HELP = (
 )
 
 
-def _engine_type(current_type: Any) -> Any:
-    """Build an ``--engine`` parameter type on the Click flavour the command uses."""
-    param_type = next(c for c in type(current_type).__mro__ if c.__name__ == "ParamType")
+def _engine_callback(callback: Any) -> Any:
+    """Wrap the callback of an ``--engine`` option so it gets a normalized, checked value.
 
-    class EngineType(param_type):  # type: ignore[misc, valid-type]
-        name = "engine"
-        choices = ("auto", "duckdb", "python")
+    A callback rather than a parameter type: typer 0.29 builds the type of a parameter
+    from its annotation and no longer has a ``type`` attribute to replace.
+    """
+    import typer
 
-        def convert(self, value, param, ctx):
-            if value is None:
-                return None
-            normalized = str(value).strip().lower()
-            normalized = {"iterable": "python"}.get(normalized, normalized)
-            if normalized not in self.choices:
-                self.fail(f"'{value}' is not one of: auto, duckdb, python.", param, ctx)
-            return normalized
+    def normalize(ctx: Any, param: Any, value: Any) -> Any:
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            normalized = ENGINE_ALIASES.get(normalized, normalized)
+            if normalized not in ENGINES:
+                raise typer.BadParameter(
+                    f"'{value}' is not one of: {', '.join(ENGINES)}.", ctx=ctx, param=param
+                )
+            value = normalized
+        return value if callback is None else callback(ctx, param, value)
 
-        def get_metavar(self, *args, **kwargs):
-            return "[auto|duckdb|python]"
-
-    return EngineType()
+    return normalize
 
 
-def _format_out_option(template: Any, with_short: bool) -> Any:
-    """Create a ``--format-out`` option of the same Click flavour as ``template``.
+def _format_out_option(with_short: bool) -> Any:
+    """Create a ``--format-out`` option, declared and built by typer like any other option.
 
     The value is consumed by the root group before parsing (``expose_value=False``), so
     command functions do not need a parameter for it.
     """
+    import typer
+    import typer.main
+
     names = ["--format-out", "-O"] if with_short else ["--format-out"]
-    option_cls = type(template)
-    kwargs = {"expose_value": False, "help": FORMAT_OUT_HELP, "metavar": "FORMAT"}
-    try:
-        return option_cls(param_decls=names, **kwargs)  # TyperOption (keyword-only)
-    except TypeError:  # pragma: no cover - plain Click options
-        return option_cls(names, **kwargs)
+    declaration = typer.Typer(add_completion=False)
+
+    @declaration.command()
+    def command(
+        format_out: str | None = typer.Option(
+            None, *names, help=FORMAT_OUT_HELP, metavar="FORMAT", show_default=False
+        ),
+    ) -> None:
+        """Declare the option."""
+
+    built = typer.main.get_command(declaration)
+    option = next(param for param in built.params if param.name == "format_out")
+    option.expose_value = False
+    return option
 
 
 def _warn(message: str) -> None:
@@ -186,11 +198,14 @@ def apply_conventions(command: Any, path: str) -> None:
 
     for param in params:
         if "--engine" in param.opts:
-            param.type = _engine_type(param.type)
+            param.callback = _engine_callback(param.callback)
+            param.metavar = "[" + "|".join(ENGINES) + "]"
             param.help = ENGINE_HELP
+            # Read by undatum.cli.manifest.param_type(): the declared type is a plain string.
+            param._undatum_choices = ENGINES
 
     if path in RECORD_WRITERS and "--format-out" not in taken and params:
-        command.params.append(_format_out_option(params[0], "-O" not in taken))
+        command.params.append(_format_out_option("-O" not in taken))
 
     command._undatum_aliases = aliases
 

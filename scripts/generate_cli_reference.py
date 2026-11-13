@@ -29,7 +29,7 @@ logging.disable(logging.CRITICAL)
 import typer.main  # noqa: E402
 
 from undatum.cli.capabilities import CAPABILITIES  # noqa: E402
-from undatum.cli.manifest import walk  # noqa: E402
+from undatum.cli.manifest import param_type, walk  # noqa: E402
 from undatum.core import app  # noqa: E402
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -88,10 +88,9 @@ TYPE_NAMES = {
 
 
 def _type_name(param: Any) -> str:
-    choices = getattr(param.type, "choices", None)
+    name, choices = param_type(param)
     if choices:
-        return "[" + "|".join(str(c) for c in choices) + "]"
-    name = (param.type.name or "").lower()
+        return "[" + "|".join(choices) + "]"
     return TYPE_NAMES.get(name, name.upper())
 
 

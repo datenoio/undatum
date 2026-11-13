@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased](https://github.com/datenoio/undatum/compare/v2.0.1...HEAD)
 
+### Fixed
+
+- **typer 0.29 is supported** — `typer>=0.26,<1` again; 2.0.1 kept typer below 0.29. typer 0.29 builds option types from annotations and removed the `type` attribute that undatum replaced for `--engine`. `--engine` is now normalized by a callback, and `undatum commands --json`, `--tools` and the CLI reference read option types the same way on typer 0.26 to 0.29.
+
 ## [2.0.1](https://github.com/datenoio/undatum/compare/v2.0.0...v2.0.1) - 2026-11-13
 
 Upgrading: `pip install -U undatum` also replaces typer 0.29 with 0.28.
