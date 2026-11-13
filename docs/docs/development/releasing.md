@@ -35,6 +35,7 @@ from there as a check, without touching PyPI.
 | publish-testpypi / verify-testpypi | release candidates only |
 | publish-pypi | final releases; the `pypi` environment can require a manual approval |
 | github-release | GitHub release with notes from the commits, the distributions and binaries |
+| homebrew | renders `packaging/homebrew/undatum.rb.in`, installs and tests it on macOS and commits it to [datenoio/homebrew-tap](https://github.com/datenoio/homebrew-tap); runs when the `HOMEBREW_TAP_REPO` variable is set and needs the `HOMEBREW_TAP_TOKEN` secret (contents: write on the tap) |
 
 ## Versioning policy
 

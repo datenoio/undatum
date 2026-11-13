@@ -74,6 +74,8 @@ Dependencies are declared in `pyproject.toml` and will be installed automaticall
 ### macOS
 
 ```bash
+brew install datenoio/tap/undatum
+# or
 brew install pipx && pipx install undatum
 # or
 uv tool install undatum
@@ -92,7 +94,7 @@ docker run --rm -v "$PWD:/data" ghcr.io/datenoio/undatum convert data.csv data.p
 ```
 
 `:<version>` and `:latest` hold the core install, `:<version>-full` and `:latest-full` add the
-common extras. A Homebrew tap and a conda-forge package are planned; see the
+common extras. A conda-forge package is planned; see the
 [installation guide](https://datenoio.github.io/undatum/getting-started/installation).
 
 ### Optional extras
