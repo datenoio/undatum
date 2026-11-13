@@ -121,7 +121,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: docker/setup-buildx-action@v4
       - name: Build
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           load: true
@@ -152,7 +152,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Push
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           push: true
@@ -273,7 +273,7 @@ jobs:
           config: cliff.toml
           args: --latest --strip header
       - name: Create GitHub release with all assets
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           body: ${{ steps.notes.outputs.content }}
           files: |
