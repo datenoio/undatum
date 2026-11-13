@@ -2871,15 +2871,15 @@ wheels = [
 
 [[package]]
 name = "iterabledata"
-version = "1.1.0"
+version = "1.2.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "chardet" },
     { name = "tqdm" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/09/4d/470faff130a93bf5bbe4cbb2523e95d3222b19f061945d56ebae1c0d1721/iterabledata-1.1.0.tar.gz", hash = "sha256:a8a672c5ef409d36e8cfa0df5205745a0b560645fd00415d4ed400788fd9571f", size = 484394, upload-time = "2026-10-29T11:50:59.689Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/61/f7/6c31b3d2e1771d0813a506b3e76f4bc25ed05ae92bb81978e10702393515/iterabledata-1.2.0.tar.gz", hash = "sha256:1ccadcbf20783f1be37e7e680ee79bd9c9954348a2cd8a0c7e8efcd2cc6b9761", size = 494478, upload-time = "2026-11-08T10:11:52.674Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/0c/90/e5621794d0a6dcc522f8799b5ef24c5a7f7ccaef1cc8e8f28ade5c2b6ff8/iterabledata-1.1.0-py3-none-any.whl", hash = "sha256:f5974e4b45eb7a6ffe932a75b05bbff37b5fd95fae04f0ae2e6fd780fc237295", size = 615040, upload-time = "2026-10-29T11:50:57.823Z" },
+    { url = "https://files.pythonhosted.org/packages/81/c0/00b0e788041576f4f1cd860280625d8764322c25182ed50e23689b8b16a8/iterabledata-1.2.0-py3-none-any.whl", hash = "sha256:271bda2cf36e0b7089395083a77871d2b8ecfc9b5d86f0438a62ee26efb8ea97", size = 624412, upload-time = "2026-11-08T10:11:50.499Z" },
 ]
 
 [package.optional-dependencies]
@@ -7700,7 +7700,7 @@ requires-dist = [
     { name = "gcsfs", marker = "extra == 'gcs'", specifier = ">=2024.2" },
     { name = "httpx", marker = "extra == 'api'", specifier = ">=0.27,<1" },
     { name = "httpx", marker = "extra == 'web'", specifier = ">=0.27,<1" },
-    { name = "iterabledata", specifier = ">=1.1.0,<1.2" },
+    { name = "iterabledata", specifier = ">=1.1.0,<1.3" },
     { name = "iterabledata", extras = ["access"], marker = "extra == 'access'" },
     { name = "iterabledata", extras = ["compression"], marker = "extra == 'compression'" },
     { name = "iterabledata", extras = ["geophysical"], marker = "extra == 'scientific'" },
