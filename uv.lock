@@ -6283,15 +6283,15 @@ wheels = [
 
 [[package]]
 name = "pyzstd"
-version = "0.19.1"
+version = "0.20.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "backports-zstd", marker = "python_full_version < '3.14'" },
     { name = "typing-extensions", marker = "python_full_version < '3.13'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/4c/66/59fed71d0d2065e02974b40296f836a237c364c8bbe07295f2d0dc33c278/pyzstd-0.19.1.tar.gz", hash = "sha256:36723d3c915b3981de9198d0a2c82b2f5fe3eaa36e4d8d586937830a8afc7d72", size = 69531, upload-time = "2025-12-13T08:15:33.455Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/15/13/df08504a60f7a7a4109f1fb8104c1517212e6cbd43ecde5e625f999c904e/pyzstd-0.20.0.tar.gz", hash = "sha256:f6647f7e7026970551f97cafa2340f88b42cb25d0fcffcc3cd93dd78e5f27504", size = 71001, upload-time = "2026-10-11T17:29:54.303Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/4d/62/f55d1363512d1b1cc122af6ca5951008e42605b63675c7d6781affc7c475/pyzstd-0.19.1-py3-none-any.whl", hash = "sha256:267e2eb0de0291dfcb7ccfebc4ffe75b2f9d84e7007ac38844f6ccafc6dce081", size = 23779, upload-time = "2025-12-13T08:15:31.979Z" },
+    { url = "https://files.pythonhosted.org/packages/b9/92/e924ae7de1d3fdbfed9022e78085e5028d8b5c7bc6c98b2fbf8b4def5f98/pyzstd-0.20.0-py3-none-any.whl", hash = "sha256:9c6aff5aa9b12bb14d51f724915f176db9b187214d66d93d990c75ff054483c6", size = 23755, upload-time = "2026-10-11T17:29:52.852Z" },
 ]
 
 [[package]]
