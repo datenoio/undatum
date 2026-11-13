@@ -5,12 +5,15 @@ from __future__ import annotations
 import functools
 import json
 import re
+from enum import Enum
+from types import SimpleNamespace
 
 import pytest
 from typer.testing import CliRunner
 
 from undatum.cli.manifest import (
     manifest,
+    param_type,
     root_context,
     tool_argv,
     tool_name,
@@ -203,3 +206,51 @@ def test_tool_argv_errors(commands):
         tool_argv("undatum_count", {"input_file": "a.csv", "nope": 1}, [commands["count"]])
     with pytest.raises(UndatumError, match="Unknown undatum tool"):
         tool_argv("undatum_nope", {}, [commands["count"]])
+
+
+class _Color(Enum):
+    RED = "red"
+    BLUE = "blue"
+
+
+def _described(annotation, *, is_list=False, is_file=False, path_type=None, choices=None):
+    """A parameter as typer 0.29 builds it: no ``type``, a ``type_descriptor``."""
+    descriptor = SimpleNamespace(
+        annotation=annotation,
+        is_list=is_list,
+        is_file=is_file,
+        is_path=path_type is not None,
+        path_type=path_type,
+        choices=choices,
+    )
+    return SimpleNamespace(type_descriptor=descriptor)
+
+
+@pytest.mark.parametrize(
+    ("param", "expected"),
+    [
+        (_described(str), ("str", None)),
+        (_described(list[int], is_list=True), ("int", None)),
+        (_described(str, is_file=True), ("filename", None)),
+        (_described(str, path_type="dir"), ("directory", None)),
+        (_described(str, path_type="file"), ("file", None)),
+        (_described(_Color, choices=tuple(_Color)), ("_color", ["red", "blue"])),
+    ],
+)
+def test_param_type_from_type_descriptor(param, expected):
+    assert param_type(param) == expected
+
+
+def test_param_type_from_click_type():
+    param = SimpleNamespace(type=SimpleNamespace(name="INTEGER", choices=None))
+    assert param_type(param) == ("integer", None)
+
+
+def test_param_type_engine_choices():
+    described = _described(str)
+    described._undatum_choices = ("auto", "duckdb", "python")
+    assert param_type(described) == ("str", ["auto", "duckdb", "python"])
+    root = root_context()
+    count = root.command.get_command(root, "count")
+    engine = next(param for param in count.params if "--engine" in param.opts)
+    assert param_type(engine)[1] == ["auto", "duckdb", "python"]
