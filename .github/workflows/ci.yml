@@ -20,10 +20,12 @@ jobs:
       with:
         python-version: "3.12"
     - name: Install linters
-      # Keep in sync with the ruff pin in pyproject.toml (checked below).
+      # The ruff version is the pin in pyproject.toml; the pre-commit rev must match it
+      # (checked below).
       run: |
         python -m pip install --upgrade pip
-        pip install "ruff==0.17.1" packaging
+        ruff_version=$(python -c "import pathlib, re; print(re.search(r'\"ruff==([0-9.]+)\"', pathlib.Path('pyproject.toml').read_text()).group(1))")
+        pip install "ruff==${ruff_version}" packaging
     - name: Tool versions are in sync
       run: python scripts/check_tool_versions.py
     - name: Runtime dependencies have version bounds
