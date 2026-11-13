@@ -8,8 +8,10 @@
 - [x] 2.1 Add `tests/test_base_install_imports.py` that walks `undatum.core` imports with extras
       hidden (import blocker fixture) and asserts no `ModuleNotFoundError`
 - [x] 2.2 Add a CLI test: `undatum api serve` without the `api` extra exits 2 with the install hint
-- [ ] 2.3 Run the existing `install-gate` job against the fix (see `update-ci-enforcement`)
+- [x] 2.3 Run the existing `install-gate` job against the fix (see `update-ci-enforcement`);
+      the clean-install and base-install jobs run on every pull request
 
 ## 3. Release
-- [ ] 3.1 Release v1.7.1 with a CHANGELOG entry describing the broken 1.7.0 install
+- [x] 3.1 Release v1.7.1 with a CHANGELOG entry describing the broken 1.7.0 install
+      (superseded: there was no 1.7.1; the fix shipped in 1.8.0, CHANGELOG "Clean install")
 - [ ] 3.2 Decide on yanking 1.7.0 on PyPI and record the decision in the release notes
