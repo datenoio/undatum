@@ -66,6 +66,7 @@ undatum db query "SELECT 1" --db postgresql://user:pass@host/db
 | type-check | mypy ratchet on Python 3.11 |
 | test | pytest on Python 3.11–3.13 from `uv.lock`, coverage at least 65% (80% on changed lines) |
 | lowest-dependencies | tests with every direct dependency at its lower bound |
+| newest-typer | tests with `uv.lock`, except typer at the newest version `pyproject.toml` allows; the CLI reference does not change |
 | memory-budget | row commands stay under 300 MB for 1M rows and do not grow with the input |
 | base-install | wheel without extras: every core module imports; install footprint |
 | install-gate | clean wheel install smoke test |

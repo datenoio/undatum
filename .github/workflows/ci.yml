@@ -165,6 +165,40 @@ jobs:
     - name: Run tests
       run: .venv-lowest/bin/python -m pytest -q
 
+  newest-typer:
+    name: Newest typer allowed by pyproject.toml
+    # Blocking: a new `pip install undatum` gets this typer, and release.yml tests with it.
+    # Only typer moves, so a failure here means a typer release broke undatum: adapt
+    # undatum/cli (option types go through undatum.cli.manifest.param_type()) or lower the
+    # typer bound in pyproject.toml, packaging/conda/meta.yaml and uv.lock.
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v7
+    - uses: actions/setup-python@v7
+      with:
+        python-version: "3.12"
+    - uses: astral-sh/setup-uv@v6
+    - name: Install locked dependencies
+      run: uv sync --frozen --extra api --extra dev --python 3.12
+    - name: Upgrade typer alone to the newest version pyproject.toml allows
+      # The bound comes from pyproject.toml; every other package keeps its uv.lock version.
+      run: |
+        version() { .venv/bin/python -c "import importlib.metadata as m; print(m.version('typer'))"; }
+        locked=$(version)
+        uv pip install --python .venv/bin/python --upgrade-package typer -r pyproject.toml
+        echo "typer $(version) (uv.lock: ${locked})" | tee -a "$GITHUB_STEP_SUMMARY"
+    - name: Run tests
+      run: uv run --frozen --no-sync pytest -q
+    - name: CLI reference is unchanged
+      run: |
+        uv run --frozen --no-sync python scripts/generate_cli_reference.py
+        if [ -n "$(git status --porcelain -- docs)" ]; then
+          git status --short -- docs
+          git diff -- docs
+          echo "::error::scripts/generate_cli_reference.py changes docs/ with this typer version"
+          exit 1
+        fi
+
   deprecations:
     name: No deprecated APIs in undatum code
     runs-on: ubuntu-latest
