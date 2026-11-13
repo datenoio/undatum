@@ -5,7 +5,7 @@ description: "undatum ingest command reference"
 # `ingest`
 
 :::caution Deprecated
-`ingest` is deprecated and will be removed in 2.0. Use [`db load`](/commands/db), which loads into the same databases (MongoDB and Elasticsearch/OpenSearch included) with `--db URI --table NAME`.
+`ingest` is deprecated and will be removed in 3.0. Use [`db load`](/commands/db), which loads into the same databases (MongoDB and Elasticsearch/OpenSearch included) with `--db URI --table NAME`.
 :::
 
 Ingests data from files into databases. Supports MongoDB, PostgreSQL, DuckDB, MySQL, SQLite, and Elasticsearch with retry logic, progress tracking, and optional table auto-creation.

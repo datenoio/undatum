@@ -57,7 +57,7 @@ undatum schema-bulk [OPTIONS] INPUT_FILE
 | `--on-error` TEXT | Parse-error policy: raise (default), skip, or warn. |  |
 | `--error-log` TEXT | Append parse errors as JSONL (use with --on-error skip or warn). |  |
 
-Deprecated spellings (removed in 2.0): `--outtype` → `--format-out`.
+Deprecated spellings (removed in 3.0): `--outtype` → `--format-out`.
 
 See also [shared options](/commands/shared-options).
 <!-- END GENERATED: reference -->

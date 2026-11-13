@@ -23,7 +23,7 @@ Every command uses the same name for the same idea:
 | Processing engine (`auto`, `duckdb`, `python`) | `--engine` | `-e` |
 
 `--format` is kept only where it picks a dialect rather than a file format (`schema --format cerberus`).
-Older spellings still work and print a deprecation warning; they will be removed in 2.0:
+Older spellings still work and print a deprecation warning; they will be removed in 3.0:
 
 | Old | Use instead |
 | --- | --- |

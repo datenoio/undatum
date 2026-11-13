@@ -29,6 +29,7 @@ logging.disable(logging.CRITICAL)
 import typer.main  # noqa: E402
 
 from undatum.cli.capabilities import CAPABILITIES  # noqa: E402
+from undatum.cli.conventions import REMOVAL_VERSION  # noqa: E402
 from undatum.cli.manifest import param_type, walk  # noqa: E402
 from undatum.core import app  # noqa: E402
 
@@ -147,7 +148,7 @@ def command_block(command: Any, path: str, ctx: Any, heading: str) -> str:
     aliases = getattr(command, "_undatum_aliases", {})
     if aliases:
         spelled = ", ".join(f"`{old}` → `{new}`" for old, new in sorted(aliases.items()))
-        lines += [f"Deprecated spellings (removed in 2.0): {spelled}.", ""]
+        lines += [f"Deprecated spellings (removed in {REMOVAL_VERSION}): {spelled}.", ""]
     return "\n".join(lines)
 
 

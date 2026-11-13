@@ -43,7 +43,7 @@ undatum sql [OPTIONS] QUERY INPUT_FILES...
 | `--duckdb-memory` TEXT | DuckDB memory limit (e.g., '4GB', '512MB'). |  |
 | `--verbose` / `--no-verbose` | Enable verbose logging output. | `--no-verbose` |
 
-Deprecated spellings (removed in 2.0): `--format` → `--format-out`.
+Deprecated spellings (removed in 3.0): `--format` → `--format-out`.
 
 See also [shared options](/commands/shared-options).
 <!-- END GENERATED: reference -->

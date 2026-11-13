@@ -6,7 +6,7 @@ description: "undatum stats / profile command reference"
 
 Generates statistics and profiling metrics about your dataset. DuckDB is selected automatically for supported formats (CSV, JSONL, JSON, Parquet) and is typically much faster.
 
-`profile` is a deprecated alias of `stats` (it prints a warning and will be removed in 2.0).
+`profile` is a deprecated alias of `stats` (it prints a warning and will be removed in 3.0).
 
 ```bash
 # Basic statistics

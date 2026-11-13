@@ -191,7 +191,7 @@ undatum pipeline doc [OPTIONS] PIPELINE_FILE
 | `-O`, `--format-out` TEXT | Output format: 'markdown' (default) or 'mermaid'. | `markdown` |
 | `--verbose` / `--no-verbose` | Enable verbose logging output. | `--no-verbose` |
 
-Deprecated spellings (removed in 2.0): `--format` → `--format-out`.
+Deprecated spellings (removed in 3.0): `--format` → `--format-out`.
 
 ### `undatum pipeline templates list`
 

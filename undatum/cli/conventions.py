@@ -5,7 +5,7 @@ built command tree instead of relying on each declaration:
 
 - canonical long names (``--format-in``, ``--format-out``, ``--limit``, ...) replace
   historical spellings, which keep working as hidden aliases that print a
-  deprecation warning (removal planned for 2.0);
+  deprecation warning (removal planned for 3.0);
 - short flags (``-o``, ``-n``, ``-f``, ``-d``, ``-e``, ``-F``, ``-O``) are added where
   the command has the matching option and the letter is free;
 - ``--engine`` accepts only ``auto``, ``duckdb`` and ``python`` (``iterable`` is an
@@ -19,7 +19,7 @@ from __future__ import annotations
 import sys
 from typing import Any
 
-REMOVAL_VERSION = "2.0"
+REMOVAL_VERSION = "3.0"
 
 # Historical spelling -> canonical name, for every command that has the option.
 RENAMES: dict[str, str] = {

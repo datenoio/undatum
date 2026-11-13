@@ -1,8 +1,8 @@
-# Change: Remove Deprecated Commands and Option Aliases in v2.0
+# Change: Remove Deprecated Commands and Option Aliases in v3.0
 
 ## Why
 `update-cli-option-conventions` keeps old option names and duplicate commands as hidden aliases
-with deprecation warnings during v1.8–v1.x. A major release should remove them so help, docs and
+with deprecation warnings during v1.8–v2.x. A major release should remove them so help, docs and
 agent tool schemas describe one surface.
 
 ## What Changes

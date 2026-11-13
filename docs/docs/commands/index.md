@@ -134,7 +134,7 @@ informational commands print a versioned JSON document with `--json` — see
 
 ## Deprecated commands
 
-These keep working with a warning on stderr and are removed in 2.0; they are hidden from
+These keep working with a warning on stderr and are removed in 3.0; they are hidden from
 `--help`. [`migrate-script`](/commands/migrate-script) rewrites them in scripts, and the
 [migration guide](/getting-started/migrating-to-2) lists every change.
 

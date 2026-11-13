@@ -192,7 +192,7 @@ undatum db query [OPTIONS] QUERY
 | `--batch-size` INTEGER | Batch size for streaming results (default: 10000). | `10000` |
 | `--verbose` / `--no-verbose` | Enable verbose logging output. | `--no-verbose` |
 
-Deprecated spellings (removed in 2.0): `--output-format` → `--format-out`.
+Deprecated spellings (removed in 3.0): `--output-format` → `--format-out`.
 
 ### `undatum db load`
 

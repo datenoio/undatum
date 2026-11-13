@@ -59,7 +59,7 @@ undatum tail [OPTIONS] INPUT_FILE
 | `--keep-nested-parents` / `--no-keep-nested-parents` | With --flatten-nested, keep parent dict/array fields alongside dotted children. | `--keep-nested-parents` |
 | `-O`, `--format-out` TEXT | Output format (e.g. csv, jsonl, parquet). Defaults to the --output extension, or to the input's text format on stdout. |  |
 
-Deprecated spellings (removed in 2.0): `--n` → `--limit`.
+Deprecated spellings (removed in 3.0): `--n` → `--limit`.
 
 See also [shared options](/commands/shared-options).
 <!-- END GENERATED: reference -->
