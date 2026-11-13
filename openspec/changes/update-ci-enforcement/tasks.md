@@ -2,7 +2,7 @@
 - [x] 1.1 Change `ci.yml` triggers to `branches: [master, main]` for push and pull_request
 - [ ] 1.2 Enable branch protection on `master` with required checks (lint, test, install-gate,
       base-install, docs)
-- [ ] 1.3 Confirm Dependabot PRs now get CI runs
+- [x] 1.3 Confirm Dependabot PRs now get CI runs (#136-#150 on 2026-11-13 ran the full CI)
 
 ## 2. Clean baseline
 - [x] 2.1 Fix the 18 ruff findings (B023 handled in `fix-runtime-defects`)

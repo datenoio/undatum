@@ -1,6 +1,6 @@
 ## 1. Removal
-- [ ] 1.1 Remove `scheme` command and its tests (at the 2.0 release; aliases must ship deprecated
-      for at least two minor releases first)
+- [ ] 1.1 Remove `scheme` command and its tests (at the 3.0 release: 2.0 shipped them still
+      deprecated, and the versioning policy removes them only in a major version)
 - [ ] 1.2 Remove hidden command aliases and option aliases
 - [ ] 1.3 Decide on `--autodoc` based on issue/discussion signals
 

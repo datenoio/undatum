@@ -83,7 +83,7 @@ Create OpenSpec change proposals for ecosystem expansion:
 - [ ] 4.4 Create `add-synthetic-data` proposal — deferred
 - [x] 4.5 Create `add-tui-interface` proposal — implemented and archived (`undatum tui`)
 - [x] 4.6 Create `add-web-ui` proposal — implemented and archived (`undatum web`); visual DAG / plotly / Data API embed remain follow-on
-- [ ] 4.7 Create `add-advanced-quality-monitoring` proposal — deferred
+- [x] 4.7 Create `add-advanced-quality-monitoring` proposal — superseded by `add-data-quality-report`
 - [x] 4.8 Create `add-pipeline-autodoc` proposal — `pipeline doc` ships Mermaid/Markdown diagrams; LLM autodoc remains deferred
 - [x] 4.9 Create `improve-cli-ergonomics` proposal — `--version`, `--install-completion`, and `undatum(1)` man page ship; TUI/web extras are optional
 

@@ -15,4 +15,5 @@
 
 ## 4. Binaries
 - [x] 4.1 Trigger binary builds on PRs touching `packaging/**` or `release.yml`
-- [ ] 4.2 Publish binaries for v1.7.1 and update README links
+- [x] 4.2 Publish binaries for v1.7.1 and update README links (superseded: every release
+      since 1.8.0 attaches the binaries, and the README links to GitHub Releases)

@@ -48,25 +48,26 @@ requirements of these changes; older archived deltas for them are not restored y
 
 ## Active — remaining
 
-- `add-undatum-improvement-roadmap` — tasks 4.3 (`add-streaming-connectors`) and 4.4
-  (`add-synthetic-data`) are deferred; 4.7 (`add-advanced-quality-monitoring`) is superseded
-  by the archived `add-data-quality-report`. LLM pipeline autodoc stays deferred.
-  Visual pipeline DAG, inline plot images, and Data API embed from the web UI
-  remain follow-on (not in the archived web UI change).
-- `add-2026-10-review-roadmap` — milestones, OpenSpec hygiene and gate evidence not recorded.
-- `remove-deprecated-cli-surface` — `scheme` and the hidden command and option aliases are
-  still shipped in 2.0; removal and its changelog entry remain.
+- `add-2026-10-review-roadmap` — OpenSpec hygiene is done (lost specs restored, summaries moved
+  here); open: approving the plan (1.1), the review report export (1.3), reconciling the
+  ingestion/analysis/visualization specs (2.2) and gate evidence (3.x).
+- `remove-deprecated-cli-surface` — `scheme` and the hidden command and option aliases still ship
+  in 2.0; removal waits for 3.0, with its changelog entry; `--autodoc` is undecided.
 - `add-native-arrow-repack`, `add-repack-effort-trials` — not approved, not started.
-- `add-distribution-channels` — Homebrew tap needs the tap repository and secrets;
-  conda-forge waits for iterabledata and qddate feedstocks.
-- Repository settings, not code: branch protection on `master` (`update-ci-enforcement`),
-  Dependabot auto-merge and stale `snyk-fix-*`/`codex/*` branches
-  (`update-dev-tooling-and-dependencies`), protected `pypi` environment
-  (`update-release-pipeline`).
-- Leftovers tied to v1.7.1 in `fix-base-install-optional-imports` and
-  `update-release-pipeline`; 1.8.0, 1.9.1 and 2.0.0 have shipped since.
+- `add-distribution-channels` — the Homebrew tap is live; 1.1 closes when a release job has
+  bumped it; conda-forge waits for iterabledata and qddate feedstocks.
+- `fix-base-install-optional-imports` 3.2 — decide whether to yank 1.7.0 on PyPI (still
+  installable, and broken without extras).
+- Repository settings, not code: branch protection on `master` (`update-ci-enforcement` 1.2),
+  "Allow auto-merge" for Dependabot patch updates and the stale `snyk-fix-*`/`codex/*` branches
+  (`update-dev-tooling-and-dependencies` 4.2-4.3), the protected `pypi` environment
+  (`update-release-pipeline` 1.2).
 - `refactor-streaming-operations-core` 4.2 (upstream writers and stdin to iterabledata) and
   `update-project-documentation` 4.4 (issues for `dev/docs/*`).
+
+Archived on 2026-11-13 as well: `add-undatum-improvement-roadmap` (4.3 streaming connectors and
+4.4 synthetic data stay deferred; LLM pipeline autodoc, the visual pipeline DAG, inline plot
+images and Data API embedding in the web UI remain follow-on ideas).
 
 ## Maintainer follow-up (not code)
 
