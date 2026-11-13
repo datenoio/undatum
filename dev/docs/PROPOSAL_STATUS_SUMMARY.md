@@ -56,14 +56,13 @@ requirements of these changes; older archived deltas for them are not restored y
 - `add-native-arrow-repack`, `add-repack-effort-trials` — not approved, not started.
 - `add-distribution-channels` — the Homebrew tap is live; 1.1 closes when a release job has
   bumped it; conda-forge waits for iterabledata and qddate feedstocks.
-- `fix-base-install-optional-imports` 3.2 — decide whether to yank 1.7.0 on PyPI (still
-  installable, and broken without extras).
-- Repository settings, not code: branch protection on `master` (`update-ci-enforcement` 1.2),
-  "Allow auto-merge" for Dependabot patch updates and the stale `snyk-fix-*`/`codex/*` branches
-  (`update-dev-tooling-and-dependencies` 4.2-4.3), the protected `pypi` environment
-  (`update-release-pipeline` 1.2).
 - `refactor-streaming-operations-core` 4.2 (upstream writers and stdin to iterabledata) and
   `update-project-documentation` 4.4 (issues for `dev/docs/*`).
+
+Done on 2026-11-13: branch protection on `master` with required checks, "Allow auto-merge", the
+maintainer approval for the `pypi` environment, the stale `snyk-fix-*`/`codex/*` branches deleted
+and the decision to yank 1.7.0; `fix-base-install-optional-imports`, `update-ci-enforcement`,
+`update-release-pipeline` and `update-dev-tooling-and-dependencies` are archived.
 
 Archived on 2026-11-13 as well: `add-undatum-improvement-roadmap` (4.3 streaming connectors and
 4.4 synthetic data stay deferred; LLM pipeline autodoc, the visual pipeline DAG, inline plot

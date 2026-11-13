@@ -22,6 +22,7 @@
 ## 4. Governance
 - [x] 4.1 Add `SECURITY.md`, `.github/ISSUE_TEMPLATE/`, `.github/PULL_REQUEST_TEMPLATE.md`,
       `.github/CODEOWNERS`
-- [ ] 4.2 Delete the 17 `snyk-fix-*` branches and merged `codex/*` branches
-- [ ] 4.3 Enable Dependabot auto-merge for patch updates with green CI (workflow added; needs
-      "Allow auto-merge" and required checks in the repository settings)
+- [x] 4.2 Delete the 17 `snyk-fix-*` branches and merged `codex/*` branches (2026-11-13: 15
+      `snyk-fix-*` branches of closed PRs and 3 merged `codex/*` branches)
+- [x] 4.3 Enable Dependabot auto-merge for patch updates with green CI (workflow added; needs
+      "Allow auto-merge" and required checks in the repository settings; both on since 2026-11-13)

@@ -1,6 +1,7 @@
 ## 1. Pipeline
 - [x] 1.1 Restructure `release.yml`: test → install-gate → build → binaries → publish (needs all)
-- [ ] 1.2 Add a protected `pypi` environment approval before publish
+- [x] 1.2 Add a protected `pypi` environment approval before publish (required reviewer: the
+      maintainer, since 2026-11-13)
 - [x] 1.3 Attach wheels, sdist and binaries to the GitHub release in the final job
 - [x] 1.4 RC tags publish to TestPyPI and install-smoke from TestPyPI
 

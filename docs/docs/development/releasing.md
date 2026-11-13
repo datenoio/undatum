@@ -33,7 +33,7 @@ from there as a check, without touching PyPI.
 | install-gate | the built wheel installs into a clean environment and real commands run |
 | binaries | PyInstaller single-file binaries for Linux, macOS and Windows (attested) |
 | publish-testpypi / verify-testpypi | release candidates only |
-| publish-pypi | final releases; the `pypi` environment can require a manual approval |
+| publish-pypi | final releases; waits until a maintainer approves the deployment to the `pypi` environment |
 | github-release | GitHub release with notes from the commits, the distributions and binaries |
 | homebrew | renders `packaging/homebrew/undatum.rb.in`, installs and tests it on macOS and commits it to [datenoio/homebrew-tap](https://github.com/datenoio/homebrew-tap); runs when the `HOMEBREW_TAP_REPO` variable is set and needs the `HOMEBREW_TAP_TOKEN` secret (contents: write on the tap) |
 
