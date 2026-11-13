@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`--filter` accepts decimal numbers and quoted strings with dots** ([#128](https://github.com/datenoio/undatum/issues/128)) — `--filter "price > 9.99"` and `--filter "email == 'alice@example.com'"` were rejected on every engine as unsupported syntax, because the check for nested `a.b` fields and SQL-only constructs (`IN`, `LIKE`, `[`, `;`) also looked inside numbers and quoted strings. It now checks only the expression outside quotes; nested fields are still rejected.
 - **typer 0.29 is supported** — `typer>=0.26,<1` again; 2.0.1 kept typer below 0.29. typer 0.29 builds option types from annotations and removed the `type` attribute that undatum replaced for `--engine`. `--engine` is now normalized by a callback, and `undatum commands --json`, `--tools` and the CLI reference read option types the same way on typer 0.26 to 0.29.
 
 ## [2.0.1](https://github.com/datenoio/undatum/compare/v2.0.0...v2.0.1) - 2026-11-13

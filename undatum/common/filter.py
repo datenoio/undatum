@@ -24,6 +24,11 @@ class _FilterTranslationError(Exception):
     """Raised when a filter expression cannot be translated or evaluated."""
 
 
+# SQL-only constructs. Dotted (nested) field names are rejected by the identifier checks,
+# so a dot in a number (``9.99``) or in a quoted string (``'a@example.com'``) is accepted.
+_UNSUPPORTED_CONSTRUCT = re.compile(r"\bin\b|\blike\b|\bmatch\b|=>|\[|;", re.IGNORECASE)
+
+
 def _iter_code_and_strings(expr: str) -> Iterator[tuple[str, str]]:
     """Yield ``("code"|"string", fragment)`` pairs, keeping quoted spans intact."""
     i = 0
@@ -43,6 +48,13 @@ def _iter_code_and_strings(expr: str) -> Iterator[tuple[str, str]]:
             j += 1
         yield "code", expr[i:j]
         i = j
+
+
+def _check_supported(expr: str) -> None:
+    """Reject ``IN``, ``LIKE`` and other SQL-only constructs outside quoted strings."""
+    for kind, fragment in _iter_code_and_strings(expr):
+        if kind == "code" and _UNSUPPORTED_CONSTRUCT.search(fragment):
+            raise _FilterTranslationError("unsupported construct")
 
 
 def _rewrite_logical_ops(expr: str, and_token: str, or_token: str) -> str:
@@ -190,8 +202,7 @@ def _eval_comparison(record: dict, expr: str) -> bool:
     expr = expr.strip()
     if expr.startswith("(") and _matching_outer_parens(expr):
         return _eval_expr(record, expr[1:-1].strip())
-    if re.search(r"\bin\b|\blike\b|\bmatch\b|=>|\[|\.|;", expr, re.IGNORECASE):
-        raise _FilterTranslationError("unsupported construct")
+    _check_supported(expr)
     try:
         left, op, right = _find_comparison_op(expr)
     except _FilterTranslationError:
@@ -381,8 +392,7 @@ def _translate_comparison(expr: str) -> str:
     if expr.startswith("(") and _matching_outer_parens(expr):
         return f"({_translate_expr(expr[1:-1].strip())})"
 
-    if re.search(r"\bin\b|\blike\b|\bmatch\b|=>|\[|\.|;", expr, re.IGNORECASE):
-        raise _FilterTranslationError("unsupported construct")
+    _check_supported(expr)
 
     left, op, right = _find_comparison_op(expr)
     sql_left = _translate_identifier(left)
