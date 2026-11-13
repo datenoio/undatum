@@ -1,7 +1,8 @@
 ## 1. Triggers and protection
 - [x] 1.1 Change `ci.yml` triggers to `branches: [master, main]` for push and pull_request
-- [ ] 1.2 Enable branch protection on `master` with required checks (lint, test, install-gate,
-      base-install, docs)
+- [x] 1.2 Enable branch protection on `master` with required checks (lint, test, install-gate,
+      base-install, docs); enabled 2026-11-13 with lint, docs, test (3.11-3.13), the clean wheel
+      smoke and base install jobs; no review requirement, admins not bound
 - [x] 1.3 Confirm Dependabot PRs now get CI runs (#136-#150 on 2026-11-13 ran the full CI)
 
 ## 2. Clean baseline

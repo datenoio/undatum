@@ -14,4 +14,5 @@
 ## 3. Release
 - [x] 3.1 Release v1.7.1 with a CHANGELOG entry describing the broken 1.7.0 install
       (superseded: there was no 1.7.1; the fix shipped in 1.8.0, CHANGELOG "Clean install")
-- [ ] 3.2 Decide on yanking 1.7.0 on PyPI and record the decision in the release notes
+- [x] 3.2 Decide on yanking 1.7.0 on PyPI and record the decision in the release notes
+      (2026-11-13: yank; the 1.7.0 heading in CHANGELOG.md is marked [YANKED])

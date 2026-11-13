@@ -261,7 +261,9 @@ Everything below keeps working (commands and options print a warning) and is rem
 - **Release binaries** — PyInstaller now freezes a wrapper entry point, `undatum/__main__.py` uses package-relative imports, and `packaging/undatum.spec` is no longer gitignored, so tagged builds find it
 - **Documentation examples** match the CLI: `ai plan` takes two positional paths, `ai filter` takes the expression before the file, write examples use `--output`, and the `schema-bulk`, `convert --flatten-data` and `replace --global-replace` spellings and the Data API authentication notes are corrected; edit links point to `master`
 
-## [1.7.0](https://github.com/datenoio/undatum/compare/v1.6.0...v1.7.0) - 2026-08-13
+## [1.7.0](https://github.com/datenoio/undatum/compare/v1.6.0...v1.7.0) - 2026-08-13 [YANKED]
+
+Yanked on PyPI: `pip install undatum` without extras could not run any command (`No module named 'starlette'`). Use 1.8.0 or later.
 
 ### Added
 

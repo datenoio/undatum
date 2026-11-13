@@ -25,12 +25,16 @@ request accordingly.
 ### Requirement: Single-Binary Release Artifacts
 Release publishing SHALL include single-binary (or equivalent self-contained) artifacts for
 major platforms so ops users can install without a pre-existing Python environment where
-feasible.
+feasible. Binary builds SHALL succeed before the Python package is published for the same tag.
 
 #### Scenario: Release includes platform binaries
 - **WHEN** a new undatum version is released
 - **THEN** linux/mac/win self-contained artifacts are published alongside the Python package
   (or the release notes document a tracked exception)
+
+#### Scenario: Binary packaging change is tested before release
+- **WHEN** a pull request changes `packaging/` or the release workflow
+- **THEN** CI builds and smoke-tests the binaries on that pull request
 
 ### Requirement: Supported Python Versions Policy
 The project SHALL support exactly the CPython versions that have not reached end of life, and
@@ -107,4 +111,49 @@ Records undatum reads itself SHALL be described through Arrow tables, not DataFr
 #### Scenario: Extras that include pandas
 - **WHEN** a user installs `undatum[extract]` or `undatum[all]`
 - **THEN** pandas is installed
+
+### Requirement: Base Install Starts Without Optional Extras
+Installing `undatum` without extras SHALL produce a working CLI: `undatum --version`,
+`undatum --help` and every command that does not need an extra MUST start without import errors.
+
+#### Scenario: Clean base install
+- **WHEN** a user runs `pip install undatum` in an empty virtual environment
+- **AND** runs `undatum --version`
+- **THEN** the version is printed and the exit code is 0
+
+#### Scenario: Command needing a missing extra
+- **WHEN** a user without the `api` extra runs `undatum api serve config.yml`
+- **THEN** the CLI prints "Missing dependency" with `pip install "undatum[api]"`
+- **AND** exits with code 2
+
+### Requirement: Lazy Loading of Optional Subsystems
+Modules that depend on packages from optional extras SHALL import those packages only when a
+command that needs them runs.
+
+#### Scenario: Core import without extras
+- **WHEN** `import undatum.core` runs in an environment without `fastapi`, `starlette`,
+  `textual`, `jinja2`, `matplotlib` or `mcp`
+- **THEN** the import succeeds
+
+### Requirement: Lean Base Install
+The base package SHALL depend only on libraries needed by core file commands; database and search
+engine drivers SHALL be optional extras, and an `all` extra SHALL install every optional feature.
+`pymongo` is the exception: it provides the `bson` module that the core BSON format needs.
+
+#### Scenario: Search engine driver is optional
+- **WHEN** a user installs `undatum` without extras
+- **THEN** `elasticsearch` is not installed
+- **AND** `undatum db load data.csv --db elasticsearch://localhost:9200 --table t` exits with code 2 and explains how to install `undatum[elastic]`
+
+#### Scenario: Missing database driver
+- **WHEN** a user queries `clickhouse://...` without the ClickHouse driver installed
+- **THEN** the command exits with code 2 and names the package to install
+
+### Requirement: Bounded Dependency Versions
+Every direct dependency SHALL declare a lower bound that CI tests and an upper bound below the
+next major version unless the dependency guarantees compatibility.
+
+#### Scenario: Unbounded dependency rejected
+- **WHEN** a pull request adds a dependency without version bounds
+- **THEN** a metadata check in CI fails
 
